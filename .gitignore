@@ -1,0 +1,17 @@
+# AWSIM Labs Binary
+awsim_labs_v1.6.1/
+
+# Map Assets
+Shinjuku-Map/
+
+# Autoware Build Artifacts
+autoware/build/
+autoware/install/
+autoware/log/
+
+# OS and Editor files
+.DS_Store
+.vscode/
+.idea/
+*~
+*.swp
