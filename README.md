@@ -19,16 +19,16 @@ Currently, this repository contains the initial setup for **Autoware** and **AWS
 
 ## How to Run
 
-### 1. Start Autoware
-Run the following script to create the container and launch Autoware:
-```bash
-./Run_Autoware.sh
-```
-
-### 2. Start AWSIM Simulation
+### 1. Start AWSIM Simulation
 In a separate terminal, run the following script to launch the simulator:
 ```bash
 ./Run_AWSIM.sh
+```
+
+### 2. Start Autoware
+Run the following script to create the container and launch Autoware:
+```bash
+./Run_Autoware.sh
 ```
 
 > **Note:** Ensure you have the necessary dependencies installed as per the Autoware documentation.
