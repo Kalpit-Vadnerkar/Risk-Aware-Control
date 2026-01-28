@@ -14,8 +14,8 @@ echo -e "${GREEN}   Autoware + AWSIM Labs Launcher${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 # Configuration
-AUTOWARE_DIR="/home/df/Desktop/Kalpit-2026/autoware"
-MAP_PATH="/home/df/Desktop/Kalpit-2026/Shinjuku-Map/map"
+AUTOWARE_DIR="/home/df/Desktop/Kalpit-2026/Risk-Aware-Control/autoware"
+MAP_PATH="/home/df/Desktop/Kalpit-2026/Risk-Aware-Control/Shinjuku-Map/map"
 VEHICLE_MODEL="awsim_labs_vehicle"
 SENSOR_MODEL="awsim_labs_sensor_kit"
 
@@ -39,7 +39,7 @@ echo -e "${BLUE}Sourcing ROS2 Humble...${NC}"
 source /opt/ros/humble/setup.bash
 
 echo -e "${BLUE}Sourcing Autoware workspace...${NC}"
-source install/setup.bash
+source autoware/install/setup.bash
 
 # Configure network settings for ROS2 (only needs to run once per boot)
 if [ ! -e /tmp/cycloneDDS_configured ]; then

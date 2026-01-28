@@ -1,243 +1,143 @@
 # Risk-Aware Control - Task List
 
-**Last Updated:** 2026-01-21
-**Status Legend:** ✅ Complete | 🔄 In Progress | ⏳ Pending | ❌ Blocked | 🔍 Needs Research
+**Last Updated:** 2026-01-28
 
 ---
 
 ## Development Philosophy
 
 1. **Work in small chunks** - Pick specific tasks, not entire phases
-2. **Validation-first** - Know what we're measuring before building solutions
-3. **Document everything** - Decisions, rationale, alternatives considered
-4. **Find the failure points first** - Can't fix what's not broken
+2. **Validation-first** - Know what we're measuring before building
+3. **Document decisions** - Rationale for committee defense
+4. **Find failures first** - Can't fix what's not broken
 
 ---
 
-## Phase 0: Environment Setup & Exploration
+## Phase 0: Environment Setup ✅ COMPLETE
 
-**Goal:** Verify AWSIM + Autoware work reliably, understand what's available
+- [x] AWSIM + Autoware verified working
+- [x] Waypoint demo completed
+- [x] ROS2 topics documented (788 topics)
+- [x] Constraint parameters identified
+- [x] Architecture understood
 
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Verify AWSIM launches | Test `./Run_AWSIM.sh` |
-| ⏳ | Verify Autoware launches | Test `./Run_Autoware.sh` |
-| ⏳ | Complete one manual drive | Drive through Shinjuku map successfully |
-| ⏳ | Document available ROS2 topics | List all topics published by Autoware |
-| ⏳ | Document AWSIM fault injection API | What faults can AWSIM inject natively? |
-| ⏳ | Document Autoware parameters | Which params control safety margins? |
-| 🔍 | Identify constraint parameters | **What constraints can we manipulate?** |
-
-### Key Questions to Answer:
-- [ ] What fault injection does AWSIM support out of the box?
-- [ ] What ROS2 topics carry localization covariance?
-- [ ] What ROS2 topics carry perception confidence?
-- [ ] Which Autoware parameters control obstacle distance margins?
-- [ ] Which parameters control velocity limits?
-- [ ] Which parameters control lane keeping tolerance?
+**Summary:** See `docs/phase0_summary.md`
 
 ---
 
-## Phase 1: Experiment Infrastructure
+## Phase 1: Experiment Infrastructure 🔄 CURRENT
 
-**Goal:** Create a reliable way to run repeatable experiments
+**Progress notes:** See `docs/phase1_progress.md`
 
-### 1.1 Manual Experiment Process
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Document manual experiment steps | How to run one experiment by hand |
-| ⏳ | Identify key metrics to record | What do we measure? |
-| ⏳ | Create simple data recording method | rosbag? CSV? What's easiest? |
-| ⏳ | Run 3 manual baseline experiments | Verify process works |
+### 1.1 Automation
+| Status | Task |
+|--------|------|
+| ✅ | Investigate AWSIM automation options (supports `--config` JSON flag) |
+| ✅ | Create experiment launcher script (`experiments/scripts/run_experiment.sh`) |
+| ✅ | Create batch runner (`experiments/scripts/run_batch.sh`) |
+| ✅ | Create goal capture tool (`experiments/scripts/capture_goal.py`) |
+| ✅ | Create live monitor (`experiments/scripts/monitor_state.py`) |
+| ✅ | Capture goal coordinates from manual RViz session |
+| ✅ | Fix QoS incompatibility (BEST_EFFORT for AWSIM ground truth) |
+| ✅ | Fix rclpy shutdown error (guard with `rclpy.ok()`) |
+| ✅ | Fix autoware source in run scripts |
+| ✅ | Investigate MRM system (diagnostic script, source code analysis) |
+| ✅ | Fix velocity cap (4.17 -> 11.11 m/s = 15 -> 40 km/h) |
+| ✅ | Add stuck detection watchdog (`experiment_watchdog.py`) |
+| ✅ | Fix diagnostic script byte comparison bug |
+| ⏳ | Investigate AWSIM traffic density options (check UI slider) |
+| ⏳ | End-to-end test of updated automation pipeline |
+| ⏳ | Test with 5 baseline runs at 40 km/h |
 
 ### 1.2 Metrics Definition
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Define "collision" detection | How do we know a collision occurred? |
-| ⏳ | Define "lane departure" detection | How do we know ego left the lane? |
-| ⏳ | Define "mission success" criteria | What counts as successful completion? |
-| ⏳ | Research TTC computation | How to compute time-to-collision? |
-| 🔍 | Determine feasible metrics | What can we actually measure reliably? |
+| Status | Task |
+|--------|------|
+| ⏳ | Build rosbag → metrics extraction pipeline |
+| ⏳ | Define collision detection method |
+| ⏳ | Define lane departure detection |
+| ⏳ | Define mission success criteria |
+| ⏳ | Implement TTC computation |
 
-### 1.3 Simple Experiment Script
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Create experiment launcher script | Start AWSIM + Autoware + recording |
-| ⏳ | Create experiment stopper script | Clean shutdown + save data |
-| ⏳ | Test with 5 baseline runs | Verify automation works |
-
----
-
-## Phase 2: Stress Testing (Find Failure Points)
-
-**Goal:** Discover where Autoware fails so we know what to fix
-
-### 2.1 Native Fault Testing
-| Status | Task | Description |
-|--------|------|-------------|
-| 🔍 | Investigate AWSIM fault injection | What's available natively? |
-| ⏳ | Test with sensor noise (if available) | Does Autoware handle it? |
-| ⏳ | Test with sensor dropout (if available) | Does Autoware handle it? |
-| ⏳ | Document which faults cause failures | Find the "interesting region" |
-
-### 2.2 Parameter Manipulation Testing
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Test with reduced safety margins | Lower obstacle distance threshold |
-| ⏳ | Test with increased velocity limits | Push Autoware faster |
-| ⏳ | Document parameter-failure relationships | What causes problems? |
-
-### 2.3 Scenario Complexity
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Test with dense traffic (if possible) | More objects = more challenge |
-| ⏳ | Test with complex route | Turns, intersections |
-| ⏳ | Document scenario-failure relationships | What scenarios are hard? |
-
-### 2.4 Failure Analysis
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Catalog all observed failures | What went wrong and when? |
-| ⏳ | Classify failures by type | Collision, lane departure, stuck, etc. |
-| ⏳ | Identify "goldilocks" scenarios | Not too easy, not impossible |
-| ⏳ | Document in research notes | `failure_analysis.md` |
+### 1.3 Fault Injection
+| Status | Task |
+|--------|------|
+| ⏳ | Create `fault_injection` ROS2 package |
+| ⏳ | Implement GNSS noise injector |
+| ⏳ | Implement IMU bias injector |
+| ⏳ | Test fault propagation |
 
 ---
 
-## Phase 3: Design Risk Assessment (AFTER Phase 2)
+## Phase 2: Stress Testing (Find Failures)
 
-**Goal:** Design the CVaR system based on empirical findings
-
-### 3.1 Constraint Identification
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | List controllable constraints | Based on Phase 0 exploration |
-| ⏳ | Map constraints to failure modes | Which constraint prevents which failure? |
-| ⏳ | Prioritize constraints | Which are most impactful? |
-| ⏳ | Document in research notes | `constraint_selection.md` |
-
-### 3.2 Metric Selection
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Select input features for ST-GAT | What do we predict? |
-| ⏳ | Select residual types to use | Raw, KL, CUSUM - which ones? |
-| ⏳ | Select CVaR parameters | Alpha level, window size |
-| ⏳ | Document rationale | `metric_selection.md` |
-
-### 3.3 Tightening Strategy Design
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Design γ(CVaR) mapping | How does CVaR translate to margin? |
-| ⏳ | Set constraint bounds | Min/max for each constraint |
-| ⏳ | Design preemptive trigger | When to tighten early? |
-| ⏳ | Document design decisions | `tightening_design.md` |
+- [ ] Run fault sweep experiments
+- [ ] Identify failure thresholds
+- [ ] Document failure modes
+- [ ] Select "goldilocks" scenarios for RISE validation
 
 ---
 
-## Phase 4: Implementation (AFTER Phase 3)
+## Phase 3: RISE Implementation
 
-**Goal:** Build the system based on validated design
-
-### 4.1 CVaR Estimator
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Implement CVaR computation | Based on selected parameters |
-| ⏳ | Implement rolling window | For real-time estimation |
-| ⏳ | Implement trend detection | For preemptive tightening |
-| ⏳ | Unit tests | Verify correctness |
-
-### 4.2 Safety Envelope
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Implement constraint tightener | Based on selected constraints |
-| ⏳ | Implement Autoware interface | Parameter updates |
-| ⏳ | Integration test | Verify updates take effect |
-
-### 4.3 ST-GAT Port (if needed)
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Port model architecture | From reference repo |
-| ⏳ | Port data pipeline | Adapt for ROS2 Humble |
-| ⏳ | Verify inference | Load weights, run prediction |
+- [ ] Implement uncertainty propagation module
+- [ ] Implement tube computation
+- [ ] Implement constraint adjustment
+- [ ] Integration with Autoware
 
 ---
 
-## Phase 5: Validation (AFTER Phase 4)
+## Phase 4: Validation
 
-**Goal:** Prove the system works
-
-### 5.1 Comparative Experiments
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Run baseline (no RISE) | On failure scenarios from Phase 2 |
-| ⏳ | Run with RISE | Same scenarios |
-| ⏳ | Compute comparison metrics | Did we improve? |
-
-### 5.2 Statistical Analysis
-| Status | Task | Description |
-|--------|------|-------------|
-| ⏳ | Significance testing | Is improvement real? |
-| ⏳ | Effect size computation | How big is the improvement? |
-| ⏳ | Generate figures | For dissertation |
+- [ ] Run baseline vs RISE comparison
+- [ ] Statistical analysis
+- [ ] Generate figures
 
 ---
 
-## Documentation Tasks (Ongoing)
+## Documentation
 
-| Status | Task | Description |
-|--------|------|-------------|
-| ✅ | Create theoretical framework | `docs/theoretical_framework.md` |
-| ✅ | Document weight modulation rejection | `docs/research_notes/weight_modulation_rejected.md` |
-| ✅ | Document intrinsic delay analysis | `docs/research_notes/intrinsic_delay_analysis.md` |
-| ✅ | Document fault severity taxonomy | `docs/research_notes/fault_severity_taxonomy.md` |
-| ✅ | Document validation strategy | `docs/research_notes/validation_strategy.md` |
-| ⏳ | Document AWSIM capabilities | After Phase 0 exploration |
-| ⏳ | Document Autoware parameters | After Phase 0 exploration |
-| ⏳ | Document failure analysis | After Phase 2 |
-| ⏳ | Document constraint selection | After Phase 3 |
-| ⏳ | Document metric selection | After Phase 3 |
-| ⏳ | Document tightening design | After Phase 3 |
+| File | Purpose |
+|------|---------|
+| `docs/theoretical_framework.md` | Core RISE formulation |
+| `docs/design_decisions.md` | Key decisions with rationale |
+| `docs/validation_strategy.md` | Experiment methodology |
+| `docs/phase0_summary.md` | Environment exploration results |
+| `docs/phase1_progress.md` | Phase 1 progress, issues, and pickup notes |
 
 ---
 
-## Current Files
+## Repository Structure
 
 ```
 Risk-Aware-Control/
-├── autoware/                 # Pre-built Autoware
+├── autoware/                 # Autoware source
 ├── awsim_labs_v1.6.1/        # AWSIM binary
+├── awsim_labs_source/        # AWSIM source (for reference)
 ├── Shinjuku-Map/             # HD map
-├── Run_AWSIM.sh              # Launch script
-├── Run_Autoware.sh           # Launch script
+├── Run_AWSIM.sh              # Launch AWSIM
+├── Run_Autoware.sh           # Launch Autoware
 ├── TODO.md                   # This file
 │
 ├── docs/
 │   ├── theoretical_framework.md
-│   └── research_notes/
-│       ├── weight_modulation_rejected.md
-│       ├── intrinsic_delay_analysis.md
-│       ├── fault_severity_taxonomy.md
-│       └── validation_strategy.md
+│   ├── design_decisions.md
+│   ├── validation_strategy.md
+│   └── phase0_summary.md
 │
 ├── experiments/
-│   ├── scenarios/            # (empty - to be created)
-│   └── configs/
-│       ├── baseline.yaml     # (template)
-│       └── fault_sweep.yaml  # (template)
+│   ├── scripts/
+│   │   ├── run_experiment.sh    # Single automated experiment
+│   │   ├── run_batch.sh         # Batch runner
+│   │   ├── capture_goal.py      # Capture goal from RViz
+│   │   ├── monitor_state.py     # Live state monitor
+│   │   ├── diagnose_mrm.py      # MRM diagnostic investigation
+│   │   └── experiment_watchdog.py # Stuck/completion detection
+│   ├── configs/
+│   │   ├── baseline.json        # AWSIM startup config
+│   │   └── captured_route.json  # Captured goal coordinates
+│   └── data/                    # Experiment output (rosbags, metadata)
 │
-├── ros2_ws/                  # (empty - to be built)
-└── st_gat/                   # (empty - to be ported)
+└── ros2_ws/                  # (to be built)
+    └── src/
+        └── fault_injection/
 ```
-
----
-
-## Next Steps Suggestions
-
-**Recommended starting point:** Phase 0 tasks
-
-1. Verify AWSIM + Autoware launch successfully
-2. Document available ROS2 topics
-3. Investigate AWSIM fault injection capabilities
-4. Identify which Autoware parameters control safety margins
-
-This gives us the foundation to design experiments properly.

@@ -1,164 +1,120 @@
-# Theoretical Framework: Residual-Informed Safety Envelopes
+# RISE: Residual-Informed Safety Envelope
+## Theoretical Framework
 
-## 1. Introduction
+**Last Updated:** 2026-01-23
 
-This document formalizes the theoretical framework for Residual-Informed Safety Envelopes (RISE), a novel approach to risk-aware control in autonomous vehicles. The core contribution is using CVaR computed from digital twin prediction residuals to dynamically adjust control constraints.
+---
 
-## 2. Problem Formulation
+## 1. Core Concept
 
-### 2.1 Digital Twin Prediction
+RISE uses digital twin prediction residuals to dynamically adjust safety constraints. When predictions diverge from observations, uncertainty is high, so safety margins increase.
 
-The ST-GAT digital twin predicts the vehicle's nominal behavior:
+**The key equation:**
+```
+constraint_margin = nominal_margin + f(uncertainty)
+```
 
-$$\hat{Y}^{t+H} = f_{DT}(S^t) = f_{DT}(G, X^t)$$
+Where uncertainty is derived from prediction residuals.
 
-Where:
-- $S^t = (G, X^t)$: Joint state (HD map graph $G$, temporal history $X^t$)
-- $H$: Prediction horizon (30 timesteps)
-- Output: Distributions $(\mu, \sigma^2)$ for continuous features, $p$ for discrete
+---
 
-### 2.2 Residual Computation
+## 2. Framework Evolution
 
-At each timestep, we compute residuals between predictions and observations:
+### v1: CVaR-Based Margin Function (Initial)
+**Approach:** Compute CVaR from residuals, use margin function γ(CVaR).
+```
+γ_tightened = γ_base + k × CVaR^β
+```
+**Limitation:** How to set k, β? Manual tuning is unprincipled.
 
-**Raw Residual:**
-$$\Phi_{raw}^t = \mu^t - u^t$$
+### v2: Learned Sensitivity Matrix (Rejected)
+**Approach:** Learn matrix A mapping risk vector to constraints.
+```
+γ = clip(γ_base + A·ρ, γ_min, γ_max)
+```
+**Limitation:** Where does A come from? Would require RL-like training, infeasible for our setup.
 
-**KL Divergence (NLL-based):**
-$$\Phi_{KLD}^t = \frac{1}{2}\left[\ln(2\pi\sigma^2) + \frac{(u - \mu)^2}{\sigma^2}\right]$$
+### v3: Uncertainty Propagation (Current)
+**Approach:** Derive constraint tightening analytically from uncertainty propagation.
+```
+Σ_effective = Σ_predicted × (1 + κ(Φ))    # Inflate covariance based on residual
+tube_width = k_σ × √(Σ_propagated)         # Compute safety tube
+margin = nominal + tube_width              # Tighten by tube width
+```
+**Advantage:** Principled derivation, no learning required, probabilistic guarantees via k_σ.
 
-**CUSUM:**
-$$z_t = \frac{\mu - u}{\sigma}$$
-$$C^+_t = \max(0, C^+_{t-1} + z_t - \frac{\delta}{2})$$
-$$C^-_t = \max(0, C^-_{t-1} - z_t - \frac{\delta}{2})$$
-$$\Phi_{CUSUM}^t = \frac{\max(C^+, C^-)}{d}$$
+---
 
-### 2.3 CVaR Computation
+## 3. Current Formulation (v3)
 
-Given a window of residuals $R = \{r_1, ..., r_n\}$:
+### 3.1 Inputs
 
-**Value-at-Risk:**
-$$VaR_\alpha = \inf\{x : P(R \leq x) \geq \alpha\}$$
+| Input | Source | Description |
+|-------|--------|-------------|
+| Observations z_t | Sensors | Current state with covariance R_t |
+| Predictions (μ_t, Σ_t) | ST-GAT | Expected state with uncertainty |
+| Trajectory τ | Autoware | Planned path with velocities |
 
-**Conditional Value-at-Risk:**
-$$CVaR_\alpha = E[R | R \geq VaR_\alpha]$$
+### 3.2 Residual Computation
 
-Interpretation: CVaR_α represents the expected residual magnitude in the worst $(1-\alpha)\%$ of cases.
+**Normalized residual:**
+```
+Φ = |z - μ| / √(Σ + R)
+```
 
-## 3. Safety Envelope Formulation
+Accounts for both prediction and observation uncertainty.
 
-### 3.1 Constraint Tightening
+### 3.3 Covariance Inflation
 
-The core mechanism is constraint tightening based on CVaR:
+When residuals are high, predictions are unreliable:
+```
+Σ_effective = Σ_predicted × (1 + α(Φ/Φ_nominal)^β)
+```
 
-**Original constraint:**
-$$h(x) \geq 0$$
+| Parameter | Meaning | Typical Value |
+|-----------|---------|---------------|
+| α | Max inflation | 1.0 - 3.0 |
+| β | Sensitivity | 1.0 (linear) |
+| Φ_nominal | Baseline residual | Measured from normal operation |
 
-**Tightened constraint:**
-$$h(x) \geq \gamma(CVaR)$$
+### 3.4 Tube Computation
 
-Where $\gamma: [0, \infty) \rightarrow [0, \infty)$ is a monotonically increasing margin function.
+Propagate uncertainty along trajectory, compute tube width:
+```
+tube_width = k_σ × √(diag(Σ_propagated))
+```
 
-### 3.2 Margin Function Design
+Where k_σ determines confidence level:
+- k_σ = 2.0 → ~95% coverage
+- k_σ = 3.0 → ~99.7% coverage
 
-We consider several margin functions:
+### 3.5 Constraint Adjustment
 
-**Linear:**
-$$\gamma_{linear}(c) = k \cdot c$$
+| Constraint | Formula |
+|------------|---------|
+| Safe distance | d = d_nominal + tube_width_position |
+| Velocity limit | v = v_nominal × (1 - tube_ratio) |
+| Lateral margin | m = m_nominal + tube_width_lateral |
 
-**Exponential:**
-$$\gamma_{exp}(c) = k(e^{\beta c} - 1)$$
+---
 
-**Sigmoid (bounded):**
-$$\gamma_{sigmoid}(c) = \frac{\gamma_{max}}{1 + e^{-\lambda(c - c_0)}}$$
+## 4. Fail-Operational Behavior
 
-### 3.3 Preemptive Tightening
+The framework is naturally bidirectional:
 
-To address detection latency, we also react to CVaR trends:
+| Condition | Residuals | Tube | Constraints |
+|-----------|-----------|------|-------------|
+| Normal | Low | Narrow | ≈ Nominal |
+| Internal fault | High | Wide | Tightened |
+| Low uncertainty | Very low | Very narrow | Can relax toward nominal |
 
-$$\gamma_{eff} = \begin{cases}
-\gamma(CVaR) \cdot \kappa & \text{if } \frac{dCVaR}{dt} > \theta \\
-\gamma(CVaR) & \text{otherwise}
-\end{cases}$$
+For external threats (sudden obstacle): object residual spikes → longitudinal margin increases. If no in-lane avoidance feasible, lateral margin doesn't additionally tighten, enabling avoidance maneuvers.
 
-Where $\kappa > 1$ is the preemptive multiplier and $\theta$ is the trend threshold.
+---
 
-## 4. Probabilistic Guarantees
+## 5. What Makes This Novel
 
-### 4.1 Coverage Validity
-
-**Theorem 1 (Coverage):** For a calibrated CVaR estimator with confidence level $\alpha$, the probability that the actual residual exceeds the safety margin is bounded by:
-
-$$P(\Phi > \gamma(CVaR_\alpha)) \leq 1 - \alpha$$
-
-*Proof sketch:* By definition of CVaR as a coherent risk measure, it provides an upper bound on expected tail loss.
-
-### 4.2 Constraint Satisfaction
-
-**Theorem 2 (Constraint Satisfaction):** If the margin function $\gamma$ satisfies:
-$$\gamma(CVaR_\alpha) \geq \mathbb{E}[\Phi | \Phi \geq VaR_\alpha]$$
-
-Then the tightened constraint provides probabilistic safety guarantees at level $\alpha$.
-
-### 4.3 Calibration Requirement
-
-For valid guarantees, the CVaR estimator must be calibrated:
-
-$$\frac{1}{T}\sum_{t=1}^{T} \mathbb{1}[\Phi^t > VaR_\alpha] \approx 1 - \alpha$$
-
-## 5. Application to Autoware Constraints
-
-### 5.1 Distance Constraint
-
-**Original:** $d_{obstacle} \geq d_{safe}$
-
-**Tightened:** $d_{obstacle} \geq d_{safe} + \gamma(CVaR)$
-
-### 5.2 Lane Keeping
-
-**Original:** $|e_{lateral}| \leq e_{max}$
-
-**Tightened:** $|e_{lateral}| \leq e_{max} - \gamma(CVaR)$
-
-### 5.3 Velocity Limit
-
-**Original:** $v \leq v_{limit}$
-
-**Tightened:** $v \leq v_{limit} - \gamma(CVaR)$
-
-## 6. Validation Methodology
-
-### 6.1 CVaR Calibration Test
-
-Run N scenarios, measure empirical coverage:
-
-$$\hat{p}_{violation} = \frac{\#\{i : \Phi_i > VaR_\alpha\}}{N}$$
-
-Accept if $|\hat{p}_{violation} - (1-\alpha)| < \epsilon$ for tolerance $\epsilon$.
-
-### 6.2 Safety Improvement Test
-
-Compare baseline (fixed margins) vs. RISE:
-- Collision rate
-- Lane departure rate
-- Minimum TTC distribution
-
-### 6.3 Performance Trade-off Test
-
-Measure impact on nominal performance:
-- Mission completion time
-- Tracking error
-- Comfort metrics
-
-## 7. Limitations and Assumptions
-
-1. **Stationarity:** CVaR estimation assumes approximately stationary residual distribution over the window
-2. **Detection Latency:** Cannot detect faults before they affect vehicle behavior
-3. **Model Quality:** Effectiveness depends on ST-GAT prediction quality
-4. **Constraint Feasibility:** Aggressive tightening may cause infeasibility
-
-## 8. References
-
-1. Rockafellar, R.T., Uryasev, S. (2002). Conditional value-at-risk for general loss distributions.
-2. Vadnerkar, K., et al. (2025). Digital Twins as Predictive Models for Real-Time Probabilistic Risk Assessment of Autonomous Vehicles. IEEE T-ITS.
-3. Majumdar, A., Pavone, M. (2020). How should a robot assess risk? Towards an axiomatic theory of risk in robotics.
+1. **Residual → Uncertainty → Constraint loop:** Closes the loop from passive digital twin to active control
+2. **Analytical derivation:** No learned mappings, principled from uncertainty propagation
+3. **Probabilistic guarantees:** k_σ provides coverage bounds
+4. **Fail-operational:** Same framework handles both tightening and relaxation
