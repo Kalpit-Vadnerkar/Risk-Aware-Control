@@ -10,14 +10,14 @@
   "egoConfiguration": {
     "egoVehicleName": "Lexus RX450h 2015 Sample Sensor",
     "egoPosition": {
-      "x": 81382.73,
-      "y": 49918.79,
-      "z": 41.58
+      "x": 81384.60,
+      "y": 49922.00,
+      "z": 41.28
     },
     "egoEulerAngles": {
       "x": 0.0,
       "y": 0.0,
-      "z": 35.0
+      "z": 33.5
     }
   }
 }

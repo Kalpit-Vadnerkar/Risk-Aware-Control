@@ -26,6 +26,13 @@ if [ ! -f "$AWSIM_BINARY" ]; then
     exit 1
 fi
 
+# Kill any existing AWSIM process to ensure fresh start
+if pgrep -f "awsim_labs" > /dev/null; then
+    echo -e "${YELLOW}Killing existing AWSIM process...${NC}"
+    pkill -9 -f "awsim_labs" 2>/dev/null || true
+    sleep 2
+fi
+
 # Check if config exists
 if [ ! -f "$CONFIG_PATH" ]; then
     echo -e "${YELLOW}Error: Config not found at ${CONFIG_PATH}${NC}"
@@ -47,7 +54,7 @@ __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia \
     ./awsim_labs.x86_64 \
     --config "$CONFIG_PATH" \
     -screen-quality Fastest \
-    -screen-width 600 \
-    -screen-height 400
+    -screen-width 200 \
+    -screen-height 100
 
 echo -e "${GREEN}AWSIM Labs exited.${NC}"

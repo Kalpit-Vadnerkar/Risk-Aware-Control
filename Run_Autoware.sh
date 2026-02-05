@@ -2,6 +2,9 @@
 
 # Autoware Launch Script for AWSIM Labs
 # This script launches Autoware configured for AWSIM Labs simulation
+#
+# Usage: ./Run_Autoware.sh
+# Must be run after AWSIM is started.
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -13,9 +16,22 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   Autoware + AWSIM Labs Launcher${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# Configuration
-AUTOWARE_DIR="/home/df/Desktop/Kalpit-2026/Risk-Aware-Control/autoware"
-MAP_PATH="/home/df/Desktop/Kalpit-2026/Risk-Aware-Control/Shinjuku-Map/map"
+# Kill any existing Autoware processes to ensure fresh start
+echo -e "${BLUE}Cleaning up existing Autoware processes...${NC}"
+pkill -9 -f "ros2.*launch.*autoware" 2>/dev/null || true
+pkill -9 -f "component_container" 2>/dev/null || true
+pkill -9 -f "robot_state_publisher" 2>/dev/null || true
+pkill -9 -f "rviz2" 2>/dev/null || true
+pkill -9 -f "autoware" 2>/dev/null || true
+sleep 2
+
+# Note: Don't reset ROS2 daemon here - AWSIM is already using it
+# If you have issues, run ./cleanup.sh before starting AWSIM
+
+# Directory setup (derive from script location, same pattern as Run_AWSIM.sh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AUTOWARE_DIR="$SCRIPT_DIR/autoware"
+MAP_PATH="$SCRIPT_DIR/Shinjuku-Map/map"
 VEHICLE_MODEL="awsim_labs_vehicle"
 SENSOR_MODEL="awsim_labs_sensor_kit"
 
@@ -27,7 +43,6 @@ fi
 
 if [ ! -d "$MAP_PATH" ]; then
     echo -e "${YELLOW}Error: Map directory not found at ${MAP_PATH}${NC}"
-    echo "Please update MAP_PATH in this script"
     exit 1
 fi
 
@@ -39,7 +54,7 @@ echo -e "${BLUE}Sourcing ROS2 Humble...${NC}"
 source /opt/ros/humble/setup.bash
 
 echo -e "${BLUE}Sourcing Autoware workspace...${NC}"
-source autoware/install/setup.bash
+source "$AUTOWARE_DIR/install/setup.bash"
 
 # Configure network settings for ROS2 (only needs to run once per boot)
 if [ ! -e /tmp/cycloneDDS_configured ]; then
@@ -54,18 +69,13 @@ fi
 
 # Wait for AWSIM to be ready (check if topics are publishing)
 echo -e "${BLUE}Waiting for AWSIM to start publishing topics...${NC}"
-TIMEOUT=60
+TIMEOUT=120
 ELAPSED=0
 while ! ros2 topic list | grep -q "/sensing/lidar/top/pointcloud_raw"; do
     if [ $ELAPSED -ge $TIMEOUT ]; then
         echo -e "${YELLOW}Warning: AWSIM topics not detected after ${TIMEOUT}s${NC}"
         echo -e "${YELLOW}Make sure AWSIM is running before launching Autoware${NC}"
-        read -p "Continue anyway? (y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
-        break
+        exit 1
     fi
     echo -e "${BLUE}  Waiting... ($ELAPSED/${TIMEOUT}s)${NC}"
     sleep 2
@@ -81,7 +91,7 @@ echo -e "${BLUE}  Map Path:      ${MAP_PATH}${NC}"
 echo ""
 
 # Launch Autoware
-ros2 launch autoware_launch e2e_simulator.launch.xml \
+exec ros2 launch autoware_launch e2e_simulator.launch.xml \
     vehicle_model:=${VEHICLE_MODEL} \
     sensor_model:=${SENSOR_MODEL} \
     map_path:=${MAP_PATH} \
