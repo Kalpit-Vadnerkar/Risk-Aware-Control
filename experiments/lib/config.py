@@ -20,34 +20,42 @@ SCRIPTS_DIR = os.path.join(EXPERIMENTS_DIR, 'scripts')
 
 # Topics to record during experiments
 RECORDING_TOPICS = [
-    # Core state
+    # Core state & transforms
     '/localization/kinematic_state',
     '/localization/pose_with_covariance',
     '/awsim/ground_truth/localization/kinematic_state',
+    '/tf',  # Vehicle pose in map frame (critical for spatial computation)
 
     # Vehicle status
     '/vehicle/status/velocity_status',
     '/vehicle/status/steering_status',
+    '/vehicle/status/gear_status',
 
-    # Perception
+    # Perception - objects
     '/perception/object_recognition/objects',
     '/perception/object_recognition/tracking/objects',
+
+    # Perception - traffic lights (all related topics)
     '/perception/traffic_light_recognition/traffic_signals',
+    '/perception/traffic_light_recognition/traffic_light_states',
 
     # Planning
     '/planning/scenario_planning/trajectory',
     '/planning/mission_planning/route',
+    '/planning/scenario_planning/lane_driving/behavior_planning/path',
 
     # Control
     '/control/command/control_cmd',
+    # '/control_performance/performance_vars',  # Requires launching control_performance_analysis node
 
     # System state
     '/autoware/state',
     '/api/routing/state',
     '/system/fail_safe/mrm_state',
+    '/system/operation_mode/state',
 
-    # Metrics (from planning evaluator)
-    '/planning_evaluator/metrics',
+    # Mission planning (for expected time/distance if available)
+    '/planning/remaining_distance_time_calculator/output/mission_remaining_distance_time',
 
     # Diagnostics
     '/diagnostics',

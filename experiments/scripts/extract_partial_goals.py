@@ -1,293 +1,484 @@
 #!/usr/bin/env python3
 """
-Extract partial goals from stuck experiments.
+Extract partial/intermediate goals from stuck experiments.
 
-When an experiment gets stuck, this script analyzes the rosbag to find
-the last known good position before the vehicle stopped. This position
-can be used as a new shorter goal that avoids the problematic area.
+When an experiment gets stuck at a problematic map location, this script
+analyzes the rosbag to find waypoints along the route BEFORE the stuck point.
+These can be used as alternative shorter goals that avoid the problem area.
 
 Usage:
   python3 extract_partial_goals.py <experiment_id>
-  python3 extract_partial_goals.py test2
+  python3 extract_partial_goals.py goal_003_baseline_t1_20260203_194102
+  python3 extract_partial_goals.py --all-stuck  # Process all stuck experiments
 
-This will:
-  1. Load the rosbag from the experiment
-  2. Find the position where the vehicle was moving well
-  3. Create a new goal entry that can be added to captured_goals.json
+Output:
+  - Creates partial goal entries with proper orientation
+  - Saves to configs/partial_goals_<experiment_id>.json
+  - Recommends the furthest safe position as replacement goal
 """
 
-import sqlite3
-import json
 import os
 import sys
+import json
 import math
+import argparse
 from datetime import datetime
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+
+# Add lib to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
+
+# ROS2 imports
+from rclpy.serialization import deserialize_message
+from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
+from nav_msgs.msg import Odometry
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(SCRIPT_DIR, '..', 'data')
-CONFIG_DIR = os.path.join(SCRIPT_DIR, '..', 'configs')
+EXPERIMENTS_DIR = os.path.dirname(SCRIPT_DIR)
+DATA_DIR = os.path.join(EXPERIMENTS_DIR, 'data')
+CONFIG_DIR = os.path.join(EXPERIMENTS_DIR, 'configs')
+
+# Starting position (from baseline.json)
+START_POSITION = {'x': 81384.60, 'y': 49922.00, 'z': 41.28}
 
 
-def analyze_rosbag(rosbag_path):
-    """Analyze rosbag to find vehicle trajectory and identify good positions"""
+@dataclass
+class TrajectoryPoint:
+    """Single point in vehicle trajectory."""
+    time: float  # seconds from start
+    x: float
+    y: float
+    z: float
+    vx: float  # velocity components
+    vy: float
+    velocity: float  # magnitude
+    heading: float  # radians
 
-    db_path = os.path.join(rosbag_path, 'rosbag_0.db3')
-    if not os.path.exists(db_path):
-        print(f"ERROR: Rosbag not found: {db_path}")
-        return None
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+def read_trajectory_from_bag(bag_path: str) -> List[TrajectoryPoint]:
+    """
+    Read vehicle trajectory from rosbag using ground truth odometry.
 
-    # Get topic IDs
-    cursor.execute("SELECT id, name FROM topics")
-    topics = {row[1]: row[0] for row in cursor.fetchall()}
+    Uses proper ROS2 deserialization for reliable parsing.
+    """
+    storage_options = StorageOptions(uri=bag_path, storage_id='sqlite3')
+    converter_options = ConverterOptions(
+        input_serialization_format='cdr',
+        output_serialization_format='cdr'
+    )
 
-    odom_topic_id = topics.get('/awsim/ground_truth/localization/kinematic_state')
-    if not odom_topic_id:
-        print("ERROR: Ground truth odometry topic not found in rosbag")
-        return None
+    reader = SequentialReader()
+    reader.open(storage_options, converter_options)
 
-    # Get start time
-    cursor.execute("SELECT MIN(timestamp) FROM messages")
-    start_time = cursor.fetchone()[0]
+    # Get topic info
+    topic_types = {info.name: info.type for info in reader.get_all_topics_and_types()}
 
-    # Get all odometry messages
-    cursor.execute("""
-        SELECT timestamp, data FROM messages
-        WHERE topic_id = ?
-        ORDER BY timestamp
-    """, (odom_topic_id,))
+    # Prefer ground truth, fall back to localization
+    odom_topic = None
+    for topic in ['/awsim/ground_truth/localization/kinematic_state',
+                  '/localization/kinematic_state']:
+        if topic in topic_types:
+            odom_topic = topic
+            break
 
-    messages = cursor.fetchall()
-    conn.close()
+    if odom_topic is None:
+        print("ERROR: No odometry topic found in rosbag")
+        return []
 
-    print(f"Analyzing {len(messages)} odometry messages...")
+    print(f"Using odometry topic: {odom_topic}")
 
-    # Extract positions and velocities
     trajectory = []
-    for ts, data in messages:
-        rel_time = (ts - start_time) / 1e9
+    start_time_ns = None
+    prev_point = None
 
-        # Parse odometry data (simplified - just extract position)
-        # The actual parsing would need proper CDR deserialization
-        # For now, we'll use a simple approach based on data structure
-        if len(data) >= 100:
-            try:
-                import struct
-                # Odometry message has pose at a known offset after header
-                # This is approximate - proper parsing would use ROS2 deserialization
-                # Position is typically at offset 56 (after header + frame_id string)
-                # Try to find the position floats
+    while reader.has_next():
+        topic, data, timestamp = reader.read_next()
 
-                # For AWSIM odometry, position is typically:
-                # offset ~56-80 for x, y, z (double precision)
-                # Let's try to find reasonable coordinates
+        if topic != odom_topic:
+            continue
 
-                # Skip CDR header and look for position pattern
-                # Position values should be in range ~81000-82000 for x, ~49000-51000 for y
-                for offset in range(0, min(200, len(data)-24), 8):
-                    try:
-                        x = struct.unpack_from('d', data, offset)[0]
-                        y = struct.unpack_from('d', data, offset+8)[0]
-                        z = struct.unpack_from('d', data, offset+16)[0]
+        if start_time_ns is None:
+            start_time_ns = timestamp
 
-                        # Check if this looks like valid map coordinates
-                        if 80000 < x < 83000 and 49000 < y < 52000 and 30 < z < 50:
-                            trajectory.append({
-                                'time': rel_time,
-                                'x': x,
-                                'y': y,
-                                'z': z
-                            })
-                            break
-                    except:
-                        pass
-            except Exception as e:
-                pass
+        try:
+            msg = deserialize_message(data, Odometry)
+        except Exception as e:
+            continue
 
-    if not trajectory:
-        print("WARNING: Could not parse trajectory from rosbag")
-        return None
+        time_sec = (timestamp - start_time_ns) / 1e9
 
-    print(f"Extracted {len(trajectory)} position samples")
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+        z = msg.pose.pose.position.z
+
+        # Get velocity
+        vx = msg.twist.twist.linear.x
+        vy = msg.twist.twist.linear.y
+        velocity = math.sqrt(vx*vx + vy*vy)
+
+        # Get heading from quaternion
+        qz = msg.pose.pose.orientation.z
+        qw = msg.pose.pose.orientation.w
+        heading = 2.0 * math.atan2(qz, qw)
+
+        point = TrajectoryPoint(
+            time=time_sec, x=x, y=y, z=z,
+            vx=vx, vy=vy, velocity=velocity, heading=heading
+        )
+
+        trajectory.append(point)
+        prev_point = point
+
     return trajectory
 
 
-def find_good_positions(trajectory, min_distance=50, velocity_threshold=2.0):
+def find_stuck_point(trajectory: List[TrajectoryPoint],
+                     velocity_threshold: float = 0.5,
+                     stuck_duration: float = 30.0,
+                     movement_threshold: float = 1.0) -> Optional[int]:
     """
-    Find positions where the vehicle was moving well.
+    Find the index where vehicle got TERMINALLY stuck (never recovered).
 
-    Returns positions that are:
-    - At least min_distance apart
-    - Where the vehicle was moving (velocity > threshold)
+    This finds stop periods that extend to the end of the recording,
+    indicating the vehicle never recovered from this stop.
+
+    Returns index of the start of the terminal stuck period,
+    or None if vehicle never got terminally stuck.
     """
+    if not trajectory:
+        return None
 
-    if len(trajectory) < 10:
+    # First, find when the vehicle started moving
+    first_movement_idx = None
+    for i, point in enumerate(trajectory):
+        if point.velocity >= movement_threshold:
+            first_movement_idx = i
+            break
+
+    if first_movement_idx is None:
+        print("  Vehicle never started moving")
+        return None
+
+    print(f"  Vehicle started moving at t={trajectory[first_movement_idx].time:.1f}s")
+
+    # Find stop periods
+    sample_rate = len(trajectory) / trajectory[-1].time if trajectory[-1].time > 0 else 10
+    min_stop_samples = int(5 * sample_rate)  # At least 5 seconds to count as a stop
+
+    stop_periods = []
+    consecutive_slow = 0
+    stop_start_idx = None
+
+    for i in range(first_movement_idx, len(trajectory)):
+        point = trajectory[i]
+        if point.velocity < velocity_threshold:
+            if consecutive_slow == 0:
+                stop_start_idx = i
+            consecutive_slow += 1
+        else:
+            if consecutive_slow >= min_stop_samples:
+                stop_periods.append({
+                    'start_idx': stop_start_idx,
+                    'end_idx': i,
+                    'duration': trajectory[i].time - trajectory[stop_start_idx].time
+                })
+            consecutive_slow = 0
+
+    # Check if ended while stopped (terminal stuck)
+    if consecutive_slow >= min_stop_samples:
+        terminal_duration = trajectory[-1].time - trajectory[stop_start_idx].time
+        stop_periods.append({
+            'start_idx': stop_start_idx,
+            'end_idx': len(trajectory) - 1,
+            'duration': terminal_duration,
+            'terminal': True
+        })
+
+    if not stop_periods:
+        return None
+
+    print(f"  Found {len(stop_periods)} stop periods")
+
+    # Look for terminal stuck period (one that extends to end)
+    for sp in stop_periods:
+        if sp.get('terminal') and sp['duration'] >= stuck_duration:
+            idx = sp['start_idx']
+            print(f"  Terminal stuck at t={trajectory[idx].time:.1f}s for {sp['duration']:.1f}s")
+            return idx
+
+    # If no terminal stuck, return None (vehicle completed or had recoverable stops)
+    print("  No terminal stuck period found (vehicle recovered from all stops)")
+    return None
+
+
+def extract_waypoints(trajectory: List[TrajectoryPoint],
+                      stuck_index: Optional[int] = None,
+                      min_spacing: float = 50.0,
+                      min_velocity: float = 1.0,
+                      safety_margin: float = 30.0) -> List[TrajectoryPoint]:
+    """
+    Extract waypoints from trajectory that are safe to use as goals.
+
+    Args:
+        trajectory: Full trajectory
+        stuck_index: Index where vehicle got stuck (waypoints stop before this)
+        min_spacing: Minimum distance between waypoints (meters)
+        min_velocity: Minimum velocity to consider a point "good" (m/s)
+        safety_margin: Extra distance to stop before stuck point (meters)
+
+    Returns:
+        List of waypoints suitable for use as intermediate goals
+    """
+    if not trajectory:
         return []
 
-    good_positions = []
+    # Determine cutoff point
+    if stuck_index is not None:
+        # Stop before the stuck point with safety margin
+        cutoff_point = trajectory[stuck_index]
+        cutoff_dist_from_start = math.sqrt(
+            (cutoff_point.x - START_POSITION['x'])**2 +
+            (cutoff_point.y - START_POSITION['y'])**2
+        )
+        max_dist = cutoff_dist_from_start - safety_margin
+    else:
+        max_dist = float('inf')
 
-    # Calculate velocities
-    for i in range(1, len(trajectory)):
-        dt = trajectory[i]['time'] - trajectory[i-1]['time']
-        if dt > 0:
-            dx = trajectory[i]['x'] - trajectory[i-1]['x']
-            dy = trajectory[i]['y'] - trajectory[i-1]['y']
-            vel = math.sqrt(dx*dx + dy*dy) / dt
-            trajectory[i]['velocity'] = vel
-        else:
-            trajectory[i]['velocity'] = 0
+    waypoints = []
+    last_waypoint = None
 
-    # Find the point where vehicle first got stuck (velocity dropped)
-    stuck_time = None
-    stuck_index = None
-    idle_count = 0
+    for point in trajectory:
+        # Skip points where vehicle was too slow
+        if point.velocity < min_velocity:
+            continue
 
-    for i in range(1, len(trajectory)):
-        if trajectory[i].get('velocity', 0) < velocity_threshold:
-            idle_count += 1
-            if idle_count > 100:  # ~10 seconds of being stuck
-                stuck_time = trajectory[i]['time']
-                stuck_index = i - 100  # Go back to before stuck
-                break
-        else:
-            idle_count = 0
+        # Calculate distance from start
+        dist_from_start = math.sqrt(
+            (point.x - START_POSITION['x'])**2 +
+            (point.y - START_POSITION['y'])**2
+        )
 
-    if stuck_index is None:
-        stuck_index = len(trajectory) - 1
+        # Skip if past the safe distance
+        if dist_from_start > max_dist:
+            continue
 
-    print(f"Vehicle appears to have gotten stuck around t={stuck_time:.1f}s" if stuck_time else "")
+        # Check spacing from last waypoint
+        if last_waypoint is not None:
+            dist_from_last = math.sqrt(
+                (point.x - last_waypoint.x)**2 +
+                (point.y - last_waypoint.y)**2
+            )
+            if dist_from_last < min_spacing:
+                continue
 
-    # Find good positions leading up to stuck point
-    last_good_pos = None
+        waypoints.append(point)
+        last_waypoint = point
 
-    for i in range(0, stuck_index):
-        pos = trajectory[i]
-        vel = pos.get('velocity', 0)
-
-        # Check if this is a good position (vehicle was moving)
-        if vel >= velocity_threshold:
-            # Check distance from last good position
-            if last_good_pos is None:
-                dist = float('inf')
-            else:
-                dist = math.sqrt(
-                    (pos['x'] - last_good_pos['x'])**2 +
-                    (pos['y'] - last_good_pos['y'])**2
-                )
-
-            if dist >= min_distance:
-                good_positions.append({
-                    'time': pos['time'],
-                    'x': pos['x'],
-                    'y': pos['y'],
-                    'z': pos['z'],
-                    'velocity': vel
-                })
-                last_good_pos = pos
-
-    return good_positions
+    return waypoints
 
 
-def create_goal_entry(position, base_goal_id, index):
-    """Create a goal entry from a position"""
+def create_goal_entry(waypoint: TrajectoryPoint,
+                      original_goal_id: str,
+                      waypoint_index: int) -> Dict:
+    """Create a goal entry in captured_goals.json format."""
 
-    # Use default orientation (facing direction of travel)
-    # In practice, you'd want to calculate this from the trajectory
+    # Convert heading to quaternion (only z and w needed for 2D)
+    qz = math.sin(waypoint.heading / 2)
+    qw = math.cos(waypoint.heading / 2)
+
+    # Calculate distance from start
+    dist_from_start = math.sqrt(
+        (waypoint.x - START_POSITION['x'])**2 +
+        (waypoint.y - START_POSITION['y'])**2
+    )
+
     return {
-        'id': f"{base_goal_id}_partial_{index:02d}",
+        'id': f"{original_goal_id}_wp{waypoint_index:02d}",
         'goal': {
             'position': {
-                'x': position['x'],
-                'y': position['y'],
-                'z': position['z']
+                'x': waypoint.x,
+                'y': waypoint.y,
+                'z': waypoint.z
             },
             'orientation': {
-                'z': 0.0,  # Would need to calculate from trajectory
-                'w': 1.0
+                'z': qz,
+                'w': qw
             },
             'frame_id': 'map',
-            'start_position': {
-                'x': 81384.60,
-                'y': 49922.00,
-                'z': 41.28
-            },
+            'start_position': START_POSITION.copy(),
             'timestamp': datetime.now().isoformat()
         },
         'captured_at': datetime.now().isoformat(),
-        'source': 'extracted_from_stuck',
-        'original_time': position['time']
+        'estimated_distance': round(dist_from_start, 1),
+        'source': 'extracted_from_trajectory',
+        'original_goal': original_goal_id,
+        'trajectory_time': waypoint.time,
+        'velocity_at_point': round(waypoint.velocity, 2)
     }
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 extract_partial_goals.py <experiment_id>")
-        print("Example: python3 extract_partial_goals.py test2")
-        return 1
+def process_experiment(experiment_id: str,
+                       output_dir: str = None) -> Optional[List[Dict]]:
+    """
+    Process a single stuck experiment and extract intermediate goals.
 
-    experiment_id = sys.argv[1]
-    rosbag_path = os.path.join(DATA_DIR, experiment_id, 'rosbag')
+    Returns list of goal entries or None on failure.
+    """
+    # Find rosbag path
+    exp_dir = os.path.join(DATA_DIR, experiment_id)
+    if not os.path.exists(exp_dir):
+        # Try to find by prefix
+        matches = [d for d in os.listdir(DATA_DIR) if d.startswith(experiment_id)]
+        if matches:
+            experiment_id = matches[0]
+            exp_dir = os.path.join(DATA_DIR, experiment_id)
+        else:
+            print(f"ERROR: Experiment not found: {experiment_id}")
+            return None
 
+    rosbag_path = os.path.join(exp_dir, 'rosbag')
     if not os.path.exists(rosbag_path):
-        print(f"ERROR: Experiment data not found: {rosbag_path}")
-        return 1
+        print(f"ERROR: Rosbag not found: {rosbag_path}")
+        return None
 
-    print("=" * 60)
-    print(f"EXTRACTING PARTIAL GOALS FROM: {experiment_id}")
-    print("=" * 60)
+    print(f"\n{'='*60}")
+    print(f"Processing: {experiment_id}")
+    print(f"{'='*60}")
 
-    # Analyze trajectory
-    trajectory = analyze_rosbag(rosbag_path)
+    # Read trajectory
+    print("Reading trajectory from rosbag...")
+    trajectory = read_trajectory_from_bag(rosbag_path)
+
     if not trajectory:
-        return 1
+        print("ERROR: Could not read trajectory")
+        return None
 
-    # Find good positions
-    good_positions = find_good_positions(trajectory)
+    print(f"Read {len(trajectory)} trajectory points over {trajectory[-1].time:.1f}s")
 
-    if not good_positions:
-        print("No good positions found in trajectory")
-        return 1
+    # Find stuck point
+    stuck_index = find_stuck_point(trajectory)
+    if stuck_index is not None:
+        stuck_point = trajectory[stuck_index]
+        print(f"Vehicle got stuck at t={stuck_point.time:.1f}s, position=({stuck_point.x:.1f}, {stuck_point.y:.1f})")
+    else:
+        print("Vehicle did not appear to get stuck (using full trajectory)")
 
-    print(f"\nFound {len(good_positions)} candidate positions:")
-    for i, pos in enumerate(good_positions):
-        print(f"  {i+1}. t={pos['time']:.1f}s: ({pos['x']:.2f}, {pos['y']:.2f}) vel={pos['velocity']:.1f}m/s")
+    # Extract waypoints
+    waypoints = extract_waypoints(trajectory, stuck_index)
+
+    if not waypoints:
+        print("No suitable waypoints found")
+        return None
+
+    print(f"Extracted {len(waypoints)} waypoints:")
+
+    # Extract original goal id (e.g., "goal_003" from "goal_003_baseline_t1_20260203_194102")
+    parts = experiment_id.split('_')
+    if len(parts) >= 2 and parts[0] == 'goal':
+        original_goal_id = f"{parts[0]}_{parts[1]}"
+    else:
+        original_goal_id = experiment_id
 
     # Create goal entries
-    new_goals = []
-    for i, pos in enumerate(good_positions):
-        goal = create_goal_entry(pos, experiment_id, i+1)
+    goals = []
+    for i, wp in enumerate(waypoints):
+        dist = math.sqrt((wp.x - START_POSITION['x'])**2 + (wp.y - START_POSITION['y'])**2)
+        print(f"  {i+1}. t={wp.time:.1f}s, pos=({wp.x:.1f}, {wp.y:.1f}), dist={dist:.0f}m, vel={wp.velocity:.1f}m/s")
+        goal = create_goal_entry(wp, original_goal_id, i+1)
+        goals.append(goal)
 
-        # Calculate estimated distance from start
-        start_x, start_y = 81384.60, 49922.00
-        dist = math.sqrt((pos['x'] - start_x)**2 + (pos['y'] - start_y)**2)
-        goal['estimated_distance'] = round(dist, 1)
+    # Save to file
+    if output_dir is None:
+        output_dir = CONFIG_DIR
 
-        new_goals.append(goal)
-
-    # Save to a separate file
-    output_file = os.path.join(CONFIG_DIR, f'partial_goals_{experiment_id}.json')
+    output_file = os.path.join(output_dir, f'partial_goals_{original_goal_id}.json')
     output_data = {
         'source_experiment': experiment_id,
         'extraction_time': datetime.now().isoformat(),
-        'total_goals': len(new_goals),
-        'goals': new_goals
+        'stuck_at_time': trajectory[stuck_index].time if stuck_index else None,
+        'total_waypoints': len(goals),
+        'goals': goals
     }
 
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=2)
 
-    print(f"\nSaved {len(new_goals)} partial goals to: {output_file}")
+    print(f"\nSaved {len(goals)} waypoints to: {output_file}")
 
-    # Show the furthest position as the recommended new goal
-    if new_goals:
-        furthest = max(new_goals, key=lambda g: g['estimated_distance'])
-        print(f"\nRecommended new goal (furthest safe position):")
+    # Recommend the furthest safe position
+    if goals:
+        furthest = max(goals, key=lambda g: g['estimated_distance'])
+        print(f"\nRecommended replacement goal (furthest safe point):")
         print(f"  ID: {furthest['id']}")
-        print(f"  Position: ({furthest['goal']['position']['x']:.2f}, {furthest['goal']['position']['y']:.2f})")
-        print(f"  Distance from start: {furthest['estimated_distance']:.0f}m")
-        print(f"  Time in original run: {furthest['original_time']:.1f}s")
+        print(f"  Position: ({furthest['goal']['position']['x']:.1f}, {furthest['goal']['position']['y']:.1f})")
+        print(f"  Distance: {furthest['estimated_distance']:.0f}m")
+
+    return goals
+
+
+def process_all_stuck():
+    """Process all experiments marked as stuck in results."""
+
+    # Find stuck experiments
+    stuck_experiments = []
+
+    for exp_dir in sorted(os.listdir(DATA_DIR)):
+        result_file = os.path.join(DATA_DIR, exp_dir, 'result.json')
+        if os.path.exists(result_file):
+            with open(result_file) as f:
+                result = json.load(f)
+            if result.get('status') == 'stuck':
+                stuck_experiments.append(exp_dir)
+
+    if not stuck_experiments:
+        print("No stuck experiments found")
+        return
+
+    print(f"Found {len(stuck_experiments)} stuck experiments:")
+    for exp in stuck_experiments:
+        print(f"  - {exp}")
+
+    # Process each
+    all_goals = []
+    for exp in stuck_experiments:
+        goals = process_experiment(exp)
+        if goals:
+            all_goals.extend(goals)
+
+    # Save combined file
+    if all_goals:
+        output_file = os.path.join(CONFIG_DIR, 'partial_goals_all_stuck.json')
+        output_data = {
+            'extraction_time': datetime.now().isoformat(),
+            'source_experiments': stuck_experiments,
+            'total_goals': len(all_goals),
+            'goals': all_goals
+        }
+
+        with open(output_file, 'w') as f:
+            json.dump(output_data, f, indent=2)
+
+        print(f"\n{'='*60}")
+        print(f"Combined {len(all_goals)} waypoints from {len(stuck_experiments)} experiments")
+        print(f"Saved to: {output_file}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Extract intermediate goals from stuck experiments')
+    parser.add_argument('experiment_id', nargs='?', help='Experiment ID to process')
+    parser.add_argument('--all-stuck', action='store_true', help='Process all stuck experiments')
+    parser.add_argument('--output-dir', help='Output directory for goal files')
+
+    args = parser.parse_args()
+
+    if args.all_stuck:
+        process_all_stuck()
+    elif args.experiment_id:
+        process_experiment(args.experiment_id, args.output_dir)
+    else:
+        parser.print_help()
+        return 1
 
     return 0
 

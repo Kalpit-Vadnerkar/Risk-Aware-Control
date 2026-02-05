@@ -1,211 +1,233 @@
 # Metrics Framework for RISE Validation
 
-**Purpose:** Define metrics to evaluate AV safety, reliability, and fail-operational capability across three conditions:
-1. **Baseline (Normal)** - No faults, standard driving
-2. **Fault Injection** - Sensor noise, delays, failures
-3. **RISE Active** - Our system running with constraint tightening
+**Last Updated:** 2026-02-05
+**Purpose:** Define metrics to evaluate AV safety, reliability, and fail-operational capability
 
-## Metric Categories
+---
 
-### 1. Safety Metrics
+## Issues with Initial Metrics (2026-02-05)
 
-These measure how well the system avoids dangerous situations.
+### Problem: Lateral Error Computation Was Wrong
 
-| Metric | Formula/Method | Unit | Good Direction |
-|--------|---------------|------|----------------|
-| **Collision Count** | Count of collisions per run | count | ↓ Lower is better |
-| **Minimum TTC** | min(TTC) across run, TTC = distance/closing_velocity | seconds | ↑ Higher is better |
-| **Near-Miss Count** | Count of TTC < threshold (e.g., 2s) | count | ↓ Lower is better |
-| **Lane Departure Rate** | Time outside lane / Total driving time | % | ↓ Lower is better |
-| **Lateral Safety Margin** | min(distance to lane boundary) | meters | ↑ Higher is better |
-| **Object Proximity Violations** | Time within unsafe distance of objects | seconds | ↓ Lower is better |
+Our initial "lateral_rmse" values were nonsensical (e.g., 47m for some runs, 0.1m for others).
 
-**Collision Detection:**
-AWSIM does not publish a dedicated collision topic. Options:
-1. **Monitor `/perception/object_recognition/objects`** - Check if any object has distance < vehicle_radius
-2. **Post-process ground truth** - Compare ego position with object positions from bag
-3. **AWSIM logs** - Check Unity console for collision callbacks (manual inspection)
+**Root Cause:** We computed distance to closest trajectory point, but:
+1. The trajectory is in vehicle frame (future path), not a reference line
+2. We should use Autoware's built-in `control_performance_analysis` module
 
-Recommended: Compute **Minimum Object Distance** from perception data:
+**Solution:** Use `/control/control_performance/error` topic which publishes:
+- `lateral_error` - proper cross-track error
+- `longitudinal_error` - along-track error
+- `heading_error` - orientation error
+
+### Problem: Metrics Not Normalized
+
+MRM count of 239 vs 67 doesn't mean much if routes are different lengths.
+
+**Solution:** Normalize by distance traveled:
+- `mrm_rate = mrm_count / distance_km`
+- `near_miss_rate = near_miss_count / distance_km`
+
+### Problem: Ratio > 1 Is Confusing
+
+Time ratio of 2.87 meaning "took 3x longer" is counterintuitive.
+
+**Solution:** Use efficiency = expected/actual (so 1.0 = optimal, <1.0 = slower)
+
+---
+
+## Revised Metric Categories
+
+### Tier 1: Safety Metrics (Primary)
+
+These directly measure what we're trying to improve with risk-aware control.
+
+| Metric | Formula | Unit | Source | Good Direction |
+|--------|---------|------|--------|----------------|
+| **Collision Count** | Objects within collision_threshold | count | Object tracking | ↓ 0 |
+| **Near Miss Rate** | TTC < 2s events / distance_km | events/km | TTC computation | ↓ Lower |
+| **Critical TTC Rate** | TTC < 1s events / distance_km | events/km | TTC computation | ↓ Lower |
+| **Min Clearance (P5)** | 5th percentile of object distances | meters | Object tracking | ↑ Higher |
+| **Lane Departure Count** | From lane_departure_checker diagnostic | count | /diagnostics | ↓ 0 |
+
+**Why P5 instead of absolute minimum:**
+Absolute minimum can be noisy (single frame artifacts). P5 (5th percentile) gives a more robust measure of "typical worst case."
+
+### Tier 2: MRM/Intervention Metrics (Key for Research)
+
+These measure safety system interventions - directly relevant to our goal of preemptive constraint tightening.
+
+| Metric | Formula | Unit | Interpretation |
+|--------|---------|------|----------------|
+| **MRM Rate** | mrm_count / distance_km | events/km | Overall intervention frequency |
+| **Emergency Stop Rate** | emergency_stops / distance_km | events/km | Severe interventions |
+| **Comfortable Stop Rate** | comfortable_stops / distance_km | events/km | Mild interventions |
+| **MRM Time %** | mrm_duration / driving_time × 100 | % | Time in degraded mode |
+| **Recovery Rate** | recoveries / mrm_count | ratio | System resilience |
+| **Avg MRM Duration** | mrm_duration / mrm_count | seconds | Recovery speed |
+| **E-Stop Ratio** | emergency / (emergency + comfortable) | ratio | Severity distribution |
+
+**Interpretation Guide:**
+- High MRM rate + high recovery rate = conservative but functional
+- High MRM rate + low recovery rate = system struggling (like goal_017)
+- Low MRM rate = either very stable OR not detecting real risks
+
+### Tier 3: Reliability Metrics
+
+Mission completion and efficiency.
+
+| Metric | Formula | Unit | Interpretation |
+|--------|---------|------|----------------|
+| **Mission Success Rate** | successful / total | % | Basic reliability |
+| **Time Efficiency** | expected_time / actual_time | ratio | 1.0 = optimal, <1.0 = slower |
+| **Stuck Rate** | stuck_runs / total | % | Deadlock frequency |
+
+### Tier 4: Control Quality Metrics
+
+From Autoware's `control_performance_analysis` module.
+
+| Metric | Source | Unit | Notes |
+|--------|--------|------|-------|
+| **Lateral Error (RMS)** | `/control/control_performance/error` | meters | Cross-track error |
+| **Heading Error (RMS)** | `/control/control_performance/error` | radians | Orientation tracking |
+| **Longitudinal Error (RMS)** | `/control/control_performance/error` | meters | Speed/position tracking |
+
+**Recording Requirement:** Add this topic to RECORDING_TOPICS in config.py
+
+### Tier 5: Comfort Metrics (Secondary)
+
+| Metric | Formula | Unit |
+|--------|---------|------|
+| **Hard Brake Rate** | hard_brakes / distance_km | events/km |
+| **Max Jerk** | max(d²v/dt²) | m/s³ |
+| **Max Lateral Accel** | max(v² × curvature) | m/s² |
+
+---
+
+## Baseline Results Analysis (2026-02-05)
+
+### Summary Statistics
+
+From 25 experiments with updated goals:
+- **Success Rate:** 24/25 (96%)
+- **Total Distance:** 16.8 km
+- **Average MRM Rate:** ~210 MRM/km (very high!)
+- **Average MRM Duration:** 116ms (fast recovery)
+- **MRM Time:** ~15% of driving time
+
+### Goal 017 Failure Analysis
+
+```
+goal_reached: false
+distance: 552m
+mrm_count: 239 → 433 MRM/km (extremely high)
+emergency_stops: 224 (94% of MRMs)
+comfortable_stops: 15 (6%)
+recovery_rate: 93.3% (some didn't recover)
+time_ratio: 2.87 (3x slower than expected)
+```
+
+**Failure Mode:** Very high MRM frequency with predominantly emergency stops. Eventually some MRMs don't recover, leading to stuck state.
+
+**Research Implication:** This is exactly the scenario risk-aware control should help - detecting escalating risk BEFORE the cascade of MRMs.
+
+### Runs with Anomalous Lateral Error
+
+Goals 004, 009, 010, 011, 016, 021, 024 showed "lateral_error" of 30-50m (impossible values).
+
+**Root Cause:** Our computation was wrong. These runs likely had:
+1. Trajectory in different coordinate frame
+2. Long look-ahead trajectories with vehicle far from start
+3. Trajectory resets/jumps during MRM
+
+**Fix:** Use Autoware's built-in control_performance_analysis topic.
+
+---
+
+## Topics to Record
+
+Update `experiments/lib/config.py`:
+
 ```python
-min_distance = min(object.distance for object in detected_objects)
-collision_proxy = 1 if min_distance < COLLISION_THRESHOLD else 0
+RECORDING_TOPICS = [
+    # ... existing topics ...
+
+    # Control performance (for proper tracking error)
+    '/control/control_performance/error',
+
+    # Lane departure checker diagnostics
+    '/control/lane_departure_checker/debug/processing_time_ms_diag',
+]
 ```
 
-### 2. Reliability Metrics
+---
 
-These measure consistent, predictable behavior.
+## Revised Summary Table Format
 
-| Metric | Formula/Method | Unit | Good Direction |
-|--------|---------------|------|----------------|
-| **Goal Success Rate** | Successful arrivals / Total attempts | % | ↑ Higher is better |
-| **Trajectory Tracking Error (Lateral)** | RMS of lateral deviation from planned path | meters | ↓ Lower is better |
-| **Trajectory Tracking Error (Longitudinal)** | RMS of longitudinal deviation from planned path | meters | ↓ Lower is better |
-| **Velocity Tracking Error** | RMS of (actual_vel - planned_vel) | m/s | ↓ Lower is better |
-| **Stuck Rate** | Experiments ended as stuck / Total experiments | % | ↓ Lower is better |
-| **Completion Time Variance** | σ of completion times across same route | seconds | ↓ Lower is better |
-
-### 3. Fail-Operational Metrics
-
-These measure graceful degradation under stress.
-
-| Metric | Formula/Method | Unit | Good Direction |
-|--------|---------------|------|----------------|
-| **MRM Trigger Rate** | MRM triggers / Driving time | triggers/min | Context-dependent* |
-| **MRM Duration** | Total time in MRM_OPERATING state | seconds | ↓ Lower is better |
-| **Recovery Rate** | Successful MRM recoveries / Total MRM triggers | % | ↑ Higher is better |
-| **Time-to-MRM** | Time from fault injection to MRM trigger | seconds | Context-dependent* |
-| **EMERGENCY vs COMFORTABLE Ratio** | EMERGENCY_STOP / (EMERGENCY + COMFORTABLE) | ratio | ↓ Lower is better |
-| **Degraded Mode Driving** | Time driving with degraded diagnostics | seconds | Informational |
-
-*MRM interpretation:
-- **Too many MRM triggers** = System overly conservative, poor usability
-- **Too few under faults** = System not detecting real risks
-- **RISE goal**: Reduce unnecessary MRMs while maintaining safety
-
-### 4. Comfort Metrics (Secondary)
-
-| Metric | Formula/Method | Unit | Good Direction |
-|--------|---------------|------|----------------|
-| **Maximum Jerk** | max(|d(accel)/dt|) | m/s³ | ↓ Lower is better |
-| **Maximum Lateral Acceleration** | max(|a_lateral|) | m/s² | ↓ Lower is better |
-| **Deceleration Events** | Count of decel > threshold | count | ↓ Lower is better |
-
-## Measurement Protocol
-
-### Baseline (Normal Conditions)
 ```
-For each goal in validated_goals:
-    For trial in range(N_TRIALS):
-        Run experiment with no modifications
-        Record all metrics
-Compute: mean, std, min, max for each metric
+Goal       Status   Dist(km)  Effic  NearMiss/km  MRM/km  MRM%  E-Stop%  MinClr(P5)
+goal_001   SUCCESS    0.153   0.57        0.0      157    2.0%    92%       5.6m
+goal_002   SUCCESS    0.346   0.61        2.9      197    3.2%    88%       3.1m
+goal_017   FAILED     0.552   0.35        0.0      433   10.3%    94%       3.9m
+...
+
+Legend:
+  Dist(km)   - Distance traveled in kilometers
+  Effic      - Time efficiency (expected/actual, 1.0 = optimal)
+  NearMiss/km- TTC < 2s events per kilometer
+  MRM/km     - MRM triggers per kilometer
+  MRM%       - Percentage of driving time in MRM state
+  E-Stop%    - Emergency stops as % of all MRMs
+  MinClr(P5) - 5th percentile minimum clearance (meters)
 ```
 
-### Fault Injection Conditions
+---
 
-| Fault Type | Implementation | Severity Levels |
-|------------|----------------|-----------------|
-| **Localization Noise** | Add Gaussian noise to pose | σ = [0.1, 0.5, 1.0] m |
-| **Localization Delay** | Buffer and delay pose messages | delay = [100, 500, 1000] ms |
-| **Perception Dropout** | Randomly drop object detections | rate = [10%, 30%, 50%] |
-| **Sensor Failure** | Stop publishing specific sensor | LiDAR, Camera, IMU |
-| **Control Latency** | Delay control commands | delay = [50, 100, 200] ms |
+## Key Metrics for Research Story
 
-### RISE Active
-```
-For each goal in validated_goals:
-    For each fault_condition in fault_matrix:
-        For trial in range(N_TRIALS):
-            Run with RISE enabled
-            Record all metrics + RISE-specific metrics
-```
+### Baseline Characterization
+1. **MRM Rate (per km)** - How often does the system trigger safety stops?
+2. **Recovery Rate** - When MRM triggers, does it recover automatically?
+3. **E-Stop vs Comfortable Ratio** - Are interventions severe or mild?
 
-### RISE-Specific Metrics
+### Risk-Aware Control Effectiveness
+1. **Near Miss Rate reduction** - Do we have fewer close calls?
+2. **MRM Rate reduction** - Do preemptive constraints reduce reactive stops?
+3. **E-Stop Ratio reduction** - Are remaining interventions less severe?
 
-| Metric | Description | Unit |
-|--------|-------------|------|
-| **CVaR Value** | Computed tail-risk metric | unitless |
-| **Constraint Tightening Factor** | How much constraints were reduced | % |
-| **Preemptive Intervention Count** | Times RISE tightened before violation | count |
-| **Prediction Residual** | Digital Twin prediction error | varies |
-| **RISE Latency** | Time from data to constraint update | ms |
+### The Story We Want to Tell
 
-## Data Requirements
+> "Baseline Autoware triggers MRM 200+ times per km, with 90%+ being emergency stops.
+> Our risk-aware control system, using CVaR computed from ST-GAT residuals,
+> reduces MRM rate by X% and shifts interventions from emergency to comfortable stops,
+> while maintaining safety margins."
 
-### Per-Experiment Output
-
-```json
-{
-  "experiment_id": "goal_001_fault_loc_noise_0.5_trial_3",
-  "condition": {
-    "type": "localization_noise",
-    "parameters": {"sigma": 0.5}
-  },
-  "rise_enabled": true,
-
-  "safety_metrics": {
-    "collision_count": 0,
-    "min_ttc": 4.2,
-    "near_miss_count": 1,
-    "lane_departure_rate": 0.02,
-    "min_lateral_margin": 0.8,
-    "min_object_distance": 2.1
-  },
-
-  "reliability_metrics": {
-    "goal_reached": true,
-    "lateral_rmse": 0.15,
-    "longitudinal_rmse": 0.23,
-    "velocity_rmse": 0.8,
-    "completion_time": 85.3
-  },
-
-  "fail_operational_metrics": {
-    "mrm_trigger_count": 3,
-    "mrm_total_duration": 5.2,
-    "emergency_stop_count": 1,
-    "comfortable_stop_count": 2,
-    "recovery_rate": 1.0
-  },
-
-  "rise_metrics": {
-    "mean_cvar": 0.45,
-    "max_cvar": 0.82,
-    "tightening_events": 12,
-    "preemptive_interventions": 2,
-    "mean_residual": 0.08
-  }
-}
-```
-
-## Analysis Plan
-
-### Comparative Analysis
-
-For each metric M:
-```
-Δ_fault = M(fault) - M(baseline)           # Impact of fault
-Δ_rise = M(fault+RISE) - M(fault)          # Impact of RISE
-Improvement = -Δ_rise / Δ_fault            # % recovery toward baseline
-```
-
-### Statistical Tests
-
-1. **Paired t-test**: Compare same routes with/without RISE
-2. **ANOVA**: Compare across fault severity levels
-3. **Correlation**: CVaR vs actual violations
-
-### Key Hypotheses
-
-**H1:** RISE reduces collision proxy metrics under fault conditions
-- Metric: min_object_distance, near_miss_count
-- Test: Wilcoxon signed-rank test (non-parametric)
-
-**H2:** RISE reduces unnecessary MRM triggers
-- Metric: mrm_trigger_count, mrm_duration
-- Condition: Only for non-critical situations
-
-**H3:** CVaR correlates with actual constraint violations
-- Metric: Pearson correlation of CVaR vs violation_count
-- Expected: r > 0.7
-
-**H4:** RISE provides preemptive warning
-- Metric: Time between CVaR spike and violation
-- Expected: CVaR elevates before violation in >80% of cases
+---
 
 ## Implementation Checklist
 
-- [ ] Add collision proxy computation to watchdog
-- [ ] Add trajectory deviation computation (requires planned path)
-- [ ] Implement TTC computation from object data
-- [ ] Create fault injection framework
-- [ ] Implement RISE metrics logging
-- [ ] Create analysis/visualization scripts
+- [x] MRM counting (emergency vs comfortable)
+- [x] TTC computation
+- [x] Object distance tracking
+- [ ] **Fix lateral error - use control_performance_analysis**
+- [ ] **Normalize all counts by distance (per km)**
+- [ ] **Add lane departure detection from diagnostics**
+- [ ] **Use percentile-based clearance (P5)**
+- [ ] Add control_performance/error to recording topics
+- [ ] Re-run experiments with updated recording
 
-## Next Steps
+---
 
-1. Finalize collision detection approach (recommend proximity-based)
-2. Add `/planning/mission_planning/route` to recording for path deviation
-3. Implement fault injection nodes
-4. Design DT retraining pipeline for new Autoware/AWSIM version
+## Comparison with Prior Work (T-ITS Paper)
+
+The T-ITS paper used these metrics for fault detection:
+- Detection accuracy (93.7%)
+- Processing time (1.13ms)
+- Fault detection latency
+
+For RISE, we need metrics that show:
+1. **Safety improvement** (not just detection)
+2. **Operational impact** (does it help complete missions?)
+3. **Intervention quality** (preemptive vs reactive)
+
+The MRM rate and near-miss rate are the key metrics that connect detection to action.

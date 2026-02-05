@@ -1,6 +1,6 @@
 # Risk-Aware Control - Task List
 
-**Last Updated:** 2026-02-04
+**Last Updated:** 2026-02-05
 
 ---
 
@@ -23,88 +23,102 @@
 
 ---
 
-## Phase 1: Experiment Infrastructure ✅ MOSTLY COMPLETE
+## Phase 1: Experiment Infrastructure ✅ COMPLETE
 
 ### 1.1 Automation ✅
-| Status | Task |
-|--------|------|
-| ✅ | AWSIM automation (`--config` JSON flag) |
-| ✅ | Experiment launcher scripts |
-| ✅ | Batch runner |
-| ✅ | Goal capture tool |
-| ✅ | Stuck detection watchdog |
-| ✅ | Session-based workflow |
-| ✅ | Vehicle reset script |
-| ✅ | MRM state tracking |
+- [x] AWSIM automation (`--config` JSON flag)
+- [x] Experiment launcher scripts
+- [x] Batch runner
+- [x] Goal capture tool
+- [x] Stuck detection watchdog
+- [x] Session-based workflow
+- [x] Vehicle reset script
+- [x] MRM state tracking
 
 ### 1.2 Modular Experiment Framework ✅
-| Status | Task |
-|--------|------|
-| ✅ | Create `experiments/lib/` module structure |
-| ✅ | `config.py` - Configuration management |
-| ✅ | `ros_utils.py` - ROS2 utilities |
-| ✅ | `metrics.py` - Metrics computation |
-| ✅ | `run_experiments.py` - Main experiment runner |
-| ✅ | MRM diagnostic analysis script |
+- [x] `experiments/lib/` module structure
+- [x] `config.py` - Configuration management
+- [x] `ros_utils.py` - ROS2 utilities
+- [x] `metrics.py` - Metrics computation
+- [x] `run_experiments.py` - Main experiment runner
+- [x] MRM diagnostic analysis script
 
 ### 1.3 Metrics Definition ✅
-| Status | Task |
-|--------|------|
-| ✅ | Safety metrics (collision proxy, min distance, TTC) |
-| ✅ | Reliability metrics (goal success, driving time, velocity) |
-| ✅ | Fail-operational metrics (MRM triggers, recovery rate) |
-| ✅ | Comfort metrics (acceleration, jerk) |
-| ✅ | Collision detection via planning_evaluator topic |
-
-### 1.4 Data Pipeline Planning ✅
-| Status | Task |
-|--------|------|
-| ✅ | Document T-ITS paper data pipeline |
-| ✅ | Define recording topics (13 topics) |
-| ✅ | Plan extraction → sequence → training flow |
+- [x] Safety metrics (collision proxy, min distance, TTC with lateral filtering)
+- [x] Reliability metrics (goal success, driving time, velocity, path deviation)
+- [x] Fail-operational metrics (MRM rate/km, E-stop ratio, recovery rate)
+- [x] Comfort metrics (acceleration, jerk)
+- [x] Normalized metrics (per km, event-based counting)
 
 ---
 
-## Phase 1.5: Data Collection 🔄 CURRENT
+## Phase 1.5: Baseline Data Collection ✅ COMPLETE
 
-### Immediate Tasks
-| Status | Task |
-|--------|------|
-| ✅ | Run experiments on all captured goals (baseline) - 25 goals, 15 success, 10 failed |
-| ✅ | Analyze MRM triggers from rosbag data - MRM self-recovers in ~0.1s |
-| ✅ | Validate metrics computation - Fixed bytes bug, goal_reached detection |
-| ⏳ | Add `/planning_evaluator/metrics` to recording |
-| ⏳ | Recapture goals avoiding stuck cluster (Y=50545-50600) |
+### Results Summary
+- **25 goals tested** at 100 km/h max velocity
+- **100% success rate** (25/25) after goal_017 adjustment
+- **Average MRM rate:** 199 MRM/km
+- **Average E-stop ratio:** 91%
+- **Path deviation:** 0.09-0.18m (good tracking)
+- **Near-miss rate:** 0-2.4/km (properly filtered)
 
-### Data Pipeline Implementation
-| Status | Task |
-|--------|------|
-| ⏳ | Implement rosbag → JSON extraction |
-| ⏳ | Implement timestamp synchronization (10Hz) |
-| ⏳ | Implement feature extraction |
-| ⏳ | Implement sequence generation |
-| ⏳ | Test with ST-GAT training |
+### Completed Tasks
+- [x] Run baseline experiments on all goals
+- [x] Fix goal_017 (shortened to avoid stuck point)
+- [x] Fix TTC computation (lateral filtering, event-based counting)
+- [x] Update max_vel to 100 km/h (27.78 m/s)
+- [x] Add PathDev column to summary
 
 ---
 
-## Phase 2: Stress Testing (Find Failures)
+## Phase 2: Fault Injection & Stress Testing 🔄 CURRENT
 
-### Fault Injection
+### 2.1 Fault Injection Infrastructure
 | Status | Task |
 |--------|------|
 | ⏳ | Create `fault_injection` ROS2 package |
-| ⏳ | Implement localization noise injector |
-| ⏳ | Implement perception dropout |
-| ⏳ | Implement control latency |
-| ⏳ | Test fault propagation to MRM |
+| ⏳ | Implement base fault injector class |
+| ⏳ | Topic remapping launch configuration |
+| ⏳ | Fault parameter configuration (YAML) |
 
-### Failure Analysis
-| Status | Task |
-|--------|------|
-| ⏳ | Run fault sweep experiments |
-| ⏳ | Identify failure thresholds |
-| ⏳ | Document failure modes |
-| ⏳ | Select "goldilocks" scenarios for RISE validation |
+### 2.2 Perception Fault Injectors (Primary)
+| Status | Task | Target |
+|--------|------|--------|
+| ⏳ | Object detection dropout | Drop % of detected objects |
+| ⏳ | Object detection delay | Buffer + delay messages |
+| ⏳ | Object position noise | Gaussian noise on positions |
+| ⏳ | False positive injection | Add phantom objects |
+
+**Target Topics:**
+- `/perception/object_recognition/objects`
+- `/perception/object_recognition/tracking/objects`
+
+### 2.3 Localization Fault Injectors
+| Status | Task | Target |
+|--------|------|--------|
+| ⏳ | Position noise | Gaussian noise on pose |
+| ⏳ | Position drift | Cumulative offset over time |
+| ⏳ | Covariance spike | Increase uncertainty suddenly |
+| ⏳ | Heading error | Offset yaw angle |
+
+**Target Topics:**
+- `/localization/kinematic_state`
+- `/localization/pose_with_covariance`
+
+### 2.4 Scenario-Based Challenges (NPC Behavior)
+| Status | Task | Setup |
+|--------|------|-------|
+| ⏳ | Static obstacle in lane | Spawn stationary NPC |
+| ⏳ | Lead vehicle sudden brake | NPC ahead brakes to zero |
+| ⏳ | Cut-in scenario | NPC enters lane ahead |
+
+### 2.5 Fault Sweep Experiments
+| Status | Task | Goal |
+|--------|------|------|
+| ⏳ | Perception delay sweep (0-500ms) | Find MRM threshold |
+| ⏳ | Dropout rate sweep (0-50%) | Find safety threshold |
+| ⏳ | Position noise sweep (0-2m) | Find lane departure threshold |
+| ⏳ | Document failure modes | Characterize system limits |
 
 ---
 
@@ -112,11 +126,11 @@
 
 | Status | Task |
 |--------|------|
-| ⏳ | Collect training data (new Autoware/AWSIM) |
+| ⏳ | Collect training data (baseline + fault conditions) |
 | ⏳ | Adapt ST-GAT for new state representation |
 | ⏳ | Add MRM state to features |
-| ⏳ | Add trajectory deviation to features |
 | ⏳ | Train and validate model |
+| ⏳ | Verify residual detection of faults |
 
 ---
 
@@ -125,9 +139,10 @@
 | Status | Task |
 |--------|------|
 | ⏳ | Implement CVaR computation from residuals |
-| ⏳ | Implement constraint tightening |
-| ⏳ | Implement preemptive intervention |
-| ⏳ | Integration with Autoware (velocity limits) |
+| ⏳ | Design constraint tightening mapping (CVaR → velocity limit) |
+| ⏳ | Implement preemptive tightening (trend detection) |
+| ⏳ | Integration with Autoware (velocity_smoother limits) |
+| ⏳ | Parameter tuning |
 
 ---
 
@@ -135,9 +150,10 @@
 
 | Status | Task |
 |--------|------|
-| ⏳ | Run baseline vs RISE comparison |
-| ⏳ | Statistical analysis |
-| ⏳ | Generate figures |
+| ⏳ | Run baseline vs RISE under fault conditions |
+| ⏳ | Statistical analysis (MRM reduction, safety maintenance) |
+| ⏳ | Generate publication figures |
+| ⏳ | Write results section |
 
 ---
 
@@ -146,24 +162,25 @@
 | File | Purpose |
 |------|---------|
 | `docs/theoretical_framework.md` | Core RISE formulation |
-| `docs/research_notes/metrics_framework.md` | Metrics definitions |
-| `docs/research_notes/data_pipeline_plan.md` | Data collection plan |
-| `docs/research_notes/experiment_findings_and_mrm_analysis.md` | Experiment results, MRM analysis, historical fixes |
-| `README.md` | Project overview and config changes |
-
-**Note:** Historical fix documentation (localization_initialization_fix.md, awsim_routing_state_fix.md) consolidated into experiment_findings_and_mrm_analysis.md
+| `docs/research_notes/metrics_framework.md` | Metrics definitions and rationale |
+| `docs/research_notes/fault_injection_strategy.md` | Fault types and implementation plan |
+| `docs/research_notes/experiment_findings_and_mrm_analysis.md` | Experiment results, MRM analysis |
 
 ---
 
-## Key Configuration Changes
+## Key Configuration
 
 **Autoware:**
-- `max_vel`: 4.17 → 11.11 m/s (15 → 40 km/h)
+- `max_vel`: 27.78 m/s (100 km/h)
 - File: `autoware/.../common.param.yaml`
 
 **AWSIM:**
 - Spawn position: (81384.60, 49922.00, 41.28)
 - File: `experiments/configs/baseline.json`
+
+**Experiments:**
+- 25 goals covering ~17 km total distance
+- Recording: 19 topics (see `experiments/lib/config.py`)
 
 ---
 
@@ -171,38 +188,30 @@
 
 ```
 Risk-Aware-Control/
-├── autoware/                 # Pre-built Autoware
+├── autoware/                 # Pre-built Autoware (modified config)
 ├── awsim_labs_v1.6.1/        # AWSIM binary
 ├── Shinjuku-Map/             # HD map
 ├── Run_AWSIM.sh              # Launch AWSIM
 ├── Run_Autoware.sh           # Launch Autoware
-├── README.md                 # Project overview
-├── TODO.md                   # This file
 │
 ├── docs/
 │   ├── theoretical_framework.md
 │   └── research_notes/
 │       ├── metrics_framework.md
-│       ├── data_pipeline_plan.md
+│       ├── fault_injection_strategy.md
 │       └── experiment_findings_and_mrm_analysis.md
 │
 ├── experiments/
 │   ├── lib/                  # Modular experiment library
-│   │   ├── __init__.py
-│   │   ├── config.py         # Configuration management
+│   │   ├── config.py         # Configuration + recording topics
 │   │   ├── ros_utils.py      # ROS2 utilities
 │   │   └── metrics.py        # Metrics computation
-│   ├── scripts/
-│   │   ├── run_experiments.py          # Main experiment runner
-│   │   ├── analyze_mrm_diagnostics.py  # MRM diagnostic analysis
-│   │   ├── capture_goals_session.py    # Goal capture tool
-│   │   ├── reset_vehicle.py            # Vehicle reset
-│   │   ├── set_goal.py                 # Goal setting
-│   │   └── diagnose_system.py          # System diagnostics
-│   ├── configs/
-│   │   ├── baseline.json         # AWSIM config
-│   │   └── captured_goals.json   # Goal coordinates
-│   └── data/                     # Experiment output
+│   ├── scripts/              # Experiment automation
+│   ├── configs/              # AWSIM + goal configs
+│   └── data/                 # Experiment output
+│       └── summary.txt       # Latest metrics summary
 │
-└── ros2_ws/                  # (future) Custom ROS2 packages
+└── ros2_ws/                  # Custom ROS2 packages (to be created)
+    └── src/
+        └── fault_injection/  # Fault injection package
 ```

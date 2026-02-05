@@ -15,6 +15,7 @@ autoware/log/
 .idea/
 *~
 *.swp
+experiments/lib/__pycache__/
 
 # Data
 data/

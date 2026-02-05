@@ -1,0 +1,413 @@
+{
+  "source_experiment": "goal_012_baseline_t1_20260203_204725",
+  "extraction_time": "2026-02-05T00:40:10.888615",
+  "stuck_at_time": 137.118287373,
+  "total_waypoints": 15,
+  "goals": [
+    {
+      "id": "goal_012_wp01",
+      "goal": {
+        "position": {
+          "x": 81385.9375,
+          "y": 49922.828125,
+          "z": 41.28214645385742
+        },
+        "orientation": {
+          "z": 0.2666000524235369,
+          "w": 0.963807248389307
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888461"
+      },
+      "captured_at": "2026-02-05T00:40:10.888470",
+      "estimated_distance": 1.6,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 8.680053107,
+      "velocity_at_point": 1.0
+    },
+    {
+      "id": "goal_012_wp02",
+      "goal": {
+        "position": {
+          "x": 81402.421875,
+          "y": 49970.07421875,
+          "z": 40.87488555908203
+        },
+        "orientation": {
+          "z": 0.7588526850854289,
+          "w": 0.6512623145389536
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888484"
+      },
+      "captured_at": "2026-02-05T00:40:10.888486",
+      "estimated_distance": 51.3,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 30.115279484,
+      "velocity_at_point": 6.02
+    },
+    {
+      "id": "goal_012_wp03",
+      "goal": {
+        "position": {
+          "x": 81395.109375,
+          "y": 50019.69140625,
+          "z": 39.98789978027344
+        },
+        "orientation": {
+          "z": 0.7523612242291676,
+          "w": 0.6587507785774437
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888494"
+      },
+      "captured_at": "2026-02-05T00:40:10.888496",
+      "estimated_distance": 98.3,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 36.320834215,
+      "velocity_at_point": 9.9
+    },
+    {
+      "id": "goal_012_wp04",
+      "goal": {
+        "position": {
+          "x": 81388.5,
+          "y": 50069.3515625,
+          "z": 39.0733528137207
+        },
+        "orientation": {
+          "z": 0.7578625123002561,
+          "w": 0.6524142950993211
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888504"
+      },
+      "captured_at": "2026-02-05T00:40:10.888505",
+      "estimated_distance": 147.4,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 41.08552525,
+      "velocity_at_point": 10.73
+    },
+    {
+      "id": "goal_012_wp05",
+      "goal": {
+        "position": {
+          "x": 81380.71875,
+          "y": 50118.85546875,
+          "z": 37.95851516723633
+        },
+        "orientation": {
+          "z": 0.7599379131284862,
+          "w": 0.6499956678239643
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888513"
+      },
+      "captured_at": "2026-02-05T00:40:10.888514",
+      "estimated_distance": 196.9,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 46.094382255,
+      "velocity_at_point": 8.24
+    },
+    {
+      "id": "goal_012_wp06",
+      "goal": {
+        "position": {
+          "x": 81384.8828125,
+          "y": 50168.7109375,
+          "z": 37.09953308105469
+        },
+        "orientation": {
+          "z": 0.2889323926777896,
+          "w": 0.9573495038184788
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888521"
+      },
+      "captured_at": "2026-02-05T00:40:10.888523",
+      "estimated_distance": 246.7,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 56.413882068,
+      "velocity_at_point": 4.27
+    },
+    {
+      "id": "goal_012_wp07",
+      "goal": {
+        "position": {
+          "x": 81433.5390625,
+          "y": 50180.2734375,
+          "z": 36.41463851928711
+        },
+        "orientation": {
+          "z": 0.0892457882026827,
+          "w": 0.996009633130163
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888534"
+      },
+      "captured_at": "2026-02-05T00:40:10.888536",
+      "estimated_distance": 262.9,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 65.099459024,
+      "velocity_at_point": 8.62
+    },
+    {
+      "id": "goal_012_wp08",
+      "goal": {
+        "position": {
+          "x": 81482.8125,
+          "y": 50189.4140625,
+          "z": 35.27011489868164
+        },
+        "orientation": {
+          "z": 0.09148187846324629,
+          "w": 0.9958067412469328
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888543"
+      },
+      "captured_at": "2026-02-05T00:40:10.888545",
+      "estimated_distance": 284.9,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 70.115012639,
+      "velocity_at_point": 10.72
+    },
+    {
+      "id": "goal_012_wp09",
+      "goal": {
+        "position": {
+          "x": 81532.0,
+          "y": 50198.51953125,
+          "z": 34.28014373779297
+        },
+        "orientation": {
+          "z": 0.08770419366107375,
+          "w": 0.9961465627176861
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888552"
+      },
+      "captured_at": "2026-02-05T00:40:10.888553",
+      "estimated_distance": 313.4,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 75.883667274,
+      "velocity_at_point": 6.39
+    },
+    {
+      "id": "goal_012_wp10",
+      "goal": {
+        "position": {
+          "x": 81555.7734375,
+          "y": 50242.5546875,
+          "z": 34.21501159667969
+        },
+        "orientation": {
+          "z": 0.770644395244191,
+          "w": 0.6372654204322679
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888560"
+      },
+      "captured_at": "2026-02-05T00:40:10.888562",
+      "estimated_distance": 363.4,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 92.090359007,
+      "velocity_at_point": 5.87
+    },
+    {
+      "id": "goal_012_wp11",
+      "goal": {
+        "position": {
+          "x": 81546.390625,
+          "y": 50291.77734375,
+          "z": 34.198768615722656
+        },
+        "orientation": {
+          "z": 0.7682932722720329,
+          "w": 0.6400979985764147
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888569"
+      },
+      "captured_at": "2026-02-05T00:40:10.888570",
+      "estimated_distance": 403.6,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 98.684065425,
+      "velocity_at_point": 9.29
+    },
+    {
+      "id": "goal_012_wp12",
+      "goal": {
+        "position": {
+          "x": 81537.3203125,
+          "y": 50340.96484375,
+          "z": 34.11060333251953
+        },
+        "orientation": {
+          "z": 0.7686719541201729,
+          "w": 0.6396432028475523
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888577"
+      },
+      "captured_at": "2026-02-05T00:40:10.888579",
+      "estimated_distance": 445.9,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 103.59919731,
+      "velocity_at_point": 10.79
+    },
+    {
+      "id": "goal_012_wp13",
+      "goal": {
+        "position": {
+          "x": 81530.1875,
+          "y": 50390.5859375,
+          "z": 34.21336364746094
+        },
+        "orientation": {
+          "z": 0.7386073542277781,
+          "w": 0.6741358737529412
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888586"
+      },
+      "captured_at": "2026-02-05T00:40:10.888587",
+      "estimated_distance": 490.7,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 108.817679633,
+      "velocity_at_point": 9.0
+    },
+    {
+      "id": "goal_012_wp14",
+      "goal": {
+        "position": {
+          "x": 81522.0546875,
+          "y": 50439.921875,
+          "z": 34.41282653808594
+        },
+        "orientation": {
+          "z": 0.7672013584349364,
+          "w": 0.6414063264542907
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888594"
+      },
+      "captured_at": "2026-02-05T00:40:10.888596",
+      "estimated_distance": 535.9,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 115.578512085,
+      "velocity_at_point": 7.97
+    },
+    {
+      "id": "goal_012_wp15",
+      "goal": {
+        "position": {
+          "x": 81513.3359375,
+          "y": 50489.17578125,
+          "z": 35.702232360839844
+        },
+        "orientation": {
+          "z": 0.7548453724406952,
+          "w": 0.6559027852546963
+        },
+        "frame_id": "map",
+        "start_position": {
+          "x": 81384.6,
+          "y": 49922.0,
+          "z": 41.28
+        },
+        "timestamp": "2026-02-05T00:40:10.888602"
+      },
+      "captured_at": "2026-02-05T00:40:10.888604",
+      "estimated_distance": 581.6,
+      "source": "extracted_from_trajectory",
+      "original_goal": "goal_012",
+      "trajectory_time": 123.01787585,
+      "velocity_at_point": 4.62
+    }
+  ]
+}
