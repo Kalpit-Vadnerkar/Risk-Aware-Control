@@ -1,0 +1,13 @@
+# Perception Delay Sweep
+# Introduces a fixed delay to all perception messages.
+# Tests: planning robustness to stale perception data.
+#
+# Sweep: 11 values from 0ms to 1000ms
+
+scenario_type: perception_delay
+description: "Fixed delay applied to perception messages"
+
+params: {}
+
+sweep_params:
+  delay_ms: [0, 50, 100, 150, 200, 300, 400, 500, 600, 800, 1000]

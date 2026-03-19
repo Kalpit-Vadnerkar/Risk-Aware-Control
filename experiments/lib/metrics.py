@@ -53,14 +53,16 @@ class SafetyMetrics:
     mean_object_distance: float = 0.0
     collision_proxy_count: int = 0  # Times distance < threshold
     collision_threshold: float = 2.0  # meters (vehicle half-width + margin)
-    near_miss_count: int = 0  # TTC < threshold
+    near_miss_count: int = 0  # closing_time < threshold
     near_miss_rate: float = 0.0  # Near misses per km
-    critical_ttc_count: int = 0  # TTC < 1s (critical)
-    critical_ttc_rate: float = 0.0  # Critical TTC per km
+    critical_ttc_count: int = 0  # closing_time < 1s (critical)
+    critical_ttc_rate: float = 0.0  # Critical events per km
     near_miss_threshold: float = 2.0  # seconds
-    min_ttc: float = float('inf')
+    min_ttc: float = float('inf')    # TTC for moving obstacles (relative closing speed)
     mean_ttc: float = 0.0
+    min_closing_time: float = float('inf')  # distance/ego_speed — valid for static & moving obstacles
     object_count_total: int = 0  # Total object detections
+    min_injected_obstacle_distance: float = float('inf')  # Distance to the injected obstacle specifically (excludes NPCs)
 
 
 @dataclass
@@ -134,9 +136,11 @@ class ExperimentMetrics:
 class MetricsCollector:
     """Collects and computes metrics from rosbag data."""
 
-    def __init__(self, bag_path: str, goal_position: Optional[Dict[str, float]] = None):
+    def __init__(self, bag_path: str, goal_position: Optional[Dict[str, float]] = None,
+                 injected_uuid_bytes: Optional[bytes] = None):
         self.bag_path = bag_path
         self.goal_position = goal_position
+        self.injected_uuid_bytes = injected_uuid_bytes
 
         # Data storage with timestamps for synchronization
         self.velocities: List[Tuple[float, float]] = []  # (timestamp, velocity)
@@ -147,7 +151,9 @@ class MetricsCollector:
 
         # Object tracking with ego-relative distances
         self.object_distances: List[Tuple[float, float]] = []  # (timestamp, min_distance)
-        self.ttc_values: List[Tuple[float, float]] = []  # (timestamp, ttc)
+        self.ttc_values: List[Tuple[float, float]] = []         # (timestamp, ttc) — moving obstacles
+        self.closing_time_values: List[Tuple[float, float]] = []  # (timestamp, closing_time) — all obstacles ahead
+        self.injected_obstacle_distances: List[Tuple[float, float]] = []  # (timestamp, distance) — injected object only
 
         # State tracking
         self.mrm_states: List[Tuple[float, int, int]] = []  # (timestamp, state, behavior)
@@ -283,7 +289,7 @@ class MetricsCollector:
                 heading = self._quaternion_to_yaw(qz, qw)
                 self.positions.append((time_sec, x, y, heading))
 
-            elif topic in ['/perception/object_recognition/objects',
+            elif topic in ['/perception/object_recognition/objects_filtered',
                           '/perception/object_recognition/tracking/objects']:
                 self._process_objects(msg, time_sec)
 
@@ -330,6 +336,10 @@ class MetricsCollector:
 
         min_dist = float('inf')
         min_ttc = float('inf')
+        min_closing_time = float('inf')
+        injected_dist = float('inf')
+
+        LANE_WIDTH_THRESHOLD = 2.5  # meters
 
         for obj in objects:
             # Handle both PredictedObjects and TrackedObjects message types
@@ -356,42 +366,49 @@ class MetricsCollector:
             # Compute relative position
             rel_x = obj_x - ego_x
             rel_y = obj_y - ego_y
-            distance = math.sqrt(rel_x*rel_x + rel_y*rel_y)
+            distance = math.sqrt(rel_x * rel_x + rel_y * rel_y)
             min_dist = min(min_dist, distance)
 
-            # Compute TTC if we have velocity info
-            if ego_vel is not None and ego_vel > 0.1:
-                # Project relative position onto ego heading direction
+            # Track injected obstacle distance separately using UUID
+            if self.injected_uuid_bytes is not None:
+                try:
+                    obj_uuid = bytes(obj.object_id.uuid)
+                    if obj_uuid == self.injected_uuid_bytes:
+                        injected_dist = min(injected_dist, distance)
+                except Exception:
+                    pass
+
+            if ego_vel is not None and ego_vel > 0.01:
                 cos_h = math.cos(ego_heading)
                 sin_h = math.sin(ego_heading)
 
-                # Longitudinal distance (in front of ego)
-                long_dist = rel_x * cos_h + rel_y * sin_h
-
-                # Lateral distance (perpendicular to ego heading)
-                lat_dist = -rel_x * sin_h + rel_y * cos_h
-
-                # Only consider objects:
-                # 1. In front of ego (long_dist > 0)
-                # 2. Within lane width (|lat_dist| < 2.5m for ~lane width + vehicle width)
-                LANE_WIDTH_THRESHOLD = 2.5  # meters
+                long_dist = rel_x * cos_h + rel_y * sin_h   # positive = ahead
+                lat_dist = -rel_x * sin_h + rel_y * cos_h   # positive = left
 
                 if long_dist > 0 and abs(lat_dist) < LANE_WIDTH_THRESHOLD:
-                    # Relative velocity along ego heading
+                    # closing_time: time to reach object at current ego speed regardless
+                    # of object motion. Works for static obstacles (obj_vx=vy=0) where
+                    # standard TTC = long_dist / ego_vel is well-defined.
+                    ct = long_dist / max(ego_vel, 0.5)  # floor ego_vel to avoid huge values at low speed
+                    if ct < 30.0:
+                        min_closing_time = min(min_closing_time, ct)
+
+                    # Standard TTC: only when actively closing (relative speed > 0)
                     obj_speed_along_ego = obj_vx * cos_h + obj_vy * sin_h
                     closing_speed = ego_vel - obj_speed_along_ego
-
-                    # TTC = distance / closing_speed (only if closing)
-                    # Only record TTC < 10s (anything higher isn't safety-relevant)
                     if closing_speed > 0.1:
                         ttc = long_dist / closing_speed
-                        if ttc < 10.0:  # Cap at 10 seconds
+                        if ttc < 10.0:
                             min_ttc = min(min_ttc, ttc)
 
         if min_dist < float('inf'):
             self.object_distances.append((time_sec, min_dist))
         if min_ttc < float('inf'):
             self.ttc_values.append((time_sec, min_ttc))
+        if min_closing_time < float('inf'):
+            self.closing_time_values.append((time_sec, min_closing_time))
+        if injected_dist < float('inf'):
+            self.injected_obstacle_distances.append((time_sec, injected_dist))
 
     def _process_trajectory(self, msg, time_sec: float):
         """Process planned trajectory for tracking error computation."""
@@ -459,30 +476,34 @@ class MetricsCollector:
             p5_idx = max(0, int(len(sorted_distances) * 0.05))
             m.clearance_p5 = sorted_distances[p5_idx]
 
+        if self.injected_obstacle_distances:
+            m.min_injected_obstacle_distance = min(d for _, d in self.injected_obstacle_distances)
+
         if self.ttc_values:
             ttcs = [t for _, t in self.ttc_values]
             m.min_ttc = min(ttcs)
             m.mean_ttc = sum(ttcs) / len(ttcs)
 
-            # Count distinct events (not every frame)
-            # An event starts when TTC drops below threshold and ends when it rises above
-            # Minimum 2s gap between separate events to avoid double-counting
-            MIN_EVENT_GAP = 2.0  # seconds
+        # closing_time covers both moving and static obstacles ahead.
+        # Use it for near_miss and critical event counts so static obstacle
+        # scenarios (where standard TTC is distance/ego_speed) are correctly tracked.
+        if self.closing_time_values:
+            m.min_closing_time = min(t for _, t in self.closing_time_values)
+
+            MIN_EVENT_GAP = 2.0  # seconds between distinct events
 
             near_miss_events = 0
             critical_ttc_events = 0
             last_near_miss_time = -float('inf')
             last_critical_time = -float('inf')
 
-            for timestamp, ttc in self.ttc_values:
-                # Near miss event (TTC < 2s)
-                if ttc < m.near_miss_threshold:
+            for timestamp, ct in self.closing_time_values:
+                if ct < m.near_miss_threshold:
                     if timestamp - last_near_miss_time > MIN_EVENT_GAP:
                         near_miss_events += 1
                         last_near_miss_time = timestamp
 
-                # Critical TTC event (TTC < 1s)
-                if ttc < 1.0:
+                if ct < 1.0:
                     if timestamp - last_critical_time > MIN_EVENT_GAP:
                         critical_ttc_events += 1
                         last_critical_time = timestamp
@@ -490,7 +511,6 @@ class MetricsCollector:
             m.near_miss_count = near_miss_events
             m.critical_ttc_count = critical_ttc_events
 
-            # Normalize by distance
             if distance_km > 0:
                 m.near_miss_rate = m.near_miss_count / distance_km
                 m.critical_ttc_rate = m.critical_ttc_count / distance_km
@@ -653,9 +673,10 @@ class MetricsCollector:
             m.max_lateral_acceleration = max_lat_accel
 
 
-def compute_metrics_from_bag(bag_path: str, goal_position: Optional[Dict[str, float]] = None) -> ExperimentMetrics:
+def compute_metrics_from_bag(bag_path: str, goal_position: Optional[Dict[str, float]] = None,
+                             injected_uuid_bytes: Optional[bytes] = None) -> ExperimentMetrics:
     """Convenience function to compute metrics from a rosbag."""
-    collector = MetricsCollector(bag_path, goal_position)
+    collector = MetricsCollector(bag_path, goal_position, injected_uuid_bytes)
     collector.read_bag()
     return collector.compute_metrics()
 

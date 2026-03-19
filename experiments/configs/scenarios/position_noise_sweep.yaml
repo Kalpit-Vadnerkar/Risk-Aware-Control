@@ -1,0 +1,13 @@
+# Position Noise Sweep
+# Adds Gaussian noise to object positions in perception messages.
+# Tests: planning robustness to noisy position estimates.
+#
+# Sweep: 9 noise levels from 0m to 4m standard deviation
+
+scenario_type: position_noise
+description: "Gaussian noise on detected object positions"
+
+params: {}
+
+sweep_params:
+  noise_std: [0.0, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0]

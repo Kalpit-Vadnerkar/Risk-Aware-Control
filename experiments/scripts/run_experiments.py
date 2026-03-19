@@ -3,6 +3,7 @@
 Main experiment runner for RISE validation.
 
 Runs experiments on all or selected goals, collects data, and computes metrics.
+Supports scenario-based experiments with perception interceptor.
 
 Usage:
   python3 run_experiments.py [options]
@@ -15,10 +16,18 @@ Options:
   --skip-reset               Don't reset vehicle between experiments
   --skip-existing            Skip goals that already have successful results
   --dry-run                  Show what would run without executing
+  --scenario YAML            Path to scenario YAML for interceptor config
+  --scenario-params JSON     JSON override for scenario params (single run)
 
 Examples:
-  # Run all experiments
+  # Run all experiments (passthrough interceptor)
   python3 run_experiments.py
+
+  # Run with scenario
+  python3 run_experiments.py --scenario static_obstacle.yaml --goals "goal_007"
+
+  # Run with inline scenario params
+  python3 run_experiments.py --scenario-params '{"strategy":"static_obstacle","distance":100}' --goals "goal_007"
 
   # Run specific goals (QUOTE the comma-separated list!)
   python3 run_experiments.py --goals "goal_007,goal_008,goal_009"
@@ -35,6 +44,7 @@ Examples:
 
 import argparse
 import os
+import signal
 import sys
 import time
 import subprocess
@@ -46,7 +56,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 from config import (
     ExperimentConfig, GoalConfig, load_goals,
-    get_recording_topics, DATA_DIR, SCRIPTS_DIR
+    get_recording_topics, DATA_DIR, SCRIPTS_DIR, CONFIG_DIR
 )
 from ros_utils import (
     wait_for_topic, get_autoware_state, get_mrm_state, get_velocity,
@@ -351,11 +361,32 @@ class ExperimentRunner:
             print("No rosbag data to analyze")
             return
 
+        # Try to load injected obstacle UUID written by the interceptor
+        injected_uuid_bytes = None
+        obstacle_info_path = '/tmp/rise_obstacle_info.json'
+        if os.path.exists(obstacle_info_path):
+            try:
+                with open(obstacle_info_path) as f:
+                    obstacle_info = json.load(f)
+                uuid_hex = obstacle_info.get('uuid_hex', '')
+                if uuid_hex:
+                    injected_uuid_bytes = bytes.fromhex(uuid_hex)
+                    # Append obstacle placement info to metadata for cross-experiment reproducibility
+                    if os.path.exists(self.config.metadata_file):
+                        with open(self.config.metadata_file) as mf:
+                            metadata = json.load(mf)
+                        metadata['injected_obstacle'] = obstacle_info
+                        with open(self.config.metadata_file, 'w') as mf:
+                            json.dump(metadata, mf, indent=2)
+            except Exception as exc:
+                print(f"WARNING: Could not load obstacle info: {exc}")
+
         print(f"\nComputing metrics from: {self.config.rosbag_dir}")
         try:
             metrics = compute_metrics_from_bag(
                 self.config.rosbag_dir,
-                goal_position=self.config.goal.position
+                goal_position=self.config.goal.position,
+                injected_uuid_bytes=injected_uuid_bytes,
             )
             save_metrics(metrics, self.config.metrics_file)
             print(f"Metrics saved to: {self.config.metrics_file}")
@@ -366,10 +397,57 @@ class ExperimentRunner:
             print(f"  Driving time: {metrics.reliability.driving_time:.1f}s")
             print(f"  Mean velocity: {metrics.reliability.mean_velocity:.2f} m/s")
             print(f"  MRM triggers: {metrics.fail_operational.mrm_trigger_count}")
-            print(f"  Min object distance: {metrics.safety.min_object_distance:.2f}m")
+            print(f"  Min object distance (all): {metrics.safety.min_object_distance:.2f}m")
+            if metrics.safety.min_injected_obstacle_distance < float('inf'):
+                print(f"  Min injected obstacle distance: {metrics.safety.min_injected_obstacle_distance:.2f}m")
 
         except Exception as e:
             print(f"ERROR computing metrics: {e}")
+
+
+def start_interceptor(strategy: str, params: dict) -> subprocess.Popen:
+    """Launch the perception interceptor as a subprocess."""
+    interceptor_script = os.path.join(
+        os.path.dirname(__file__), '..', 'lib', 'perception_interceptor.py'
+    )
+
+    cmd = [
+        'python3', interceptor_script,
+        '--strategy', strategy,
+        '--params', json.dumps(params),
+    ]
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    # Wait for node to initialize
+    time.sleep(2.0)
+
+    if proc.poll() is not None:
+        stderr = proc.stderr.read().decode() if proc.stderr else ''
+        raise RuntimeError(f'Interceptor failed to start: {stderr}')
+
+    print(f"Interceptor started (PID {proc.pid}): {strategy} {params}")
+    return proc
+
+
+def stop_interceptor(proc: subprocess.Popen):
+    """Stop the interceptor gracefully."""
+    if proc is None:
+        return
+
+    try:
+        proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+    except Exception:
+        pass
+    print("Interceptor stopped")
 
 
 def reset_vehicle(max_retries: int = 2):
@@ -455,6 +533,12 @@ def main():
                         help='Show what would run without executing')
     parser.add_argument('--compute-metrics-only', type=str, default=None,
                         help='Only compute metrics for existing experiment')
+    parser.add_argument('--scenario', type=str, default=None,
+                        help='Path to scenario YAML (enables interceptor)')
+    parser.add_argument('--scenario-params', type=str, default=None,
+                        help='JSON string of scenario params (inline, no YAML needed)')
+    parser.add_argument('--campaign', type=str, default='default',
+                        help='Campaign name (subdirectory under data/)')
     args = parser.parse_args()
 
     # Handle metrics-only mode
@@ -482,6 +566,29 @@ def main():
         print("Run capture_goals_session.py first to capture goals.")
         return 1
 
+    # Resolve scenario configuration
+    scenario_type = 'passthrough'
+    scenario_params = {}
+    if args.scenario_params:
+        sp = json.loads(args.scenario_params)
+        scenario_type = sp.pop('strategy', sp.pop('scenario_type', 'passthrough'))
+        scenario_params = sp
+    elif args.scenario:
+        scenario_path = args.scenario
+        if not os.path.isabs(scenario_path):
+            candidate = os.path.join(CONFIG_DIR, 'scenarios', scenario_path)
+            if os.path.exists(candidate):
+                scenario_path = candidate
+        if os.path.exists(scenario_path):
+            from scenarios import load_scenario
+            sc = load_scenario(scenario_path)
+            scenario_type = sc.scenario_type.value
+            scenario_params = sc.params
+            if args.condition == 'baseline':
+                args.condition = scenario_type
+        else:
+            print(f"WARNING: Scenario file not found: {scenario_path}")
+
     # Filter goals
     if args.goals:
         goal_ids = [g.strip() for g in args.goals.split(',')]
@@ -500,6 +607,8 @@ def main():
     print(f"Goals to run: {len(goals)}")
     print(f"Trials per goal: {args.trials}")
     print(f"Condition: {args.condition}")
+    print(f"Scenario: {scenario_type} {scenario_params if scenario_params else ''}")
+    print(f"Campaign: {args.campaign}")
     print(f"Stuck timeout: {args.stuck_timeout}s")
     print()
     print("Goals:")
@@ -521,61 +630,78 @@ def main():
             print("WARNING: Initial reset failed, continuing anyway...")
         time.sleep(3)
 
+    # Start interceptor (runs for the entire batch)
+    interceptor_proc = None
+    try:
+        print(f"\nStarting interceptor: {scenario_type}")
+        interceptor_proc = start_interceptor(scenario_type, scenario_params)
+    except RuntimeError as e:
+        print(f"ERROR: Failed to start interceptor: {e}")
+        return 1
+
     # Run experiments
     results = []
     skipped_count = 0
     total_experiments = len(goals) * args.trials
 
-    for trial in range(args.trials):
-        for i, goal in enumerate(goals):
-            exp_num = trial * len(goals) + i + 1
-            print(f"\n{'#'*60}")
-            print(f"# EXPERIMENT {exp_num}/{total_experiments}")
-            print(f"# Goal: {goal.id}, Trial: {trial+1}/{args.trials}")
-            print(f"{'#'*60}")
+    try:
+        for trial in range(args.trials):
+            for i, goal in enumerate(goals):
+                exp_num = trial * len(goals) + i + 1
+                print(f"\n{'#'*60}")
+                print(f"# EXPERIMENT {exp_num}/{total_experiments}")
+                print(f"# Goal: {goal.id}, Trial: {trial+1}/{args.trials}")
+                print(f"{'#'*60}")
 
-            # Check if we should skip this goal
-            if args.skip_existing:
-                if check_experiment_exists(goal.id, args.condition, DATA_DIR):
-                    print(f"SKIPPING: {goal.id} already has successful result")
-                    skipped_count += 1
-                    continue
+                # Check if we should skip this goal
+                campaign_dir = os.path.join(DATA_DIR, args.campaign)
+                if args.skip_existing and os.path.isdir(campaign_dir):
+                    if check_experiment_exists(goal.id, args.condition, campaign_dir):
+                        print(f"SKIPPING: {goal.id} already has successful result")
+                        skipped_count += 1
+                        continue
 
-            # Create experiment ID
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            exp_id = f"{goal.id}_{args.condition}_t{trial+1}_{timestamp}"
+                # Create experiment ID
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                exp_id = f"{goal.id}_{args.condition}_t{trial+1}_{timestamp}"
 
-            # Create config
-            config = ExperimentConfig(
-                experiment_id=exp_id,
-                goal=goal,
-                stuck_timeout=args.stuck_timeout,
-                condition=args.condition,
-            )
+                # Create config
+                config = ExperimentConfig(
+                    experiment_id=exp_id,
+                    goal=goal,
+                    stuck_timeout=args.stuck_timeout,
+                    condition=args.condition,
+                    scenario_type=scenario_type,
+                    scenario_params=scenario_params,
+                    campaign=args.campaign,
+                )
 
-            # Run experiment
-            runner = ExperimentRunner(config)
-            success = runner.run()
+                # Run experiment
+                runner = ExperimentRunner(config)
+                success = runner.run()
 
-            # Compute metrics
-            runner.compute_and_save_metrics()
+                # Compute metrics
+                runner.compute_and_save_metrics()
 
-            results.append({
-                'experiment_id': exp_id,
-                'goal_id': goal.id,
-                'trial': trial + 1,
-                'success': success,
-                'result': runner.result,
-            })
+                results.append({
+                    'experiment_id': exp_id,
+                    'goal_id': goal.id,
+                    'trial': trial + 1,
+                    'success': success,
+                    'result': runner.result,
+                })
 
-            # Reset vehicle before next experiment
-            if not args.skip_reset and (i < len(goals) - 1 or trial < args.trials - 1):
-                print("\nResetting vehicle...")
-                if not reset_vehicle():
-                    print("WARNING: Reset failed, waiting 10s before continuing...")
-                    time.sleep(10)
-                else:
-                    time.sleep(5)
+                # Reset vehicle before next experiment
+                if not args.skip_reset and (i < len(goals) - 1 or trial < args.trials - 1):
+                    print("\nResetting vehicle...")
+                    if not reset_vehicle():
+                        print("WARNING: Reset failed, waiting 10s before continuing...")
+                        time.sleep(10)
+                    else:
+                        time.sleep(5)
+    finally:
+        # Always stop interceptor
+        stop_interceptor(interceptor_proc)
 
     # Summary
     print("\n" + "="*60)
@@ -596,7 +722,9 @@ def main():
         print(f"  {r['experiment_id']}: {status} (MRM: {mrm}, Time: {time_str})")
 
     # Save summary
-    summary_file = os.path.join(DATA_DIR, f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    campaign_dir = os.path.join(DATA_DIR, args.campaign)
+    os.makedirs(campaign_dir, exist_ok=True)
+    summary_file = os.path.join(campaign_dir, f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
     with open(summary_file, 'w') as f:
         json.dump({
             'timestamp': datetime.now().isoformat(),

@@ -31,8 +31,9 @@ RECORDING_TOPICS = [
     '/vehicle/status/steering_status',
     '/vehicle/status/gear_status',
 
-    # Perception - objects
+    # Perception - objects (original + filtered for interceptor comparison)
     '/perception/object_recognition/objects',
+    '/perception/object_recognition/objects_filtered',
     '/perception/object_recognition/tracking/objects',
 
     # Perception - traffic lights (all related topics)
@@ -92,6 +93,9 @@ class ExperimentConfig:
     condition: str = 'baseline'  # baseline, fault_xxx, rise_xxx
     fault_params: Dict[str, Any] = field(default_factory=dict)
     rise_enabled: bool = False
+    scenario_type: str = 'passthrough'  # passthrough, static_obstacle, cut_in, perception_delay, etc.
+    scenario_params: Dict[str, Any] = field(default_factory=dict)
+    campaign: str = 'default'  # Subdirectory under data/ for grouping experiments
 
     # Computed paths
     data_dir: str = field(init=False)
@@ -101,7 +105,7 @@ class ExperimentConfig:
     metrics_file: str = field(init=False)
 
     def __post_init__(self):
-        self.data_dir = os.path.join(DATA_DIR, self.experiment_id)
+        self.data_dir = os.path.join(DATA_DIR, self.campaign, self.experiment_id)
         self.rosbag_dir = os.path.join(self.data_dir, 'rosbag')
         self.metadata_file = os.path.join(self.data_dir, 'metadata.json')
         self.result_file = os.path.join(self.data_dir, 'result.json')
@@ -125,6 +129,9 @@ class ExperimentConfig:
             'condition': self.condition,
             'fault_params': self.fault_params,
             'rise_enabled': self.rise_enabled,
+            'scenario_type': self.scenario_type,
+            'scenario_params': self.scenario_params,
+            'campaign': self.campaign,
         }
         with open(self.metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)

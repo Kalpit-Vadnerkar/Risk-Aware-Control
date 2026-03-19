@@ -1,0 +1,18 @@
+# Cut-in Scenario
+# An object in the adjacent lane cuts into ego's lane.
+# Tests: dynamic obstacle response, emergency deceleration.
+#
+# Sweep: 2 distances x 2 cut-in durations = 4 configurations
+
+scenario_type: cut_in
+description: "Vehicle cuts in from adjacent lane"
+
+params:
+  lateral_start: 3.5   # Start in adjacent lane (3.5m offset)
+  lateral_end: 0.0     # End in ego's lane center
+  trigger_time: 10.0   # Start cut-in 10s after driving begins
+  obj_type: "CAR"
+
+sweep_params:
+  distance: [40.0, 80.0]
+  cut_in_duration: [2.0, 4.0]

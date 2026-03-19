@@ -162,6 +162,39 @@ The experiment infrastructure is now robust:
 
 ---
 
+## MRM Wedge Fix (2026-03-04) ✅ RESOLVED
+
+### Root Cause
+
+The MRM state machine auto-recovers (`MRM_SUCCEEDED → NORMAL`) only when `isEmergency()` returns false (see `mrm_handler_core.cpp:424`). The wedge occurs because the diagnostic condition that triggered MRM **persists after the vehicle stops** — localization can be disrupted by the sudden stop, or planning trajectory validation fails on the changed state. The recovery script can't set a new goal because the system never exits emergency state.
+
+The `autonomous` mode availability in `autoware-main.yaml` requires ALL of: map, localization, planning, perception, control, vehicle, system. Perception and planning trajectory validation are the checks that our fault injection intentionally degrades.
+
+### Fix Applied
+
+Modified `autoware/src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/autoware-awsim.yaml` to override the `/autoware/modes/autonomous` unit, removing `perception` and `planning` from its requirements:
+
+```yaml
+# autoware-awsim.yaml override
+- path: /autoware/modes/autonomous
+  type: and
+  list:
+    - { type: link, link: /autoware/map }
+    - { type: link, link: /autoware/localization }
+    - { type: link, link: /autoware/control }
+    - { type: link, link: /autoware/vehicle }
+    - { type: link, link: /autoware/system }
+    - { type: link, link: /adapi/mrm_request/delegate }
+```
+
+**Partial MRM disable** — MRM still fires for localization and control failures (legitimate). Perception and planning validation failures from our injected faults no longer trigger MRM, eliminating the wedge. No Autoware rebuild required (config only).
+
+### Research Rationale
+
+RISE is designed to handle perception degradation proactively. Having MRM immediately trigger on perception faults defeats the purpose of the experiment — we need to observe how the vehicle behaves under degradation so RISE can intervene. MRM triggering is the outcome we're trying to prevent; it shouldn't be the instrument blocking our measurement.
+
+---
+
 ## Historical Issues (Resolved)
 
 ### Localization Initialization (2026-01-29)

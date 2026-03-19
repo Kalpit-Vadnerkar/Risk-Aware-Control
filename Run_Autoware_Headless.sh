@@ -95,6 +95,10 @@ echo -e "${BLUE}  RViz:          DISABLED${NC}"
 echo ""
 
 # Launch Autoware without RViz
+# NOTE: Planning reads from /perception/object_recognition/objects_filtered
+# (configured in tier4_planning_component.launch.xml). The PerceptionInterceptor
+# node must be running to bridge objects → objects_filtered. In passthrough mode,
+# it simply republishes without modification.
 ros2 launch autoware_launch e2e_simulator.launch.xml \
     vehicle_model:=${VEHICLE_MODEL} \
     sensor_model:=${SENSOR_MODEL} \

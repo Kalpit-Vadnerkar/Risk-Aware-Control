@@ -1,0 +1,13 @@
+# Perception Dropout Sweep
+# Randomly drops detected objects from perception messages.
+# Tests: planning robustness to missing detections.
+#
+# Sweep: 6 dropout rates from 0% to 100%
+
+scenario_type: perception_dropout
+description: "Random object dropout from perception messages"
+
+params: {}
+
+sweep_params:
+  dropout_rate: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]

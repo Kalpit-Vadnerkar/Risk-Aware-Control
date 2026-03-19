@@ -1,0 +1,22 @@
+# Static Obstacle Scenario
+# Places a stationary vehicle ahead of ego in its lane.
+# Tests: obstacle avoidance, emergency braking, lane change behavior.
+#
+# Sweep: 4 distances x 2 object types = 8 configurations
+#
+# Placement strategy:
+#   - Obstacle placed at `distance` arc-metres ahead on the planned trajectory
+#   - Only after ego has traveled `min_travel_before_placement` from spawn
+#   - Trajectory must extend at least (distance + 30m) to avoid placing at intersection boundaries
+#   - 20m: confirmed working. 30/50/100m need 150m+ of ego travel to get a clear trajectory.
+
+scenario_type: static_obstacle
+description: "Stationary vehicle placed ahead of ego in-lane"
+
+params:
+  lateral_offset: 0.0  # Center of ego's lane
+  min_travel_before_placement: 150.0  # Wait until ego has driven 150m from spawn (past start intersections)
+
+sweep_params:
+  distance: [20.0, 30.0, 50.0, 100.0]
+  obj_type: ["CAR", "TRUCK"]
