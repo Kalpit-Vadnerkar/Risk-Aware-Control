@@ -272,6 +272,8 @@ def main():
                         help='Fault overlay applied on top of scenario (for fault+scenario experiments)')
     parser.add_argument('--fault-params', type=str, default='{}',
                         help='JSON string of fault overlay parameters, e.g. \'{"dropout_rate":0.3}\'')
+    parser.add_argument('--filter-params', type=str, default=None,
+                        help='JSON dict to filter sweep configs, e.g. \'{"distance":30.0}\' runs only 30m configs')
     args = parser.parse_args()
 
     # Resolve scenario path
@@ -289,6 +291,7 @@ def main():
 
     fault_strategy = args.fault_strategy
     fault_params = json.loads(args.fault_params)
+    filter_params = json.loads(args.filter_params) if args.filter_params else None
 
     # Resolve campaign name (default: scenario file stem, with fault suffix if applicable)
     scenario_name = os.path.splitext(os.path.basename(scenario_yaml))[0]
@@ -301,6 +304,14 @@ def main():
 
     # Build experiment matrix
     matrix = build_experiment_matrix(scenario_yaml, goal_ids, args.trials)
+
+    # Apply param filter if requested (e.g. run only distance=30m configs)
+    if filter_params:
+        matrix = [
+            exp for exp in matrix
+            if all(str(exp['params'].get(k)) == str(v) for k, v in filter_params.items())
+        ]
+        print(f"Filter applied: {filter_params} → {len(matrix)} experiments selected")
 
     print_matrix(matrix)
 

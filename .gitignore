@@ -19,3 +19,6 @@ experiments/lib/__pycache__/
 
 # Data
 data/
+
+# Downloaded papers (PDFs)
+docs/papers/

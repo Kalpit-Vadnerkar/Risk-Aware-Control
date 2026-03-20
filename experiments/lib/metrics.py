@@ -51,8 +51,8 @@ class SafetyMetrics:
     min_object_distance: float = float('inf')
     clearance_p5: float = float('inf')  # 5th percentile clearance (more robust)
     mean_object_distance: float = 0.0
-    collision_proxy_count: int = 0  # Times distance < threshold
-    collision_threshold: float = 2.0  # meters (vehicle half-width + margin)
+    collision_proxy_count: int = 0  # Times any-object distance < collision_threshold
+    collision_threshold: float = 2.0  # meters center-to-center (deeply overlapping — legacy threshold)
     near_miss_count: int = 0  # closing_time < threshold
     near_miss_rate: float = 0.0  # Near misses per km
     critical_ttc_count: int = 0  # closing_time < 1s (critical)
@@ -63,6 +63,14 @@ class SafetyMetrics:
     min_closing_time: float = float('inf')  # distance/ego_speed — valid for static & moving obstacles
     object_count_total: int = 0  # Total object detections
     min_injected_obstacle_distance: float = float('inf')  # Distance to the injected obstacle specifically (excludes NPCs)
+    # Injected-obstacle-specific collision metrics.
+    # Threshold is center-to-center: ego half-length (~2.25m) + obstacle half-length (~2.25m) = ~4.5m (bumpers touching).
+    # injected_collision_count:  times ego was within bumper-contact distance of the injected obstacle.
+    # injected_near_miss_count:  times ego was within 6.0m (1.5m bumper gap) — a meaningful close call.
+    injected_collision_count: int = 0   # center-to-center < 4.5m
+    injected_near_miss_count: int = 0   # center-to-center < 6.0m
+    injected_collision_threshold: float = 4.5   # meters (bumpers touching)
+    injected_near_miss_threshold: float = 6.0   # meters (1.5m bumper gap)
 
 
 @dataclass
@@ -477,7 +485,10 @@ class MetricsCollector:
             m.clearance_p5 = sorted_distances[p5_idx]
 
         if self.injected_obstacle_distances:
-            m.min_injected_obstacle_distance = min(d for _, d in self.injected_obstacle_distances)
+            inj_dists = [d for _, d in self.injected_obstacle_distances]
+            m.min_injected_obstacle_distance = min(inj_dists)
+            m.injected_collision_count = sum(1 for d in inj_dists if d < m.injected_collision_threshold)
+            m.injected_near_miss_count = sum(1 for d in inj_dists if d < m.injected_near_miss_threshold)
 
         if self.ttc_values:
             ttcs = [t for _, t in self.ttc_values]

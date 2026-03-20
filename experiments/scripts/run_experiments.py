@@ -306,6 +306,14 @@ class ExperimentRunner:
 
     def run(self) -> bool:
         """Run the complete experiment."""
+        # Clear stale obstacle info from any previous run
+        try:
+            import os as _os
+            if _os.path.exists('/tmp/rise_obstacle_info.json'):
+                _os.remove('/tmp/rise_obstacle_info.json')
+        except Exception:
+            pass
+
         try:
             # Setup
             if not self.setup():

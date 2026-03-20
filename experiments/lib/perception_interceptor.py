@@ -567,6 +567,17 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        # Publish an empty objects message so planning clears its object buffer
+        # immediately rather than waiting for its internal stale-object timeout.
+        try:
+            from autoware_perception_msgs.msg import PredictedObjects
+            import std_msgs.msg as std_msgs
+            empty_msg = PredictedObjects()
+            empty_msg.header.stamp = node.get_clock().now().to_msg()
+            empty_msg.header.frame_id = 'map'
+            node._pub.publish(empty_msg)
+        except Exception:
+            pass
         node.get_logger().info(
             f'Shutting down. Processed {node._msg_count} messages.'
         )
