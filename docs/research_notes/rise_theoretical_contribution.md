@@ -1,7 +1,9 @@
 # RISE Theoretical Contribution — Key Insight
 
 **Date:** 2026-03-05
-**Status:** Working draft — to be formalized
+**Last Updated:** 2026-03-20
+**Status:** Working draft — conceptual framing is stable; specific formulas are
+candidates under evaluation, not final decisions
 
 ---
 
@@ -65,58 +67,71 @@ This is different from MRM in a fundamental way:
 
 ## Proposed Mapping: Residuals → Risk → Constraint
 
-### Step 1: Residual Stream → CVaR
+> **Note:** The steps below describe the conceptual pipeline. Specific formulas
+> (e.g., CVaR, sigmoid) are candidates under evaluation, not finalized methods.
 
-At each timestep, maintain a sliding window of residuals (raw, KL-div, CUSUM).
-Compute CVaR_α over the window:
+### Step 1: Residual Stream → Anomaly Score
 
+At each timestep, maintain a sliding window of residuals (raw, KL-div, CUSUM) and
+compute an anomaly score summarizing the tail behavior of the distribution.
+
+**Leading candidate — CVaR-based:**
 ```
-CVaR_α(t) = E[Φ | Φ ≥ VaR_α]    where Φ is the residual distribution
-```
-
-Higher CVaR → system is in a high-deviation regime.
-
-### Step 2: CVaR + Geometric Risk → Risk Score
-
-Combine the statistical tail risk with the geometric context:
-
-```
-R(t) = CVaR_α(t) × g(TTC, clearance, speed)
+anomaly(t) = CVaR_α(t) = E[Φ | Φ ≥ VaR_α]    where Φ is the residual distribution
 ```
 
-Where g(·) amplifies the CVaR signal when the vehicle is close to a constraint boundary
+This focuses the score on the worst-case tail, not the average residual. Other candidates
+(normalized magnitude, exponential moving average over threshold exceedances) are also
+under consideration.
+
+Higher anomaly score → system is in a high-deviation regime.
+
+### Step 2: Anomaly Score + Geometric Context → Risk Score
+
+Combine the statistical anomaly with the geometric context:
+
+```
+R(t) = anomaly(t) × g(TTC, clearance, speed)
+```
+
+Where g(·) amplifies the anomaly signal when the vehicle is close to a constraint boundary
 (low TTC, low clearance) and attenuates it when the vehicle is in open space.
 
-This ensures that high uncertainty in a safe situation does not trigger unnecessary
-constraint tightening.
+This ensures that high uncertainty in a geometrically safe situation does not trigger
+unnecessary constraint tightening.
 
 ### Step 3: Risk Score → Velocity Constraint
 
-Map R(t) to a velocity limit:
+Map R(t) to a velocity limit. The mapping must be:
+- Monotonically decreasing with R(t) (higher risk → lower v_max)
+- Smooth (no abrupt velocity jumps)
+- Bounded (v_max never goes below a minimum, not a binary stop)
+- Reversible (relaxes back toward nominal when risk decreases)
 
+**Candidate form (sigmoid-based):**
 ```
 v_max(t) = v_nominal × (1 - k · sigmoid(R(t) - R_threshold))
 ```
+This is one candidate; the exact functional form will be selected based on Phase 2
+experimental calibration data.
 
-- When R(t) < threshold: v_max = v_nominal (no tightening)
-- When R(t) >> threshold: v_max → v_min (maximum tightening, approaching but not
-  identical to emergency stop)
-- The sigmoid ensures smooth transitions (no abrupt velocity changes)
-
-The parameters (k, threshold, v_min) are tuned on Phase 2 experimental data to
-minimize collision proxy count while maximizing route completion rate.
+The parameters (k, threshold, v_min) cannot be set a priori — they are calibrated
+so that the constraint tightening is neither over-conservative (unnecessary slowing)
+nor under-conservative (too late to prevent the violation).
 
 ### Step 4: Preemptive Tightening via Trend Detection
 
-A key addition: RISE should tighten constraints **before** CVaR peaks, not after.
-If the CVaR trend (first derivative) is rising, begin tightening:
+RISE should tighten constraints **before** the risk score peaks, not after. If R(t)
+is rising, begin tightening early — the first derivative acts as an early warning.
 
+**Candidate form:**
 ```
-v_max(t) = v_nominal × (1 - k1 · sigmoid(R(t)) - k2 · max(0, dR/dt))
+v_max(t) = v_nominal × (1 - k1 · f(R(t)) - k2 · max(0, dR/dt))
 ```
 
-This addresses detection latency — by the time CVaR is high, the vehicle may already
-be in a dangerous situation. The trend component acts as an early warning.
+This addresses detection latency — by the time the score is high, the vehicle may
+already be at the violation boundary. This is a candidate formulation; alternatives
+(e.g., adaptive thresholds, predictive filtering) will be evaluated against data.
 
 ---
 
@@ -127,34 +142,42 @@ Based on what has been published:
 1. **Most ODD-adaptation work** changes the ODD at a mission-planning level (refuse route
    segments with certain properties) — not at the real-time constraint level during execution.
 
-2. **CVaR in AV literature** is typically used for offline risk analysis or for planning
-   in stochastic environments — not for real-time constraint adaptation based on a running
-   digital twin.
+2. **Tail-risk metrics (CVaR etc.) in AV literature** are used for offline risk analysis
+   or for planning with *external* obstacle trajectory distributions — not for real-time
+   constraint adaptation based on the *ego vehicle's own* prediction residuals from a
+   running digital twin.
 
 3. **Digital twin + residuals** approaches (including our prior T-ITS 2025 paper) have been
    used for fault detection (passive observer) — not as an input to an active control
    constraint.
 
-4. **The combination** — digital twin residuals + CVaR + real-time velocity constraint
-   adaptation + mission-preserving optimization — appears to be unoccupied in the literature.
+4. **The combination** — digital twin residuals + residual anomaly score + real-time
+   velocity constraint adaptation + mission-preserving graceful degradation — appears to
+   be unoccupied in the literature.
 
-The specific gap: **using prediction residual distributions to compute tail risk and
-continuously modulate operational constraints during execution, while preserving mission
-completion, in a formally-motivated probabilistic framework.**
+The specific gap: **using ego-system prediction residual distributions to compute a
+tail-risk anomaly score and continuously modulate operational constraints during execution,
+while preserving mission completion, in a formally-motivated probabilistic framework.**
 
 ---
 
 ## Open Questions for Formalization
 
-1. **How to incorporate geometric risk into the CVaR signal?** TTC from perception? Or
-   compute TTC from the predicted trajectory in the digital twin?
+1. **What anomaly scoring method?** CVaR over sliding window is the leading candidate.
+   Normalized magnitude and trend-based methods are alternatives. Choice depends on
+   responsiveness, noise sensitivity, and calibrability to Phase 2 data.
 
-2. **What is the right window size for CVaR computation?** Short window → responsive but
-   noisy. Long window → smooth but lagging. Adaptive window?
+2. **How to incorporate geometric risk?** TTC from perception, or compute TTC from the
+   predicted trajectory in the digital twin? Context weighting g(·) amplifies the anomaly
+   signal near constraint boundaries.
 
-3. **How to tune the mapping parameters?** Grid search on Phase 2 data, or derive
+3. **What is the right window size?** Short window → responsive but noisy. Long window →
+   smooth but lagging. Adaptive window based on variance of the residual stream?
+
+4. **How to calibrate the mapping parameters?** Grid search on Phase 2 data, or derive
    analytically from a constraint violation probability bound?
 
-4. **Formal guarantee:** Can we state "with probability 1-δ, the constraint will not be
-   violated if RISE is active and CVaR < threshold"? This requires a concentration
-   inequality relating residual CVaR to actual constraint violation probability.
+5. **Formal guarantee:** Can we state "with probability 1-δ, the constraint will not be
+   violated if RISE is active and the anomaly score is below threshold τ"? This requires
+   a concentration inequality relating the residual anomaly score to actual constraint
+   violation probability.

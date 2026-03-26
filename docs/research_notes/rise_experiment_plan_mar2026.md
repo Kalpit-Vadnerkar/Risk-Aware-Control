@@ -120,8 +120,13 @@ ability to handle scenarios, producing outcomes closer to violations.
 ### Stage 3: RISE Validation
 
 Re-run Stage 2 conditions with RISE active. RISE monitors ST-GAT residuals in real time
-and tightens the velocity constraint when CVaR exceeds a threshold. Expected result:
-the vehicle slows preemptively, maintaining clearance above the violation threshold.
+and tightens the velocity constraint when the residual anomaly signal exceeds a threshold.
+Expected result: the vehicle slows preemptively, maintaining clearance above the violation
+threshold.
+
+> **Note:** The exact form of the anomaly score (CVaR, normalized magnitude, trend-based,
+> or combination) will be chosen based on Stage 2 data. The experiment structure is the
+> same regardless of which scoring method is used.
 
 **Comparison metric:** min_object_distance, collision_proxy_count, and MRM_SUCCEEDED rate
 under (fault+scenario) vs. (fault+scenario+RISE).

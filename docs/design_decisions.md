@@ -1,6 +1,6 @@
 # Design Decisions
 
-**Last Updated:** 2026-01-23
+**Last Updated:** 2026-03-20
 
 This document records key design decisions with rationale for committee defense and future reference.
 
@@ -11,79 +11,110 @@ This document records key design decisions with rationale for committee defense 
 **Decision:** Use constraint tightening, not MPC weight modulation.
 
 **Rationale:**
-- Constraint tightening provides formal probabilistic guarantees
-- Interpretable in physical units (meters, m/s)
-- Weight modulation has no clear relationship to violation probability
-- Stronger research contribution (novel theoretical framework)
+- Constraint tightening is interpretable in physical units (meters, m/s)
+- Provides a path to formal probabilistic guarantees
+- Weight modulation has no clear relationship to violation probability and no principled
+  way to set the weights from a risk signal
+- Stronger research contribution (ties to robust/tube MPC literature)
 
-**For defense:** "Weight modulation provides no formal guarantees on constraint satisfaction. Our approach derives probabilistic bounds from uncertainty propagation."
+**For defense:** "Weight modulation provides no formal guarantees on constraint satisfaction.
+Constraint tightening can, in principle, be derived from an uncertainty propagation argument."
 
 ---
 
-## 2. Analytical vs Learned Constraint Mapping
+## 2. Residual-to-Constraint Mapping (Method Under Development)
 
-**Decision:** Derive constraint tightening analytically from uncertainty propagation.
+**Decision:** The mapping from residual anomaly signal to constraint value is an open
+research question. We will determine the method after Phase 2 experiments provide
+calibration data.
 
-**Alternatives considered:**
-- Learned sensitivity matrix A (v2) - rejected, requires RL-like training
-- Manual tuning - rejected, unprincipled
-- CVaR threshold-based - rejected, still requires manual threshold setting
+**Approaches under consideration:**
+- CVaR-based threshold mapping (principled tail-risk estimate)
+- Uncertainty propagation / covariance inflation (tube-MPC style, no training needed)
+- Empirically calibrated monotonic mapping (fit from Phase 2 data)
 
-**Rationale:**
-- Tube-based MPC provides principled constraint tightening from uncertainty
-- No training data needed
-- k_σ parameter has statistical interpretation (confidence level)
-- Same math used in robust control literature
+**What is NOT considered:**
+- Learned sensitivity matrix (requires RL-like training; not feasible in this setup)
+- Manual tuning without a calibration principle
+
+**For defense:** "The mapping method is selected based on what the Phase 2 data supports.
+The principle — monotonically relate residual deviation to constraint tightening — is
+fixed. The exact form will be chosen for calibrability and interpretability."
 
 ---
 
 ## 3. Handling Detection Latency
 
-**Problem:** Can't detect faults until they affect behavior.
+**Problem:** The residual signal rises as fault effects accumulate — there is inherent
+latency before the signal is strong enough to act on.
 
-**Solution:** Multi-pronged approach:
-1. **Trend detection:** React to rising residuals before threshold breach
-2. **Severity targeting:** Focus on severe faults where quick detection occurs
-3. **Continuous adaptation:** Frame as "maintaining margins proportional to reliability" not "detect and react"
-
-**For defense:** "Severe faults cause large residual spikes quickly. In experiments, severe IMU faults are detected within 1 second. The key metric is TTC minus detection latency."
+**Solution:**
+1. **Trend-based component:** React to rising residuals (first derivative) before the
+   signal crosses an absolute threshold — early warning rather than threshold detection
+2. **Scenario targeting:** Focus on scenarios where Autoware's reaction window is tight
+   (20–30m obstacles) so preemptive tightening makes a measurable difference
+3. **Continuous framing:** RISE maintains margins proportional to current reliability;
+   it is not detecting a fault and reacting — it is always active and always calibrating
 
 ---
 
 ## 4. Fail-Operational Design
 
-**Problem:** Original design only tightened constraints (fail-safe), but sometimes loosening is needed for emergency maneuvers.
+**Decision:** RISE must preserve mission completion, not just prevent violations.
 
-**Solution:** Uncertainty propagation naturally handles both:
-- High uncertainty → wide tube → tighten
-- Low uncertainty → narrow tube → can relax toward nominal
-- Different residual patterns → different constraint responses
+**Rationale:** A system that always says "slow to 1 m/s" achieves zero violations but
+zero utility. The research claim is graceful degradation — the vehicle continues the
+route at a reduced but appropriate speed, and MRM rate decreases because violations
+are handled preemptively.
 
-**Key insight:** For external threats (sudden obstacle), longitudinal constraints tighten but lateral constraints respond only to lateral uncertainty.
-
----
-
-## 5. State Representation Enhancement
-
-**Context:** T-ITS paper hardcoded unit variance for some features.
-
-**Decision:** Extract actual covariance from ROS2 messages:
-- Position/velocity: From `/localization/*_with_covariance`
-- Object confidence: From `existence_probability`
-- Traffic light: From `confidence` field
-
-**Benefit:** Residuals now reflect true sensor reliability, not assumed constants.
+**Success condition:** Under fault+scenario, RISE reduces collision proxies AND
+maintains route completion rate close to the nominal baseline.
 
 ---
 
-## 6. Fault Severity Focus
+## 5. MRM Gating (Disabled for Research)
 
-**Decision:** Target severe faults (50-75% degradation), not mild ones.
+**Decision:** Removed `perception` and `planning` from the Autoware MRM diagnostic gate.
+
+**Rationale:** Autoware's built-in MRM triggers an emergency stop when perception or
+planning report diagnostic errors. Any fault injection (dropout, noise, injected objects)
+caused those diagnostics to fire, triggering MRM and blocking RISE evaluation. We cannot
+evaluate a new safety layer if the existing safety layer preemptively solves the problem.
+
+**What is preserved:** Localization, control, and vehicle MRM gates remain active. Only
+perception/planning are excluded.
+
+**File changed:** `autoware/src/launcher/autoware_launch/autoware_launch/config/system/
+diagnostics/autoware-main.yaml`
+
+---
+
+## 6. Perception Injection as Scenario Mechanism
+
+**Decision:** Use PerceptionInterceptor (ROS2 node) for all scenario creation and
+fault injection, rather than AWSIM source modification or OpenSCENARIO.
 
 **Rationale:**
-- Mild faults: Autoware handles adequately
-- Moderate faults: Marginal benefit
-- Severe faults: **Primary contribution** - collision prevention
-- Critical faults: Reduce incident severity
+- AWSIM has no Python/ROS2 NPC scripting API
+- OpenSCENARIO requires per-scenario pre-authored files and a full Autoware rebuild
+- The interceptor gives full programmatic control without modifying simulator internals
+- From Autoware's perspective, injected objects are indistinguishable from real detections
+- All runs go through interceptor in passthrough mode, ensuring fair comparison
 
-**For defense:** "We're honest about our operating envelope. This system is not designed for mild faults - existing safety systems handle those. Our contribution is for severe faults where baseline approaches fail."
+---
+
+## 7. Fault Scope: Perception Layer Only
+
+**Decision:** Focus fault experiments on the perception layer. Raw sensor faults (LiDAR
+noise, IMU bias, localization drift) are out of scope for this research phase.
+
+**Rationale:**
+- ST-GAT behavioral residuals respond to what happens *after* perception — they capture
+  velocity/position/steering deviations, not raw sensor noise
+- Sensor-level faults have an indirect and confounded signal path through Autoware's
+  internal processing before reaching ST-GAT
+- Perception scenarios (static obstacles, cut-ins) create clear, reproducible collision
+  threats that directly test RISE's core function
+
+**See:** `docs/research_notes/dropout_sweep_analysis_mar2026.md` for the experimental
+finding that motivated this pivot.

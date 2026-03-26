@@ -1,120 +1,145 @@
-# RISE: Residual-Informed Safety Envelope
-## Theoretical Framework
+# RISE: Residual-Informed Safety Envelopes — Theoretical Framework
 
-**Last Updated:** 2026-01-23
+**Last Updated:** 2026-03-20
+
+> **Status:** Conceptual framework is stable. The specific residual-to-constraint
+> mapping method is still under development. This document captures the research
+> framing; specific formulas will be finalized once experimental data is available.
 
 ---
 
 ## 1. Core Concept
 
-RISE uses digital twin prediction residuals to dynamically adjust safety constraints. When predictions diverge from observations, uncertainty is high, so safety margins increase.
+RISE uses ST-GAT digital twin prediction residuals to dynamically adjust safety
+constraints. When predictions diverge from observations, something unexpected is
+happening — safety margins should increase.
 
-**The key equation:**
+**The relationship:**
 ```
-constraint_margin = nominal_margin + f(uncertainty)
+residual signal → anomaly score → constraint adjustment
 ```
 
-Where uncertainty is derived from prediction residuals.
+The anomaly score transforms raw residuals into a monotonic risk signal. The constraint
+adjustment translates that score into a tighter velocity limit or safety distance.
+Both mappings are under active development (see Section 3).
 
 ---
 
-## 2. Framework Evolution
+## 2. Why Residuals Are the Right Signal
 
-### v1: CVaR-Based Margin Function (Initial)
-**Approach:** Compute CVaR from residuals, use margin function γ(CVaR).
-```
-γ_tightened = γ_base + k × CVaR^β
-```
-**Limitation:** How to set k, β? Manual tuning is unprincipled.
+The ST-GAT model predicts expected vehicle behavior in nominal conditions. Residuals
+(prediction error) have two useful properties:
 
-### v2: Learned Sensitivity Matrix (Rejected)
-**Approach:** Learn matrix A mapping risk vector to constraints.
-```
-γ = clip(γ_base + A·ρ, γ_min, γ_max)
-```
-**Limitation:** Where does A come from? Would require RL-like training, infeasible for our setup.
+1. **Interpretability:** A spike in position residual means "the vehicle moved more than
+   expected." A spike in velocity residual means "the vehicle is accelerating/decelerating
+   more than expected." The signal is physically meaningful.
 
-### v3: Uncertainty Propagation (Current)
-**Approach:** Derive constraint tightening analytically from uncertainty propagation.
-```
-Σ_effective = Σ_predicted × (1 + κ(Φ))    # Inflate covariance based on residual
-tube_width = k_σ × √(Σ_propagated)         # Compute safety tube
-margin = nominal + tube_width              # Tighten by tube width
-```
-**Advantage:** Principled derivation, no learning required, probabilistic guarantees via k_σ.
+2. **Early warning:** Residuals rise as the vehicle enters an anomalous regime, before
+   a constraint is actually violated. This is what enables preemptive constraint tightening.
+
+The prior T-ITS 2025 paper used these residuals for **passive fault detection** (classify
+driving state). RISE uses them for **active control feedback** (adjust constraints
+continuously based on residual magnitude).
 
 ---
 
-## 3. Current Formulation (v3)
+## 3. Mapping Residuals to Constraints
 
-### 3.1 Inputs
+### 3.1 Residual Types (from T-ITS 2025)
 
-| Input | Source | Description |
-|-------|--------|-------------|
-| Observations z_t | Sensors | Current state with covariance R_t |
-| Predictions (μ_t, Σ_t) | ST-GAT | Expected state with uncertainty |
-| Trajectory τ | Autoware | Planned path with velocities |
+| Type | Formula | Captures |
+|------|---------|---------|
+| Raw | `Φ_raw = μ - u` | Direct prediction error |
+| KL-divergence | `Φ_kld = 0.5[ln(2πσ²) + (u-μ)²/σ²]` | Error normalized by predicted uncertainty |
+| CUSUM | `Φ_cusum = max(C⁺, C⁻) / d` | Cumulative drift from baseline |
 
-### 3.2 Residual Computation
+### 3.2 Anomaly Score (Method TBD)
 
-**Normalized residual:**
-```
-Φ = |z - μ| / √(Σ + R)
-```
+The anomaly score summarizes the residual stream into a scalar risk signal. Candidate
+approaches under consideration:
 
-Accounts for both prediction and observation uncertainty.
+- **CVaR-based:** Compute CVaR_α over a sliding window of residuals; focuses on the
+  dangerous tail of the distribution
+- **Normalized magnitude:** Ratio of current residual to nominal baseline
+- **Trend-based:** Combine current level with rate of change (preemptive component)
 
-### 3.3 Covariance Inflation
+The key property any method must satisfy: the score should be **monotonically increasing**
+as the vehicle's behavior diverges further from nominal, and **calibrated** so that a
+given score corresponds to a meaningful risk level.
 
-When residuals are high, predictions are unreliable:
-```
-Σ_effective = Σ_predicted × (1 + α(Φ/Φ_nominal)^β)
-```
+### 3.3 Constraint Adjustment (Method TBD)
 
-| Parameter | Meaning | Typical Value |
-|-----------|---------|---------------|
-| α | Max inflation | 1.0 - 3.0 |
-| β | Sensitivity | 1.0 (linear) |
-| Φ_nominal | Baseline residual | Measured from normal operation |
+The anomaly score must be mapped to a constraint value (velocity limit, safety distance).
+The mapping must satisfy:
 
-### 3.4 Tube Computation
+- At nominal score → constraint ≈ nominal (no unnecessary tightening)
+- At high score → constraint tightens toward a minimum (not binary stop)
+- Smooth / continuous (no abrupt velocity jumps)
+- Reversible (when score returns to nominal, constraint relaxes)
 
-Propagate uncertainty along trajectory, compute tube width:
-```
-tube_width = k_σ × √(diag(Σ_propagated))
-```
+Candidate mapping approaches: monotonic functions (sigmoid, piecewise linear, power law),
+analytically derived from uncertainty propagation (tube-MPC style), or empirically
+calibrated from Phase 2 experiment data.
 
-Where k_σ determines confidence level:
-- k_σ = 2.0 → ~95% coverage
-- k_σ = 3.0 → ~99.7% coverage
+### 3.4 Which Constraints to Adjust
 
-### 3.5 Constraint Adjustment
-
-| Constraint | Formula |
-|------------|---------|
-| Safe distance | d = d_nominal + tube_width_position |
-| Velocity limit | v = v_nominal × (1 - tube_ratio) |
-| Lateral margin | m = m_nominal + tube_width_lateral |
+| Constraint | RISE Action | Rationale |
+|------------|------------|---------|
+| Velocity limit | Reduce proportional to anomaly score | Buys reaction time for any threat |
+| Safety distance | Increase | Direct collision margin |
+| Lateral margin | Context-dependent | Only tighten if lateral residuals are elevated |
 
 ---
 
 ## 4. Fail-Operational Behavior
 
-The framework is naturally bidirectional:
+A key design principle: RISE should enable **graceful degradation**, not binary
+stop-or-go. The vehicle continues its mission at reduced capability, rather than
+triggering an emergency stop. This is the key distinction from MRM.
 
-| Condition | Residuals | Tube | Constraints |
-|-----------|-----------|------|-------------|
-| Normal | Low | Narrow | ≈ Nominal |
-| Internal fault | High | Wide | Tightened |
-| Low uncertainty | Very low | Very narrow | Can relax toward nominal |
+| Condition | Residuals | Constraints | Vehicle Behavior |
+|-----------|-----------|-------------|-----------------|
+| Normal | Low | ≈ Nominal | Full mission, normal speed |
+| Elevated risk | Moderate | Moderately tightened | Mission continues, slower |
+| High risk | High | Significantly tightened | Mission continues, very slow |
+| MRM threshold | (out of RISE scope) | MRM takes over | Emergency stop |
 
-For external threats (sudden obstacle): object residual spikes → longitudinal margin increases. If no in-lane avoidance feasible, lateral margin doesn't additionally tighten, enabling avoidance maneuvers.
+RISE operates in the space between "nominal" and "MRM trigger." It should reduce the
+frequency of MRM events by addressing conditions preemptively.
 
 ---
 
-## 5. What Makes This Novel
+## 5. Framework Evolution (History)
 
-1. **Residual → Uncertainty → Constraint loop:** Closes the loop from passive digital twin to active control
-2. **Analytical derivation:** No learned mappings, principled from uncertainty propagation
-3. **Probabilistic guarantees:** k_σ provides coverage bounds
-4. **Fail-operational:** Same framework handles both tightening and relaxation
+Understanding why earlier formulations were set aside helps motivate the current direction.
+
+**v1: CVaR threshold mapping** — Compute CVaR_α over residual window; apply margin
+function γ(CVaR). The limitation: how to set the parameters of the margin function
+without principled derivation. CVaR remains a strong candidate for the anomaly score;
+the question is how to calibrate the mapping.
+
+**v2: Learned sensitivity matrix** — Learn a matrix A mapping residual vector to
+constraints. Rejected: requires RL-like training data that we don't have and may not
+generalize.
+
+**v3: Uncertainty propagation (covariance inflation)** — Derive constraint tightening
+analytically by inflating the predicted covariance proportional to residual magnitude,
+then computing a safety tube width. This is principled and requires no training data.
+Under active evaluation: the challenge is ensuring the tube width has a meaningful
+physical interpretation in the Autoware constraint context.
+
+The final method will be chosen based on: (1) availability of a principled derivation,
+(2) calibration tractability, (3) performance on Phase 2 experimental data.
+
+---
+
+## 6. Formal Guarantee (Goal)
+
+The ideal outcome is a statement of the form:
+
+> "With probability ≥ 1-δ, if the RISE constraint is active and the anomaly score is
+> below threshold τ, the constraint will not be violated within the planning horizon."
+
+This requires relating the residual distribution (what we can measure) to constraint
+violation probability (what we care about). This is the primary theoretical challenge
+and is the subject of ongoing work.

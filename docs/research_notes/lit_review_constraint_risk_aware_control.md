@@ -31,9 +31,11 @@ Papers in this domain cluster into five groups based on **what they compute** an
 | **E. Distributionally Robust / Chance-Constrained MPC** | External agent trajectory distributions | Safety margins, MPC constraint sets | External uncertainty only; fixed ambiguity set |
 
 **RISE** occupies the intersection of C, D, and E — the **only** approach that:
-(i) computes CVaR from *ego-system model residuals* (not obstacle trajectory distributions),
-(ii) maps this to a *velocity constraint parameter* in a deployed production AV planner, and
-(iii) operates bidirectionally (tighten and relax) with a principled probabilistic guarantee.
+(i) computes a **residual anomaly score** (tail-risk-based; CVaR is the leading candidate)
+from *ego-system model residuals* (not obstacle trajectory distributions),
+(ii) maps this score **continuously** to a *velocity constraint parameter* in a deployed
+production AV planner, and
+(iii) operates bidirectionally (tighten and relax) while preserving mission completion.
 
 ---
 
@@ -66,7 +68,7 @@ Papers in this domain cluster into five groups based on **what they compute** an
 | 17 | Ryu & Mehr (2024) [17] | E | E | DR-CVaR | D (safety corridor) | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
 | 18 | Jiang et al. (2024) [18] | A | S | ODD monitor + stability | Mode → V (functional degradation) | ✓ | ✓ | ✓ | ✗ | ✓ | ✗ |
 | 19 | Vadnerkar et al. (2025) [19] | — | M (GNN residuals) | CVaR over residual tail | **None** (passive) | ✓ | ✓ | **✗** | N/A | ✓ | ✗ |
-| **R** | **RISE (proposed)** | **C+D+E** | **M (GNN residuals)** | **CVaR over residual tail** | **V + D (continuous)** | **✓** | **✓** | **✓** | **✓** | **✓** | **✓** |
+| **R** | **RISE (proposed)** | **C+D+E** | **M (GNN residuals)** | **Residual anomaly score (tail-risk)** | **V + D (continuous)** | **✓** | **✓** | **✓** | **✓** | **✓** | **✓** |
 
 > Row **R** (RISE) is the **only row** achieving all six active capabilities (RT + Ego + CL + Cont + AV + FG) simultaneously, with ego-system residuals as the risk source.
 
@@ -652,8 +654,8 @@ RISE provides exactly this missing feedback path.
 |---|---|---|
 | Learned GNN predicting multi-agent traffic scene | Only in Vadnerkar 2025 | [19] |
 | Prediction residuals (GNN) as uncertainty signal | Not in any control/planning paper | [2] (physics-model residuals) |
-| CVaR over ego-system residual distribution | CVaR over external agents: [7,8,9,10,11,12,16,17] | None |
-| Runtime velocity constraint from residual CVaR | Not in any verified paper | [18] (heuristic, discrete) |
+| Residual anomaly score (tail-risk) from ego-system residuals | External agents only: [7,8,9,10,11,12,16,17] | None |
+| Runtime velocity constraint from residual anomaly signal | Not in any verified paper | [18] (heuristic, discrete) |
 | Bidirectional: tighten AND relax same framework | [10] has discrete switch; others monotone | None (continuous) |
 | Full AV stack deployment (Autoware + AWSIM) | [14,16,17,18] have simulation/robot validation | None at Autoware level |
 | No retraining at deployment | [5] (offline sim), [2] (online GP inference) | None (analytical) |
@@ -670,8 +672,8 @@ The literature shows three partially overlapping research threads that RISE unif
 and Jiang et al. 2024 [18] compute risk scores or ODD violation signals at runtime
 with high accuracy and low latency. The consensus limitation: these systems are
 *observers*. They detect elevated risk but do not close the loop to the controller.
-Jiang et al. trigger a discrete mode switch; no paper uses a running CVaR from
-digital twin residuals to continuously modify a constraint parameter.
+Jiang et al. trigger a discrete mode switch; no paper uses a running residual anomaly
+score from a digital twin to continuously modify a constraint parameter.
 
 **Thread 2 — Constraint tightening from model uncertainty:** Papers such as
 Hewing et al. 2020 [2], Wabersich & Zeilinger 2021 [3], Zanon & Gros 2021 [1],
@@ -693,10 +695,11 @@ system-health risk from within the ego AV stack.
 **The RISE gap (confirmed unoccupied across all 18 verified papers):**
 No existing verified paper simultaneously:
 1. Uses a **learned digital twin (GNN)** to predict nominal behavior across the full traffic scene
-2. Computes **CVaR over that model's residual distribution** as a measure of ego-system reliability
-3. Maps this CVaR **continuously** to a **velocity constraint parameter** in a production AV planner
-4. Provides **bidirectional** tightening (relaxes when CVaR falls, preserving mission utility)
-5. Offers a **principled probabilistic guarantee** via the k_σ coverage bound
+2. Computes a **residual anomaly score** (e.g., tail-risk metric such as CVaR) from that model's
+   prediction error distribution as a measure of ego-system reliability
+3. Maps this score **continuously** to a **velocity constraint parameter** in a production AV planner
+4. Provides **bidirectional** tightening (relaxes when score falls, preserving mission utility)
+5. Offers a **principled probabilistic guarantee** relating the residual signal to constraint violation bounds
 6. Does so without **any retraining at deployment**
 7. Is **validated end-to-end** in a full production AV stack (Autoware + AWSIM)
 
