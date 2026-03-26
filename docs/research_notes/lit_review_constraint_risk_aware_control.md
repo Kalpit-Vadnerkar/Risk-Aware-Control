@@ -45,7 +45,8 @@ production AV planner, and
 - **Risk Source:** `E` = external agent distributions | `M` = model prediction residuals | `S` = ODD/scene features | `D` = worst-case disturbance
 - **Metric:** risk/uncertainty measure used
 - **Constraint:** what gets tightened — `V` = velocity limit | `D` = safe distance | `T` = tube/state set | `B` = CBF level | `Mode` = discrete tier
-- **RT** = real-time capable | **Ego** = monitors ego-system health | **CL** = closed-loop feedback to constraint | **Cont** = continuous (not binary) tightening | **AV** = validated in AV/robot stack | **FG** = formal guarantee
+- **RT** = real-time capable | **Ego** = monitors ego-system health | **CL** = closed-loop feedback to constraint | **Cont** = continuous graded tightening (not binary switch) | **AV** = validated in AV/robot stack | **FG** = formal guarantee
+- Note: most methods relax the constraint when their risk signal decreases — bidirectionality is common. The RISE-specific challenge is calibrating the relaxation dynamics for a residual-based signal (see Section 3.3).
 
 | # | Paper | Cluster | Risk Source | Metric | Constraint | RT | Ego | CL | Cont | AV | FG |
 |---|-------|---------|------------|--------|------------|:--:|:---:|:--:|:----:|:--:|:--:|
@@ -82,24 +83,24 @@ The central question RISE must answer is: **given a risk or uncertainty signal, 
 
 ### 3.1 Mechanics Table
 
-| # | Paper | Input Signal | Mapping to Constraint Value | Calibration Source | Formal Bound |
-|---|-------|--------------|-----------------------------|-------------------|--------------|
-| 1 | Zanon & Gros 2021 | Parametric disturbance set W | Pontryagin difference: `C_tight = C ⊖ W` | Model class prior | Minimax invariance |
-| 2 | Hewing 2020 | GP posterior σ(x) at query point | `back_off = k_σ · σ_GP(x)` | `k_σ = √(2 ln(1/δ))` — Gaussian tail | P[safe] ≥ 1–δ |
-| 3 | Wabersich 2021 | Learned model feasibility | Min-norm QP correction to safe set | Known initial safe set | Recursive feasibility |
-| 5 | Compton 2025 | Planned action + state | Learned neural net: `d = f_θ(x, u)` | Conformal prediction on sim rollouts | Marginal coverage (empirical) |
-| 6 | Bongard 2026 | Contraction metric ρ(t) from CCM | Tube half-width ∝ ρ(t) via SDP cert. | Lyapunov SDP (offline) | Exponential stability |
-| 7 | Hakobyan 2019 | Obstacle trajectory samples | CVaR via SAA: `min_β {β + 1/(1–α)·E[max(c–β,0)]}` | Risk level α (design choice) | CVaR guarantee (R-U repr.) |
-| 8 | Safaoui 2023 | Obstacle distribution samples | DR-CVaR halfspace via Wasserstein dual (LP) | Wasserstein radius ε from N samples | DR guarantee over ε-ball |
-| 9 | Kishida 2025 | System disturbance distribution | Worst-case CVaR of CBF Lie derivative | Disturbance distribution from data | Probabilistic CBF safety |
-| 10 | Chang 2025 | CBF residuals over horizon | Budget threshold → binary mode switch | Risk budget R_total (design) | Budget soft guarantee |
-| 11 | Hakobyan & Yang 2022 | Pedestrian position samples | Wasserstein DR-CVaR → tube radius (dual) | Wasserstein ball size from N samples | DR over ε-ball |
-| 13 | Schuurmans 2023 | Wasserstein ambiguity set | Lipschitz back-off: `margin ≥ ε/γ` | Lipschitz constant γ from vehicle model | DR concentration |
-| 14 | Ren 2025 | GMM obstacle distribution | `back_off = Φ⁻¹(1–α/n) · σ_GMM` | Gaussian approximation of GMM | Probabilistic (Gaussian) |
-| 16 | Mustafa 2024 | Bayesian occupancy probabilities | CVaR risk budget → contingency allocation | Risk budget (design choice) | Budget allocation |
-| 17 | Ryu 2024 | Pedestrian trajectory samples | DR-CVaR corridor radius (Wasserstein dual) | Wasserstein radius ε | DR over ε-ball |
-| 18 | Jiang 2024 | Stability metrics, ODD flags | Rule-based lookup → discrete speed tier | Expert rules | None (heuristic) |
-| 19 | Vadnerkar 2025 | GNN residuals (multi-dim.) | CVaR over sliding window → classification score | α = 0.95 (design) | N/A — no constraint output |
+| # | Paper | Input Signal | Mapping to Constraint Value | Calibration Source | Formal Bound | Relaxes? |
+|---|-------|--------------|-----------------------------|-------------------|--------------|---------|
+| 1 | Zanon & Gros 2021 | Parametric disturbance set W | Pontryagin difference: `C_tight = C ⊖ W` | Model class prior | Minimax invariance | ✗ (W fixed at runtime) |
+| 2 | Hewing 2020 | GP posterior σ(x) at query point | `back_off = k_σ · σ_GP(x)` | `k_σ = √(2 ln(1/δ))` — Gaussian tail | P[safe] ≥ 1–δ | ✓ (σ falls at familiar states) |
+| 3 | Wabersich 2021 | Learned model feasibility | Min-norm QP correction to safe set | Known initial safe set | Recursive feasibility | ✓ (off when action is safe) |
+| 5 | Compton 2025 | Planned action + state | Learned neural net: `d = f_θ(x, u)` | Conformal prediction on sim rollouts | Marginal coverage (empirical) | ✓ (narrows for easy maneuvers) |
+| 6 | Bongard 2026 | Contraction metric ρ(t) from CCM | Tube half-width ∝ ρ(t) via SDP cert. | Lyapunov SDP (offline) | Exponential stability | ✓ (ρ decreases as system stabilizes) |
+| 7 | Hakobyan 2019 | Obstacle trajectory samples | CVaR via SAA: `min_β {β + 1/(1–α)·E[max(c–β,0)]}` | Risk level α (design choice) | CVaR guarantee (R-U repr.) | ✓ (instant: threat gone → CVaR drops) |
+| 8 | Safaoui 2023 | Obstacle distribution samples | DR-CVaR halfspace via Wasserstein dual (LP) | Wasserstein radius ε from N samples | DR guarantee over ε-ball | ✓ (instant: per-step recalculation) |
+| 9 | Kishida 2025 | System disturbance distribution | Worst-case CVaR of CBF Lie derivative | Disturbance distribution from data | Probabilistic CBF safety | ✓ (per-step: relaxes when disturbance drops) |
+| 10 | Chang 2025 | CBF residuals over horizon | Budget threshold → binary mode switch | Risk budget R_total (design) | Budget soft guarantee | ✓ (explicit: switches back to relaxed CBF) |
+| 11 | Hakobyan & Yang 2022 | Pedestrian position samples | Wasserstein DR-CVaR → tube radius (dual) | Wasserstein ball size from N samples | DR over ε-ball | ✓ (instant: per-step recalculation) |
+| 13 | Schuurmans 2023 | Wasserstein ambiguity set | Lipschitz back-off: `margin ≥ ε/γ` | Lipschitz constant γ from vehicle model | DR concentration | ✓ (per-step MPC) |
+| 14 | Ren 2025 | GMM obstacle distribution | `back_off = Φ⁻¹(1–α/n) · σ_GMM` | Gaussian approximation of GMM | Probabilistic (Gaussian) | ✓ (instant: per-step recalculation) |
+| 16 | Mustafa 2024 | Bayesian occupancy probabilities | CVaR risk budget → contingency allocation | Risk budget (design choice) | Budget allocation | ✓ (per-step: occupancy updates) |
+| 17 | Ryu 2024 | Pedestrian trajectory samples | DR-CVaR corridor radius (Wasserstein dual) | Wasserstein radius ε | DR over ε-ball | ✓ (per-step recalculation) |
+| 18 | Jiang 2024 | Stability metrics, ODD flags | Rule-based lookup → discrete speed tier | Expert rules | None (heuristic) | ✓ (returns to higher tier if metrics improve) |
+| 19 | Vadnerkar 2025 | GNN residuals (multi-dim.) | CVaR over sliding window → classification score | α = 0.95 (design) | N/A — no constraint output | N/A |
 
 ---
 
@@ -186,9 +187,34 @@ The four open sub-problems this creates:
 
 **3. Projection from multi-dimensional residuals:** GNN residuals are multi-dimensional (position ×2, velocity ×2, steering, acceleration). All verified mapping methods work on scalar disturbances or project to scalar CVaR via a fixed cost function. The projection choice — which residual dimensions, what aggregation — determines what the anomaly score captures and requires a principled design decision not addressed in existing work.
 
-**4. Bidirectional calibration:** Most methods tighten monotonically. A system that tightens but never relaxes accumulates unnecessary conservatism. The mapping must relax smoothly as residuals return to baseline (preserving mission utility), with the relaxation rate calibrated to avoid oscillation. This bidirectionality requirement is not addressed in the verified literature.
+**4. Relaxation dynamics of a residual-based signal:** Most verified methods are
+naturally bidirectional — the constraint relaxes when the risk signal falls. For Clusters
+D/E (CVaR planning, DR-CVaR), this happens automatically: the obstacle moves away →
+the prediction distribution no longer overlaps the path → CVaR drops to near zero →
+margin relaxes in the next planning step. For Cluster C (GP-MPC, CCM, dynamic tube),
+relaxation follows the uncertainty signal: GP variance falls at familiar states, contraction
+metric ρ(t) decreases as the system stabilizes, dynamic tube narrows for easy maneuvers.
+Chang [10] explicitly switches back to the relaxed CBF mode when the CVaR budget is no
+longer exceeded.
 
-RISE's primary technical contribution is jointly addressing these four sub-problems: an anomaly scoring method that handles empirical GNN residuals, calibrated from in-situ deployment data, with a bound that does not require parametric assumptions, and a bidirectional mapping that preserves mission completion under graceful degradation.
+For RISE with residuals, relaxation exists but has a different temporal structure. After a
+threat passes, the vehicle may still be in an anomalous state: high deceleration, unusual
+velocity, off-nominal steering. Residuals can remain elevated for several seconds after
+the immediate threat is cleared, even though no new constraint violation is imminent. The
+constraint must track this recovery curve — relaxing proportionally as residuals return to
+baseline — rather than snapping back instantly (which would cause oscillation) or
+persisting indefinitely (which would impair mission completion). **The calibration of the
+relaxation rate — how quickly and on what signal the constraint returns toward nominal —
+is specific to residual-based signals and is not addressed in any verified paper.** All
+existing bidirectional methods relax based on a signal that falls as soon as the external
+threat clears; for RISE, the residual signal has its own recovery dynamics that depend on
+vehicle behavior, not just threat presence.
+
+RISE's primary technical contribution is jointly addressing these four sub-problems: an
+anomaly scoring method that handles empirical GNN residuals, calibrated from in-situ
+deployment data, with a bound that does not require parametric assumptions, and a
+relaxation dynamics calibration suited to residual recovery curves rather than
+instantaneous external-threat disappearance.
 
 ---
 
@@ -776,7 +802,7 @@ RISE provides exactly this missing feedback path.
 | Prediction residuals (GNN) as ego-health signal | Not in any control/planning paper | [2] (physics-model residuals) |
 | Tail-risk score (e.g., CVaR) from ego-system residuals | CVaR over external agents only: [7,8,9,10,11,12,16,17] | None |
 | Continuous runtime velocity constraint from residual score | Not in any verified paper | [18] (heuristic, discrete) |
-| Bidirectional: tighten AND relax same framework | [10] has discrete switch; others monotone | None (continuous) |
+| Relaxation calibrated to residual recovery dynamics | All D/E papers relax instantly when external threat clears; C papers relax with uncertainty signal | None for residual-based signal recovery |
 | Full AV stack deployment (Autoware + AWSIM) | [14,16,17,18] have simulation/robot validation | None at Autoware level |
 | No retraining at deployment | [5] (offline sim), [2] (online GP inference) | None (analytical) |
 | Continuous graded tightening | [2,3,5,6,9,11,13,14] have continuous mechanisms | None from ego residuals |
