@@ -74,7 +74,125 @@ production AV planner, and
 
 ---
 
-## 3. Paper Details
+## 3. Constraint Tightening Mechanics: How Existing Work Computes the Mapping
+
+The central question RISE must answer is: **given a risk or uncertainty signal, what function maps it to a constraint value, and how is that function derived and calibrated?** The comparative table shows *what* gets tightened. This section examines *how* — the exact mapping mechanics, what each approach requires, and why none extends to empirical GNN residuals.
+
+---
+
+### 3.1 Mechanics Table
+
+| # | Paper | Input Signal | Mapping to Constraint Value | Calibration Source | Formal Bound |
+|---|-------|--------------|-----------------------------|-------------------|--------------|
+| 1 | Zanon & Gros 2021 | Parametric disturbance set W | Pontryagin difference: `C_tight = C ⊖ W` | Model class prior | Minimax invariance |
+| 2 | Hewing 2020 | GP posterior σ(x) at query point | `back_off = k_σ · σ_GP(x)` | `k_σ = √(2 ln(1/δ))` — Gaussian tail | P[safe] ≥ 1–δ |
+| 3 | Wabersich 2021 | Learned model feasibility | Min-norm QP correction to safe set | Known initial safe set | Recursive feasibility |
+| 5 | Compton 2025 | Planned action + state | Learned neural net: `d = f_θ(x, u)` | Conformal prediction on sim rollouts | Marginal coverage (empirical) |
+| 6 | Bongard 2026 | Contraction metric ρ(t) from CCM | Tube half-width ∝ ρ(t) via SDP cert. | Lyapunov SDP (offline) | Exponential stability |
+| 7 | Hakobyan 2019 | Obstacle trajectory samples | CVaR via SAA: `min_β {β + 1/(1–α)·E[max(c–β,0)]}` | Risk level α (design choice) | CVaR guarantee (R-U repr.) |
+| 8 | Safaoui 2023 | Obstacle distribution samples | DR-CVaR halfspace via Wasserstein dual (LP) | Wasserstein radius ε from N samples | DR guarantee over ε-ball |
+| 9 | Kishida 2025 | System disturbance distribution | Worst-case CVaR of CBF Lie derivative | Disturbance distribution from data | Probabilistic CBF safety |
+| 10 | Chang 2025 | CBF residuals over horizon | Budget threshold → binary mode switch | Risk budget R_total (design) | Budget soft guarantee |
+| 11 | Hakobyan & Yang 2022 | Pedestrian position samples | Wasserstein DR-CVaR → tube radius (dual) | Wasserstein ball size from N samples | DR over ε-ball |
+| 13 | Schuurmans 2023 | Wasserstein ambiguity set | Lipschitz back-off: `margin ≥ ε/γ` | Lipschitz constant γ from vehicle model | DR concentration |
+| 14 | Ren 2025 | GMM obstacle distribution | `back_off = Φ⁻¹(1–α/n) · σ_GMM` | Gaussian approximation of GMM | Probabilistic (Gaussian) |
+| 16 | Mustafa 2024 | Bayesian occupancy probabilities | CVaR risk budget → contingency allocation | Risk budget (design choice) | Budget allocation |
+| 17 | Ryu 2024 | Pedestrian trajectory samples | DR-CVaR corridor radius (Wasserstein dual) | Wasserstein radius ε | DR over ε-ball |
+| 18 | Jiang 2024 | Stability metrics, ODD flags | Rule-based lookup → discrete speed tier | Expert rules | None (heuristic) |
+| 19 | Vadnerkar 2025 | GNN residuals (multi-dim.) | CVaR over sliding window → classification score | α = 0.95 (design) | N/A — no constraint output |
+
+---
+
+### 3.2 Method Families and Their Requirements
+
+Five distinct mapping families emerge. Each has specific preconditions that determine what it can and cannot handle.
+
+#### Family 1 — Parametric Set Operations (Pontryagin / Minkowski)
+*Papers: [1]*
+
+Constraint tightened by the geometry of a pre-defined disturbance set W. The amount is not a scalar but a set: `C_tight = C ⊖ W`. Works directly inside the MPC problem structure.
+
+**Requires:** An explicit parametric model of disturbance — a bounded set W derived from a linear or robustly-characterizable model class. The set must be known before deployment.
+**Cannot handle:** GNN prediction residuals have no natural "set" representation. The residual distribution shifts with driving context; a fixed W would be either too conservative in nominal driving or insufficient under faults. There is no closed-form W to subtract when uncertainty comes from a deployed neural network.
+
+---
+
+#### Family 2 — GP Posterior Confidence Interval
+*Papers: [2]*
+
+The mapping is `back_off = k_σ · σ_GP(x)`, where σ_GP(x) is the GP posterior standard deviation at the current state x. Calibration is derived from the Gaussian tail bound: choose `k_σ = √(2 ln(1/δ))` to get P[residual exceeds back_off] ≤ δ.
+
+**Requires:** A white-box nominal physics model against which GP residuals are defined; a GP trained on those residuals with a closed-form posterior. The Gaussian tail bound requires sub-Gaussian (at minimum) residuals.
+**Cannot handle:** GNN models produce a forward-pass output — there is no query-point posterior available in the GP sense. GNN residuals are non-Gaussian and multi-modal. The calibration formula `k_σ = √(2 ln(1/δ))` is derived specifically for Gaussian distributions and would be miscalibrated for the heavy-tailed residual distributions that arise from lane changes, sudden braking, and perception faults.
+
+---
+
+#### Family 3 — Lyapunov / Contraction Certificates
+*Papers: [6]*
+
+Tube width is derived analytically from a Control Contraction Metric (CCM): ρ(t) upper-bounds tracking error via a differential inequality, and the tube half-width is proportional to ρ(t). The CCM is computed by solving an SDP offline from the vehicle dynamics model.
+
+**Requires:** A known parameterized dynamics model (e.g., single-track with tire force uncertainty). The CCM is model-class-specific and computed offline.
+**Cannot handle:** ST-GAT residuals measure behavioral deviation, not kinematic tracking error in the control-theoretic sense. The CCM framework requires differential geometric structure that a learned GNN does not provide. The mapping "residual → tube width" cannot be derived via contraction analysis when the residual comes from a graph neural network, not a state-space model.
+
+---
+
+#### Family 4 — CVaR / DR-CVaR from External Distribution
+*Papers: [7, 8, 9, 10, 11, 12, 13, 16, 17]*
+
+The richest cluster, and the one most relevant to RISE. CVaR is computed using the Rockafellar-Uryasev representation:
+```
+CVaR_α(X) = min_β { β + 1/(1-α) · E[max(X – β, 0)] }
+```
+In Wasserstein DR formulations, an ambiguity ball of radius ε around the empirical distribution provides robustness when the true distribution is unknown. The safety margin is set to the CVaR value (or DR-CVaR in the robust case).
+
+**What these papers compute CVaR over:** *External agent trajectory distributions* — pedestrian future positions, vehicle intent modes, obstacle occupancy probabilities. The constraint margin scales with the tail risk of *where obstacles might be*.
+
+**Cannot handle:** The CVaR formulation is the right tool for tail risk — this is precisely why it is a leading candidate for RISE. However, all verified papers apply CVaR to external distributions. No paper applies it to the ego vehicle's *own prediction error distribution* from a deployed digital twin. The closest is Vadnerkar et al. 2025 [19], which computes CVaR over GNN residuals — but as a classification score, with no closed loop to a constraint parameter. The mapping "CVaR of ego residuals → velocity constraint" is unoccupied.
+
+---
+
+#### Family 5 — Gaussian / Chance-Constraint Back-off
+*Papers: [14]*
+
+Constraint back-off from a Gaussian approximation: `margin = Φ⁻¹(1–α/n) · σ_GMM`. The standard normal CDF inverse Φ⁻¹ is the calibration function. Tractable because the GMM prediction model is Gaussian.
+
+**Requires:** Gaussian or sub-Gaussian prediction distribution. The back-off formula is exact only for Gaussian collision costs; approximate otherwise.
+**Cannot handle:** GNN residuals from ST-GAT are heavy-tailed (extreme events during faults produce outliers far from the mean) and multi-modal (different residual signatures for lane changes vs. sudden braking). Applying Gaussian back-off would systematically under-estimate the margin needed during fault conditions.
+
+---
+
+#### Family 6 — Learned or Heuristic
+*Papers: [5, 10, 18]*
+
+Three distinct approaches: (a) Compton [5] learns a tube width function from simulation rollouts; (b) Chang [10] uses a risk budget threshold to switch between two fixed modes; (c) Jiang [18] maps stability metrics to a lookup table of discrete speed tiers.
+
+**What they share:** None derives the mapping from a principled closed-form relationship between the input signal and the safety guarantee needed.
+**Cannot handle:** Compton's learned tube breaks under sim-to-real gap — the sim data distribution does not match in-situ GNN residuals under real faults. Chang's mode switch is binary, not continuous. Jiang's lookup is fixed and heuristic. None provides the calibrated, continuous, data-derived mapping that RISE requires.
+
+---
+
+### 3.3 The Mapping Problem for GNN Residuals: Four Open Sub-Problems
+
+The pattern across all five families is consistent: **every existing mapping method requires either a parametric model assumption, a closed-form posterior (GP), or a distribution over external agents.** None addresses the problem of:
+
+> *Given a running multi-dimensional, empirical, non-Gaussian residual distribution from a deployed learned model (GNN), derive a continuous constraint tightening that is (1) calibrated from in-situ data, (2) formally defensible with a probabilistic bound, (3) not over-conservative, and (4) interpretable in physical units.*
+
+The four open sub-problems this creates:
+
+**1. Calibration without a prior distribution:** GP methods calibrate k_σ from Gaussian tail bounds. Chance constraints calibrate from Φ⁻¹. Both assume a distribution family. GNN residuals are empirical — the calibration function must be derived from Phase 2 experimental data, using approaches like conformal prediction or empirical CVaR coverage bounds, rather than a parametric assumption.
+
+**2. Appropriate bound type:** The bound must be non-parametric or distribution-free (to handle heavy tails) while remaining tight enough to avoid over-conservatism. Wasserstein DR bounds (Family 4) provide this property for external agent distributions; the analogous construction for ego-system residuals is not established.
+
+**3. Projection from multi-dimensional residuals:** GNN residuals are multi-dimensional (position ×2, velocity ×2, steering, acceleration). All verified mapping methods work on scalar disturbances or project to scalar CVaR via a fixed cost function. The projection choice — which residual dimensions, what aggregation — determines what the anomaly score captures and requires a principled design decision not addressed in existing work.
+
+**4. Bidirectional calibration:** Most methods tighten monotonically. A system that tightens but never relaxes accumulates unnecessary conservatism. The mapping must relax smoothly as residuals return to baseline (preserving mission utility), with the relaxation rate calibrated to avoid oscillation. This bidirectionality requirement is not addressed in the verified literature.
+
+RISE's primary technical contribution is jointly addressing these four sub-problems: an anomaly scoring method that handles empirical GNN residuals, calibrated from in-situ deployment data, with a bound that does not require parametric assumptions, and a bidirectional mapping that preserves mission completion under graceful degradation.
+
+---
+
+## 4. Paper Details
 
 ---
 
@@ -648,64 +766,109 @@ RISE provides exactly this missing feedback path.
 
 ---
 
-## 4. Gap Matrix
+## 5. Gap Matrix
+
+### 5.1 What Exists vs. What RISE Needs
 
 | RISE Element | Status in Verified Literature | Closest Verified Paper |
 |---|---|---|
 | Learned GNN predicting multi-agent traffic scene | Only in Vadnerkar 2025 | [19] |
-| Prediction residuals (GNN) as uncertainty signal | Not in any control/planning paper | [2] (physics-model residuals) |
-| Residual anomaly score (tail-risk) from ego-system residuals | External agents only: [7,8,9,10,11,12,16,17] | None |
-| Runtime velocity constraint from residual anomaly signal | Not in any verified paper | [18] (heuristic, discrete) |
+| Prediction residuals (GNN) as ego-health signal | Not in any control/planning paper | [2] (physics-model residuals) |
+| Tail-risk score (e.g., CVaR) from ego-system residuals | CVaR over external agents only: [7,8,9,10,11,12,16,17] | None |
+| Continuous runtime velocity constraint from residual score | Not in any verified paper | [18] (heuristic, discrete) |
 | Bidirectional: tighten AND relax same framework | [10] has discrete switch; others monotone | None (continuous) |
 | Full AV stack deployment (Autoware + AWSIM) | [14,16,17,18] have simulation/robot validation | None at Autoware level |
 | No retraining at deployment | [5] (offline sim), [2] (online GP inference) | None (analytical) |
 | Continuous graded tightening | [2,3,5,6,9,11,13,14] have continuous mechanisms | None from ego residuals |
-| Probabilistic coverage guarantee (k_σ) | [1,2,3,6,7,8,9,11,13,14,15,17] have formal bounds | [9] (CVaR-CBF, linear) |
+| Formal bound without parametric distribution assumption | GP [2]: Gaussian; CBF [9]: disturbance model; DR [8,11,17]: Wasserstein | None for GNN residuals |
+
+### 5.2 The Mapping Problem Gap (Specific to This Contribution)
+
+| Open Sub-Problem | Why Existing Methods Don't Solve It |
+|---|---|
+| Calibration without prior distribution | GP uses `k_σ = √(2ln(1/δ))` (Gaussian); chance constraints use Φ⁻¹ (Gaussian). GNN residuals are empirical, non-Gaussian. |
+| Non-parametric bound type | Wasserstein DR bounds require Lipschitz structure on external distributions. No analogous bound exists for ego-model residual sequences. |
+| Projection from multi-dim. residuals to scalar | All verified methods work on scalar disturbance or cost. Aggregating multi-dimensional GNN residuals (position, velocity, steering, accel.) into a single anomaly score is an open design problem. |
+| Bidirectional calibration | Most methods only tighten. Symmetric relaxation with calibrated recovery rate — to preserve mission completion — is not addressed. |
 
 ---
 
-## 5. Gap Statement (for Thesis Chapter 2)
+## 6. Gap Statement (for Thesis Chapter 2)
 
-The literature shows three partially overlapping research threads that RISE unifies:
+The literature shows three partially overlapping threads that RISE unifies. The gap is
+not merely that "no one closed the loop" — it is that **the mapping problem from
+ego-health residuals to constraint values has not been formulated or solved by any
+existing work.**
+
+---
 
 **Thread 1 — Runtime monitoring (passive):** Papers such as Vadnerkar et al. 2025 [19]
-and Jiang et al. 2024 [18] compute risk scores or ODD violation signals at runtime
-with high accuracy and low latency. The consensus limitation: these systems are
-*observers*. They detect elevated risk but do not close the loop to the controller.
-Jiang et al. trigger a discrete mode switch; no paper uses a running residual anomaly
-score from a digital twin to continuously modify a constraint parameter.
+and Jiang et al. 2024 [18] compute risk or health scores from observed data at runtime.
+These systems are observers — they produce a signal but do not act on it. Jiang et al.
+trigger a discrete mode switch at a fixed threshold; no paper uses a running residual
+score from a deployed digital twin to continuously and formally compute a constraint value.
+The missing element is not the signal — it is the mapping from that signal to a constraint.
 
-**Thread 2 — Constraint tightening from model uncertainty:** Papers such as
-Hewing et al. 2020 [2], Wabersich & Zeilinger 2021 [3], Zanon & Gros 2021 [1],
-and Bongard et al. 2026 [6] implement principled constraint tightening under model
-uncertainty. The consensus limitation: uncertainty is derived from either a *white-box
-physics model* residual (GP posterior) or a *worst-case parametric disturbance bound*.
-None use a learned GNN that monitors the full spatial-temporal multi-agent scene
-including ego vehicle health, and none are deployed in a full urban AV stack.
+---
 
-**Thread 3 — CVaR in planning and safety constraints:** Papers such as Hakobyan
-et al. 2019 [7], Hakobyan & Yang 2022 [11], Kishida 2025 [9], Safaoui 2023 [8],
-Chang et al. 2025 [10], Mustafa et al. 2024 [16], and Ryu & Mehr 2024 [17] use
-CVaR as a safety metric in trajectory planning or control barrier formulations. The
-consensus limitation: CVaR is computed over *external agent outcome distributions*
-(obstacle trajectories, intent modes) — not over the ego vehicle's own *prediction error
-distribution*. CVaR characterizes planning risk from the external environment, not
-system-health risk from within the ego AV stack.
+**Thread 2 — Constraint tightening with principled mappings:** Papers such as
+Hewing et al. 2020 [2], Zanon & Gros 2021 [1], and Bongard et al. 2026 [6] derive
+constraint tightening amounts from principled mappings: GP confidence intervals,
+Pontryagin set differences, contraction metrics. These mappings work because the
+underlying uncertainty has known structure — a GP posterior is Gaussian, a robust MPC
+disturbance set is polytopic, a CCM is derived from a known dynamics model. The mapping
+from uncertainty signal to constraint value is closed-form and formally justified.
 
-**The RISE gap (confirmed unoccupied across all 18 verified papers):**
-No existing verified paper simultaneously:
-1. Uses a **learned digital twin (GNN)** to predict nominal behavior across the full traffic scene
-2. Computes a **residual anomaly score** (e.g., tail-risk metric such as CVaR) from that model's
-   prediction error distribution as a measure of ego-system reliability
-3. Maps this score **continuously** to a **velocity constraint parameter** in a production AV planner
-4. Provides **bidirectional** tightening (relaxes when score falls, preserving mission utility)
-5. Offers a **principled probabilistic guarantee** relating the residual signal to constraint violation bounds
-6. Does so without **any retraining at deployment**
+The consensus limitation: **every verified mapping method requires either a white-box
+physics model or a parametric distribution assumption.** When the uncertainty signal is
+the running prediction error of a learned GNN over a complex multi-agent urban scene,
+none of these mapping methods applies. The GP calibration formula assumes Gaussian
+residuals; contraction analysis requires differential structure absent from a GNN;
+parametric set operations require a known disturbance model. The mapping problem — how
+to go from empirical, non-parametric, multi-dimensional GNN residuals to a constraint
+value — is unsolved.
+
+---
+
+**Thread 3 — CVaR in safety constraints (correct tool, wrong input):** Papers such as
+Hakobyan et al. 2019 [7], Kishida 2025 [9], Safaoui 2023 [8], and Ryu & Mehr 2024 [17]
+use CVaR as the mechanism to map a distribution to a safety constraint value. The
+Rockafellar-Uryasev representation and Wasserstein dual LP are established, tractable
+tools for this mapping. The constraint value is formally derived as the CVaR of the
+distribution, providing a probabilistic guarantee.
+
+The consensus limitation: **CVaR is applied to external agent distributions only** —
+pedestrian future positions, vehicle intent modes. No verified paper applies CVaR to the
+ego vehicle's own prediction error distribution and uses the result to set a constraint
+parameter. Vadnerkar et al. 2025 [19] computes CVaR over GNN residuals but stops at
+classification — the closed-form path from CVaR-of-residuals to a constraint value is
+absent. The tools exist; the application to ego-health residuals does not.
+
+---
+
+**The RISE contribution (confirmed unoccupied across all 18 verified papers):**
+
+RISE addresses a specific open problem: *derive a mapping from empirical GNN prediction
+residuals to a continuous velocity constraint parameter, calibrated from in-situ data,
+with a principled probabilistic guarantee, that is neither over-conservative nor binary.*
+
+This requires simultaneously solving the four open sub-problems identified in Section 3.3:
+calibration without a prior distribution, a non-parametric bound type, projection of
+multi-dimensional residuals to a scalar anomaly score, and bidirectional calibration for
+mission preservation. No existing paper addresses these jointly.
+
+No verified paper simultaneously:
+1. Uses a **learned digital twin (GNN)** to generate an ego-health residual signal
+2. Formulates a **principled mapping** from the empirical residual distribution to a constraint value
+3. Applies that mapping **continuously** to a **velocity constraint** in a production AV planner
+4. Provides **bidirectional** operation (tighten under elevated risk, relax during recovery)
+5. Offers a **formal bound** on constraint violation probability without assuming a parametric residual distribution
+6. Does so without **retraining at deployment**
 7. Is **validated end-to-end** in a full production AV stack (Autoware + AWSIM)
 
 ---
 
-## 6. Full Reference List
+## 7. Full Reference List
 
 ```
 [1]  Zanon, M., & Gros, S. (2021). Safe Reinforcement Learning Using Robust MPC.
