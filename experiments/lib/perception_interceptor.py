@@ -84,15 +84,35 @@ class PerceptionInterceptor(Node):
 
     def __init__(self, strategy: str = 'passthrough', params: Optional[Dict[str, Any]] = None,
                  fault_strategy: Optional[str] = None,
-                 fault_params: Optional[Dict[str, Any]] = None):
+                 fault_params: Optional[Dict[str, Any]] = None,
+                 fault_delay: float = 0.0):
         super().__init__('perception_interceptor')
 
         self.strategy = strategy
         self.params = params or {}
 
-        # Fault overlay (applied on top of scenario injection)
-        self.fault_strategy = fault_strategy
-        self.fault_params = fault_params or {}
+        # Fault overlay (applied on top of scenario injection).
+        # If fault_delay > 0, the fault starts in passthrough and activates after fault_delay
+        # seconds. This avoids degrading the planning pipeline during cold-start initialization
+        # (goal-set → trajectory → engage), which can trigger MRM before driving begins.
+        if fault_delay > 0.0 and fault_strategy is not None:
+            self.fault_strategy = None   # passthrough until timer fires
+            self.fault_params = {}
+            self._pending_fault_strategy = fault_strategy
+            self._pending_fault_params = fault_params or {}
+            self._fault_delay_timer = threading.Timer(fault_delay, self._activate_fault_overlay)
+            self._fault_delay_timer.daemon = True
+            self._fault_delay_timer.start()
+            self.get_logger().info(
+                f'Fault overlay scheduled in {fault_delay:.0f}s: '
+                f'{fault_strategy} {fault_params}'
+            )
+        else:
+            self.fault_strategy = fault_strategy
+            self.fault_params = fault_params or {}
+            self._pending_fault_strategy = None
+            self._pending_fault_params = {}
+            self._fault_delay_timer = None
 
         self._lock = threading.Lock()
 
@@ -158,6 +178,15 @@ class PerceptionInterceptor(Node):
         self.get_logger().info(
             f'PerceptionInterceptor started: strategy={strategy}, params={params}, '
             f'fault_strategy={fault_strategy}, fault_params={fault_params}'
+        )
+
+    def _activate_fault_overlay(self):
+        """Activate the deferred fault overlay. Called from a threading.Timer."""
+        with self._lock:
+            self.fault_strategy = self._pending_fault_strategy
+            self.fault_params = self._pending_fault_params
+        self.get_logger().info(
+            f'Fault overlay activated: {self.fault_strategy} {self.fault_params}'
         )
 
     def _on_ego_pose(self, msg: Odometry):
@@ -549,6 +578,9 @@ def main():
                         help='Fault overlay applied on top of scenario (for fault+scenario experiments)')
     parser.add_argument('--fault-params', type=str, default='{}',
                         help='JSON string of fault overlay parameters')
+    parser.add_argument('--fault-delay', type=float, default=0.0,
+                        help='Seconds to wait before activating fault overlay (0 = immediate). '
+                             'Use ~45s to avoid stressing planning during cold-start engage.')
     args = parser.parse_args()
 
     params = json.loads(args.params)
@@ -560,6 +592,7 @@ def main():
         params=params,
         fault_strategy=args.fault_strategy,
         fault_params=fault_params,
+        fault_delay=args.fault_delay,
     )
 
     try:

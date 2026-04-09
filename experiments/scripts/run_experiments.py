@@ -165,8 +165,6 @@ class ExperimentRunner:
             print("ERROR: Failed to set goal")
             return False
 
-        time.sleep(2)
-
         # Check MRM state before engaging
         mrm_state, mrm_behavior = get_mrm_state()
         if mrm_state is not None and mrm_state != MrmState.NORMAL:
@@ -182,19 +180,37 @@ class ExperimentRunner:
                 print(f"ERROR: MRM state still not NORMAL after 30s (current: {mrm_state})")
                 return False
 
+        # Wait for planning to produce a trajectory before engaging.
+        # On a fresh system start, the control_command_gate has a timeout_builtin
+        # diagnostic: if the controller receives no commands within its timeout after
+        # engage, the gate fires ERROR → /autoware/system fails → MRM fires immediately.
+        # Waiting for a non-empty trajectory guarantees the planning→control pipeline
+        # is ready before we activate the controller.
+        print("Waiting for planning trajectory before engage...")
+        if not self._wait_for_trajectory(timeout=30.0):
+            print("WARNING: No trajectory received within 30s, engaging anyway...")
+
         # Engage autonomous mode
         print("Engaging autonomous mode...")
         engage_autonomous()
-        time.sleep(3)  # Increased wait time
+        time.sleep(3)
 
-        # Verify we're not in MRM state after engage
+        # Verify MRM is still NORMAL after engage
         mrm_state, mrm_behavior = get_mrm_state()
         if mrm_state is not None and mrm_state != MrmState.NORMAL:
-            print(f"WARNING: MRM triggered immediately after engage ({mrm_state.name})")
-            # Give it time to recover
-            time.sleep(5)
+            print(f"ERROR: MRM triggered immediately after engage ({mrm_state.name})")
+            return False
 
         return True
+
+    def _wait_for_trajectory(self, timeout: float = 30.0) -> bool:
+        """Wait for planning to publish a non-empty trajectory.
+
+        Polls the trajectory monitor in ros_utils. Falls back to a timed wait
+        if the monitor does not support trajectory checking.
+        """
+        from ros_utils import wait_for_trajectory
+        return wait_for_trajectory(timeout=timeout)
 
     def wait_for_driving(self, timeout: float = 30.0) -> bool:
         """Wait for vehicle to enter DRIVING state."""
@@ -327,7 +343,7 @@ class ExperimentRunner:
 
             # Set goal and engage
             if not self.set_goal_and_engage():
-                self.result['status'] = 'goal_setting_failed'
+                self.result['status'] = 'engage_failed'
                 return False
 
             # Wait for driving

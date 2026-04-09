@@ -26,4 +26,4 @@ params:
 
 sweep_params:
   distance: [20.0, 30.0, 50.0]
-  obj_type: ["CAR", "TRUCK"]
+  obj_type: ["CAR"]

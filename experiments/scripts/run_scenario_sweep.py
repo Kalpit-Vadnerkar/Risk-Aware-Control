@@ -84,7 +84,8 @@ def print_matrix(matrix: list):
 
 def start_interceptor(strategy: str, params: dict,
                        fault_strategy: Optional[str] = None,
-                       fault_params: Optional[dict] = None) -> subprocess.Popen:
+                       fault_params: Optional[dict] = None,
+                       fault_delay: float = 0.0) -> subprocess.Popen:
     """Launch the perception interceptor as a subprocess."""
     interceptor_script = os.path.join(
         os.path.dirname(__file__), '..', 'lib', 'perception_interceptor.py'
@@ -99,6 +100,8 @@ def start_interceptor(strategy: str, params: dict,
     if fault_strategy:
         cmd += ['--fault-strategy', fault_strategy,
                 '--fault-params', json.dumps(fault_params or {})]
+        if fault_delay > 0.0:
+            cmd += ['--fault-delay', str(fault_delay)]
 
     proc = subprocess.Popen(
         cmd,
@@ -134,7 +137,8 @@ def stop_interceptor(proc: subprocess.Popen):
 def run_single_experiment(exp: dict, goals_map: dict, stuck_timeout: float,
                           campaign: str = 'default',
                           fault_strategy: Optional[str] = None,
-                          fault_params: Optional[dict] = None) -> dict:
+                          fault_params: Optional[dict] = None,
+                          fault_delay: float = 45.0) -> dict:
     """Run a single experiment with interceptor lifecycle.
 
     Returns result dict.
@@ -153,13 +157,17 @@ def run_single_experiment(exp: dict, goals_map: dict, stuck_timeout: float,
         campaign=campaign,
     )
 
-    # Start interceptor
+    # Start interceptor. When a fault overlay is active, delay its activation by
+    # fault_delay seconds so planning can initialize cleanly before faults begin.
+    # This prevents dropout from stressing the planning pipeline during the
+    # cold-start engage sequence, which would cause immediate MRM.
     interceptor_proc = None
     try:
-        fault_str = f" + fault:{fault_strategy}" if fault_strategy else ""
+        fault_str = f" + fault:{fault_strategy} (delay={fault_delay:.0f}s)" if fault_strategy else ""
         print(f"\nStarting interceptor: {exp['scenario_type']} {exp['params']}{fault_str}")
         interceptor_proc = start_interceptor(exp['scenario_type'], exp['params'],
-                                              fault_strategy, fault_params)
+                                              fault_strategy, fault_params,
+                                              fault_delay=fault_delay if fault_strategy else 0.0)
 
         # Run the experiment using the existing runner
         # Import here to avoid ROS2 init conflicts

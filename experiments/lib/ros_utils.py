@@ -21,6 +21,7 @@ from autoware_adapi_v1_msgs.msg import RouteState as RouteStateMsg
 from autoware_adapi_v1_msgs.msg import MrmState as MrmStateMsg
 from autoware_adapi_v1_msgs.srv import SetRoutePoints
 from autoware_vehicle_msgs.msg import Engage, VelocityReport
+from autoware_planning_msgs.msg import Trajectory
 from geometry_msgs.msg import Pose, Point, Quaternion
 from std_msgs.msg import Header
 
@@ -129,6 +130,14 @@ class StateMonitorNode(Node):
             volatile_qos
         )
 
+        self._trajectory_ready = False
+        self.create_subscription(
+            Trajectory,
+            '/planning/scenario_planning/trajectory',
+            self._trajectory_callback,
+            volatile_qos
+        )
+
         self.get_logger().info('State monitor initialized')
 
     def _autoware_state_callback(self, msg):
@@ -148,6 +157,19 @@ class StateMonitorNode(Node):
         with self._lock:
             self._velocity = msg.longitudinal_velocity
             self._velocity_time = time.time()
+
+    def _trajectory_callback(self, msg):
+        with self._lock:
+            if msg.points:
+                self._trajectory_ready = True
+
+    def is_trajectory_ready(self) -> bool:
+        with self._lock:
+            return self._trajectory_ready
+
+    def reset_trajectory_ready(self):
+        with self._lock:
+            self._trajectory_ready = False
 
     def get_autoware_state(self) -> Tuple[Optional[AutowareState], str]:
         with self._lock:
@@ -415,6 +437,31 @@ def recover_from_emergency(max_attempts: int = 3) -> bool:
         time.sleep(5)
 
     print("Recovery failed after all attempts")
+    return False
+
+
+def wait_for_trajectory(timeout: float = 30.0) -> bool:
+    """Wait for planning to publish a non-empty trajectory.
+
+    Called before engage_autonomous() to ensure the planning→control pipeline
+    is primed. This prevents the control_command_gate timeout_builtin diagnostic
+    from firing immediately after engage on a cold system start.
+    """
+    _ensure_node_running()
+    _monitor_node.reset_trajectory_ready()
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if _monitor_node.is_trajectory_ready():
+            elapsed = time.time() - start_time
+            print(f"  Planning trajectory ready after {elapsed:.1f}s")
+            return True
+        elapsed = time.time() - start_time
+        if int(elapsed) % 5 == 0 and int(elapsed) > 0:
+            print(f"  [{elapsed:.0f}s] Waiting for trajectory...")
+        time.sleep(0.5)
+
+    print(f"  No trajectory received within {timeout}s")
     return False
 
 
