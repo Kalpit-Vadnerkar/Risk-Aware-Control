@@ -63,6 +63,8 @@ from ros_utils import (
     clear_route, engage_autonomous, set_goal,
     start_rosbag_recording, stop_rosbag_recording,
     wait_for_mrm_recovery, recover_from_emergency,
+    wait_for_clean_diagnostics,
+    set_velocity_limit,
     AutowareState, MrmState, MrmBehavior, shutdown_ros
 )
 from metrics import compute_metrics_from_bag, save_metrics
@@ -186,9 +188,36 @@ class ExperimentRunner:
         # engage, the gate fires ERROR → /autoware/system fails → MRM fires immediately.
         # Waiting for a non-empty trajectory guarantees the planning→control pipeline
         # is ready before we activate the controller.
+        #
+        # If planning doesn't respond in 60s, the system is likely in a contaminated
+        # post-MRM state. Do NOT engage — that causes 79 rapid MRM oscillations over
+        # 200s with the vehicle never moving (worse than failing fast here).
+        # Instead, attempt one route re-set to force the behavior planner to restart
+        # planning from scratch, which often clears the contaminated state without a
+        # full Autoware restart.
         print("Waiting for planning trajectory before engage...")
-        if not self._wait_for_trajectory(timeout=30.0):
-            print("WARNING: No trajectory received within 30s, engaging anyway...")
+        if not self._wait_for_trajectory(timeout=60.0):
+            print("No trajectory after 60s — attempting route re-set to recover planning...")
+            clear_route()
+            time.sleep(3.0)
+            # Re-set the same goal to re-trigger the behavior planner
+            success = set_goal(
+                goal.position['x'],
+                goal.position['y'],
+                goal.position.get('z', 0.0),
+                goal.orientation.get('z', 0.0),
+                goal.orientation.get('w', 1.0),
+                timeout=30.0
+            )
+            if not success:
+                print("ERROR: Route re-set failed — aborting trial (engage_failed)")
+                return False
+            print("Route re-set succeeded. Waiting up to 60s for trajectory...")
+            if not self._wait_for_trajectory(timeout=60.0):
+                print("ERROR: No trajectory after route re-set — aborting trial (engage_failed)")
+                print("       System needs a reset before next trial.")
+                return False
+            print("Trajectory received after route re-set.")
 
         # Engage autonomous mode
         print("Engaging autonomous mode...")
@@ -487,28 +516,30 @@ def reset_vehicle(max_retries: int = 2):
         print(f"System in {mrm_state.name} state, clearing route first...")
         clear_route()
         time.sleep(2)
-        # Wait a bit for MRM to potentially recover
         wait_for_mrm_recovery(timeout=10.0)
 
     for attempt in range(max_retries):
         try:
             result = subprocess.run(
                 ['python3', reset_script, '--wait'],
-                timeout=90,  # Increased timeout
+                timeout=90,
                 capture_output=False
             )
             if result.returncode == 0:
-                # After reset, verify MRM is NORMAL
                 time.sleep(2)
                 mrm_state, _ = get_mrm_state()
-                if mrm_state == MrmState.NORMAL:
-                    return True
-                else:
+                if mrm_state != MrmState.NORMAL:
                     print(f"WARNING: MRM state after reset: {mrm_state}")
-                    # Try to recover
-                    if recover_from_emergency(max_attempts=1):
-                        return True
-            print(f"WARNING: Reset returned non-zero exit code: {result.returncode}")
+                    recover_from_emergency(max_attempts=1)
+                # Wait for /diagnostics_agg to show zero ERROR entries for 5s.
+                # MRM NORMAL is a symptom of clean diagnostics, not the cause —
+                # checking diagnostics directly catches the contaminated state where
+                # 14+ nodes are simultaneously in ERROR after a bad MRM cascade.
+                if wait_for_clean_diagnostics(timeout=60.0, stable_duration=5.0):
+                    return True
+                print("  Diagnostics did not clear after reset — retrying...")
+            else:
+                print(f"WARNING: Reset returned non-zero exit code: {result.returncode}")
         except subprocess.TimeoutExpired:
             print(f"WARNING: Reset timed out (attempt {attempt + 1}/{max_retries})")
         except Exception as e:
@@ -563,6 +594,8 @@ def main():
                         help='JSON string of scenario params (inline, no YAML needed)')
     parser.add_argument('--campaign', type=str, default='default',
                         help='Campaign name (subdirectory under data/)')
+    parser.add_argument('--velocity-limit', type=float, default=0.0,
+                        help='Max velocity cap in m/s (0 = Autoware default ~20 m/s)')
     args = parser.parse_args()
 
     # Handle metrics-only mode
@@ -633,6 +666,7 @@ def main():
     print(f"Condition: {args.condition}")
     print(f"Scenario: {scenario_type} {scenario_params if scenario_params else ''}")
     print(f"Campaign: {args.campaign}")
+    print(f"Velocity limit: {args.velocity_limit:.1f} m/s" if args.velocity_limit > 0 else "Velocity limit: default")
     print(f"Stuck timeout: {args.stuck_timeout}s")
     print()
     print("Goals:")
@@ -646,6 +680,12 @@ def main():
 
     print()
     input("Press Enter to start experiments (Ctrl+C to cancel)...")
+
+    # Apply velocity limit if specified
+    if args.velocity_limit > 0:
+        print(f"\nApplying velocity limit: {args.velocity_limit:.1f} m/s")
+        set_velocity_limit(args.velocity_limit)
+        time.sleep(0.5)
 
     # Initial reset to ensure clean state
     if not args.skip_reset:
@@ -689,6 +729,13 @@ def main():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 exp_id = f"{goal.id}_{args.condition}_t{trial+1}_{timestamp}"
 
+                # Re-apply velocity limit before each trial (Autoware's velocity
+                # smoother can lose the external limit when the route is cleared
+                # between experiments).
+                if args.velocity_limit > 0:
+                    set_velocity_limit(args.velocity_limit)
+                    time.sleep(0.2)
+
                 # Create config
                 config = ExperimentConfig(
                     experiment_id=exp_id,
@@ -696,7 +743,9 @@ def main():
                     stuck_timeout=args.stuck_timeout,
                     condition=args.condition,
                     scenario_type=scenario_type,
-                    scenario_params=scenario_params,
+                    scenario_params={**scenario_params,
+                                     **({"velocity_limit_mps": args.velocity_limit}
+                                        if args.velocity_limit > 0 else {})},
                     campaign=args.campaign,
                 )
 
@@ -719,8 +768,18 @@ def main():
                 if not args.skip_reset and (i < len(goals) - 1 or trial < args.trials - 1):
                     print("\nResetting vehicle...")
                     if not reset_vehicle():
-                        print("WARNING: Reset failed, waiting 10s before continuing...")
-                        time.sleep(10)
+                        # First reset failed — the system is likely in the contaminated
+                        # oscillation state. Wait for the diagnostic flood to decay, then
+                        # try once more before giving up and moving on.
+                        print("WARNING: Reset failed — waiting 20s for diagnostics to clear...")
+                        time.sleep(20)
+                        print("Attempting second reset...")
+                        if not reset_vehicle():
+                            print("ERROR: Second reset also failed — system in bad state.")
+                            print("       Waiting 30s before next run (data may be contaminated).")
+                            time.sleep(30)
+                        else:
+                            time.sleep(5)
                     else:
                         time.sleep(5)
     finally:

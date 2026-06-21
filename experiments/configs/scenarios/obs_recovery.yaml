@@ -1,0 +1,15 @@
+scenario_type: static_obstacle
+description: >
+  Static CAR placed 30m ahead in-lane. Avoidance policy set to "auto" so Autoware
+  executes the lane change without waiting for RTC approval. Vehicle swerves into
+  adjacent lane (LL 237) and continues to goal.
+  Requires: avoidance_for_ambiguous_vehicle.policy = "auto" in Autoware config.
+  See: autoware/install/autoware_launch/share/autoware_launch/config/planning/
+       scenario_planning/lane_driving/behavior_planning/behavior_path_planner/
+       autoware_behavior_path_static_obstacle_avoidance_module/
+       static_obstacle_avoidance.param.yaml  line ~155
+params:
+  distance: 30.0
+  lateral_offset: 0.0
+  min_travel_before_placement: 150.0
+  obj_type: CAR

@@ -1,0 +1,11 @@
+scenario_type: static_obstacle
+description: >
+  Static CAR placed 30m ahead in-lane. Autoware default policy (avoidance=manual).
+  Vehicle will stop and stay stopped. Captures the baseline "stuck" behavior
+  that the framework is designed to recover from.
+  Requires: avoidance_for_ambiguous_vehicle.policy = "manual" (Autoware default).
+params:
+  distance: 30.0
+  lateral_offset: 0.0
+  min_travel_before_placement: 150.0
+  obj_type: CAR

@@ -24,6 +24,7 @@ from autoware_vehicle_msgs.msg import Engage, VelocityReport
 from autoware_planning_msgs.msg import Trajectory
 from geometry_msgs.msg import Pose, Point, Quaternion
 from std_msgs.msg import Header
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 
 
 class AutowareState(IntEnum):
@@ -67,6 +68,7 @@ class MrmBehavior(IntEnum):
 # Global ROS2 state monitor node
 _monitor_node = None
 _executor = None
+_velocity_publisher = None  # persistent — never destroyed so smoother stays matched
 _spin_thread = None
 
 
@@ -138,6 +140,18 @@ class StateMonitorNode(Node):
             volatile_qos
         )
 
+        # Diagnostic aggregator — track ERROR count across all subsystems.
+        # Used to gate between-run resets: only proceed when the system is
+        # genuinely clean, not just momentarily NORMAL between MRM oscillations.
+        self._diag_error_count = None  # None = no message received yet
+        self._diag_last_update = 0.0
+        self.create_subscription(
+            DiagnosticArray,
+            '/diagnostics_agg',
+            self._diagnostics_callback,
+            volatile_qos
+        )
+
         self.get_logger().info('State monitor initialized')
 
     def _autoware_state_callback(self, msg):
@@ -170,6 +184,22 @@ class StateMonitorNode(Node):
     def reset_trajectory_ready(self):
         with self._lock:
             self._trajectory_ready = False
+
+    def _diagnostics_callback(self, msg):
+        error_count = sum(
+            1 for s in msg.status
+            if s.level == DiagnosticStatus.ERROR
+        )
+        with self._lock:
+            self._diag_error_count = error_count
+            self._diag_last_update = time.time()
+
+    def get_diagnostic_error_count(self) -> Optional[int]:
+        """Return current ERROR count from /diagnostics_agg, or None if no msg yet."""
+        with self._lock:
+            if time.time() - self._diag_last_update > 5.0:
+                return None  # stale
+            return self._diag_error_count
 
     def get_autoware_state(self) -> Tuple[Optional[AutowareState], str]:
         with self._lock:
@@ -263,7 +293,7 @@ def _ensure_node_running():
 
 def shutdown_ros():
     """Shutdown ROS2 cleanly."""
-    global _monitor_node, _executor, _spin_thread
+    global _monitor_node, _executor, _spin_thread, _velocity_publisher
 
     if _executor is not None:
         _executor.shutdown()
@@ -275,6 +305,7 @@ def shutdown_ros():
     _monitor_node = None
     _executor = None
     _spin_thread = None
+    _velocity_publisher = None
 
 
 def wait_for_topic(topic: str, timeout: float = 30.0) -> bool:
@@ -379,6 +410,67 @@ def clear_route(timeout: float = 10.0) -> bool:
         return False
 
 
+def wait_for_clean_diagnostics(
+    timeout: float = 60.0,
+    stable_duration: float = 5.0,
+    max_errors: int = 0,
+) -> bool:
+    """Wait until /diagnostics_agg reports no ERROR entries for `stable_duration` seconds.
+
+    This is the ground-truth health check for between-run resets. The contaminated
+    state produces 14+ simultaneous ERROR entries across planning, control, and system
+    nodes. MRM NORMAL is a *consequence* of clean diagnostics — checking MRM alone
+    misses the window between oscillations. Checking the raw diagnostic count directly
+    tells us when the system is actually ready.
+
+    Args:
+        timeout: Maximum seconds to wait before giving up.
+        stable_duration: Consecutive seconds of clean diagnostics required.
+        max_errors: Maximum allowed ERROR count (0 = fully clean).
+
+    Returns:
+        True if diagnostics stayed clean for stable_duration seconds within timeout.
+    """
+    _ensure_node_running()
+
+    print(f"Waiting for clean diagnostics (max_errors={max_errors}, stable={stable_duration}s)...")
+    stable_since = None
+    start = time.time()
+
+    while time.time() - start < timeout:
+        error_count = _monitor_node.get_diagnostic_error_count()
+
+        if error_count is None:
+            # No message received yet — wait for the aggregator to publish
+            print("  [waiting for /diagnostics_agg...]")
+            time.sleep(1.0)
+            continue
+
+        if error_count <= max_errors:
+            if stable_since is None:
+                stable_since = time.time()
+            elapsed_stable = time.time() - stable_since
+            if elapsed_stable >= stable_duration:
+                total = round(time.time() - start, 1)
+                print(f"  Diagnostics clean ({error_count} errors) for {stable_duration}s — system ready ({total}s total)")
+                return True
+        else:
+            if stable_since is not None:
+                print(f"  ERROR count jumped to {error_count} — resetting stability window")
+            stable_since = None
+
+        elapsed = time.time() - start
+        if int(elapsed) % 10 == 0 and int(elapsed) > 0:
+            err_str = str(error_count) if error_count is not None else "?"
+            print(f"  [{elapsed:.0f}s] diagnostic errors: {err_str}")
+        time.sleep(1.0)
+
+    elapsed = time.time() - start
+    error_count = _monitor_node.get_diagnostic_error_count()
+    print(f"  Diagnostics did not clear within {timeout}s (current errors: {error_count})")
+    return False
+
+
 def wait_for_mrm_recovery(timeout: float = 30.0) -> bool:
     """Wait for MRM to return to NORMAL state."""
     _ensure_node_running()
@@ -438,6 +530,41 @@ def recover_from_emergency(max_attempts: int = 3) -> bool:
 
     print("Recovery failed after all attempts")
     return False
+
+
+def set_velocity_limit(limit_mps: float) -> bool:
+    """Publish an external velocity limit to Autoware.
+
+    Publishes to /planning/scenario_planning/max_velocity, which the velocity
+    smoother node reads at each planning cycle. Takes effect within ~0.1s.
+    Publishing 0.0 removes the limit (restores Autoware default of 20 m/s).
+
+    Uses a persistent publisher so the velocity smoother never sees an
+    'unmatched publisher' event — which would cause it to reset the limit.
+    """
+    global _velocity_publisher
+    try:
+        from autoware_internal_planning_msgs.msg import VelocityLimit
+        _ensure_node_running()
+        if _velocity_publisher is None:
+            _velocity_publisher = _monitor_node.create_publisher(
+                VelocityLimit,
+                '/planning/scenario_planning/max_velocity',
+                1
+            )
+        msg = VelocityLimit()
+        msg.max_velocity = float(limit_mps) if limit_mps > 0 else 20.0
+        msg.use_constraints = False
+        msg.sender = 'experiment_runner'
+        for _ in range(3):
+            _velocity_publisher.publish(msg)
+            time.sleep(0.05)
+        limit_str = f"{limit_mps:.1f} m/s" if limit_mps > 0 else "default (20.0 m/s)"
+        print(f"  Velocity limit set to {limit_str}")
+        return True
+    except Exception as e:
+        print(f"  WARNING: Failed to set velocity limit: {e}")
+        return False
 
 
 def wait_for_trajectory(timeout: float = 30.0) -> bool:

@@ -1,184 +1,211 @@
 # Risk-Aware Control — Task List
 
-**Last Updated:** 2026-03-17
+**Last Updated:** 2026-05-03
 
 ---
 
-## Development Philosophy
+## Research Direction (as of May 2026)
 
-1. **Work in small chunks** — Pick specific tasks, not entire phases
-2. **Validation-first** — Know what we're measuring before building
-3. **Document decisions** — Rationale for committee defense
-4. **Scenarios first, faults second** — Establish clean risk scenarios, then degrade perception
+**Core contribution:** ST-GAT residuals continuously characterize the uncertainty
+landscape of an AV's situation. When Autoware stops at a static obstacle (one point
+in safety×progress space), the residuals can tell us *how recoverable* the situation
+is — and what velocity constraint lets the vehicle safely proceed. This moves the
+vehicle toward the Pareto frontier of (safety, progress) rather than defaulting to
+the trivially safe but zero-progress corner.
 
----
+**Claim to establish:**
+1. Residuals from a nominal ST-GAT model are low during nominal driving and elevated
+   during obstacle encounters
+2. The residual pattern differs between solvable scenarios (adjacent lane exists) and
+   unsolvable ones (single-lane, no escape)
+3. Conformal prediction over nominal residuals at each velocity level gives a
+   distribution-free coverage guarantee on prediction error
+4. Constraint adjustment (velocity cap) enables forward progress in solvable cases
+   without violating the conformal bound
 
-## Phase 0: Environment Setup ✅ COMPLETE
-
-- [x] AWSIM + Autoware verified working
-- [x] ROS2 topics documented
-- [x] Constraint parameters identified
-- [x] MRM wedge diagnosed and fixed (removed perception/planning from diagnostic gate)
-- [x] Autoware headless mode working
-
----
-
-## Phase 1: Experiment Infrastructure ✅ COMPLETE
-
-- [x] Experiment runner with goal tracking, stuck detection, metrics
-- [x] PerceptionInterceptor ROS2 node (6 strategies: passthrough, static_obstacle, cut_in, delay, dropout, noise)
-- [x] Scenario YAML config system + parameter sweep runner
-- [x] Metrics framework (safety, reliability, fail-operational, comfort)
-- [x] Campaign-based data organization
-- [x] `run_sweep.sh` convenience launcher (sources ROS2 + Autoware automatically)
-- [x] Trajectory-based obstacle placement (obstacles placed on actual planned route, not heading projection)
-- [x] Fault+scenario composition (`--fault-strategy` overlay on interceptor)
-- [x] Closing-time metric (`min_closing_time`) — TTC valid for static obstacles
-- [x] Metrics reads from `objects_filtered` — injected obstacles now tracked in safety metrics
-
-**Key files:**
-- `experiments/lib/perception_interceptor.py` — Core injection node
-- `experiments/lib/scenarios.py` — ObjectFactory, ObjectPlacer, ScenarioConfig
-- `experiments/scripts/run_scenario_sweep.py` — Sweep runner
-- `run_sweep.sh` — Shell launcher (no manual sourcing needed)
+**What this is NOT:** Re-implementing Autoware's planner. Autoware already has
+binary stop/avoidance behavior. Our signal is continuous, calibrated, and
+distribution-free — not a fixed policy.
 
 ---
 
-## Phase 2: Scenario Baseline Experiments 🔄 CURRENT
+## Phase 0: Data Collection ← CURRENT
 
-### Goal
-Establish how Autoware behaves under risk scenarios **without any perception faults**.
-This gives us the "expected risk behavior" baseline that RISE will be measured against.
+### 0.1 Nominal Campaigns
 
-### 2.1 Static Obstacle Sweep 🔄 IN PROGRESS
+Nominal data is the calibration foundation for conformal prediction.
+Each velocity level needs its own calibration set (residuals depend on speed).
 
-**Infrastructure fixes applied (Mar 2026):**
-- Obstacle now placed on planned trajectory (arc-length), not heading projection → guaranteed in-path
-- Distances updated: [20, 30, 50, 100]m (dropped 150m)
-- Metrics now read from `objects_filtered` → injected obstacle visible in safety metrics
-- `min_closing_time` metric added (= distance/ego_speed, valid for static obstacles)
-- Fault overlay support: `--fault-strategy perception_dropout --fault-params '{"dropout_rate":0.3}'`
+| Campaign | Status | Command |
+|----------|--------|---------|
+| `nom_v5`  | ✅ Done (16/18 success) | `./collect.sh nom_v5` |
+| `nom_v7`  | ⏳ Next | `./collect.sh nom_v7` |
+| `nom_v10` | ⏳ After v7 | `./collect.sh nom_v10` |
 
-**3-experiment pattern per distance:**
-1. Nominal: `./run_sweep.sh static_obstacle.yaml ...` (no fault)
-2. Fault:   `./run_sweep.sh static_obstacle.yaml ... --fault-strategy perception_dropout --fault-params '{"dropout_rate":0.3}'`
-3. RISE:    same as fault + RISE controller (Phase 4)
+**Notes on nom_v5:**
+- 2 failures both on goal_021 (t2: MRM emergency stop at 42s; t4: engage_failed)
+- High MRM triggers on goal_007_t3 (15) and goal_011_t4 (17) — flag for possible
+  exclusion from calibration set; these will produce elevated residuals in "nominal" data
+- Driving times consistent with 5 m/s cap (goal_011 ~126s × 5 m/s ≈ 630m)
+- 14 clean runs are usable; 2 high-MRM runs to evaluate after ST-GAT training
 
-| Status | Config | Notes |
-|--------|--------|-------|
-| ✅ | 50m × CAR × 3 goals × 2 trials | Done (old heading-based placement) |
-| ⏳ | **Full sweep 20/30/50/100m × CAR/TRUCK** | Re-run with trajectory placement |
+### 0.2 Obstacle Campaigns
 
-Command: `./run_sweep.sh static_obstacle.yaml --goals "goal_007,goal_011,goal_021" --trials 2 --stuck-timeout 180`
+Three obstacle conditions bracket the (solvable, unsolvable, recovery) space:
 
-### 2.2 Cut-in Sweep ⏳
+| Campaign | Status | What it shows |
+|----------|--------|---------------|
+| `obs_stuck`     | ✅ Done (6 runs, from earlier) | Autoware stops — baseline conservative behavior |
+| `obs_recovery`  | ⏳ Need | Autoware swerves (policy=auto) — actual recovery |
+| `obs_noescape`  | ⏳ Need | Single-lane, no path — stopping IS optimal |
 
-| Status | Config |
-|--------|--------|
-| ⏳ | 40m × 2s cut-in duration × 3 goals × 2 trials |
-| ⏳ | 80m × 4s cut-in duration × 3 goals × 2 trials |
+Commands:
+```bash
+./collect.sh obs_recovery    # sets policy to "auto", restores on exit
+./collect.sh obs_noescape    # verify obstacle lands in LL 241 (single-lane)
+```
 
-Command: `./run_sweep.sh cut_in.yaml --goals "goal_007,goal_011,goal_021" --trials 2 --stuck-timeout 120`
-
-### 2.3 Additional Scenarios ⏳ (NEW — TO IMPLEMENT)
-
-These three add meaningful scenario variety and are straightforward to implement
-via the existing PerceptionInterceptor + ObjectFactory infrastructure:
-
-**a) Slow Lead Vehicle**
-A car ahead of ego moving at reduced speed (2–4 m/s). Ego is doing ~5 m/s,
-so there is a closing distance. More realistic than a static obstacle — simulates
-slow urban traffic or a decelerating car. Expected: ego slows, possible MRM.
-- Params: `distance`, `lead_speed`, `obj_type`
-- Implementation: `ObjectFactory.create_object(vx=lead_speed)` injected every frame at fixed world position
-
-**b) Sudden Close Appearance**
-An object that appears at close range (10–15m) after the vehicle has been
-moving for N seconds. Simulates a pedestrian or cyclist emerging from behind
-a parked car. Forces a hard reaction from the planner.
-- Params: `trigger_time`, `distance`, `obj_type`
-- Implementation: passthrough until trigger_time, then inject at locked world position
-
-**c) Pedestrian Crossing**
-Small pedestrian object with lateral (perpendicular) velocity crossing the road
-at a specified distance ahead. Tests the planner's response to a different object
-class and motion type.
-- Params: `distance`, `crossing_speed`, `trigger_time`
-- Implementation: inject PEDESTRIAN with vy set to crossing_speed, position anchored
-
-### 2.4 Scenario Placement Investigation ⏳
-
-A key open question: are the injected objects landing on road segments where lane
-changes are physically possible? The static obstacle analysis shows Autoware always
-finds an escape route. Need to:
-- Map the first 100–200m of each goal route to understand lane structure
-- Identify any single-lane segments (no lane change possible)
-- If goals 007/011/021 don't have such segments, identify alternative goals
+**Before running obs_noescape:** Verify the obstacle placement actually lands in the
+single-lane segment (LL 241, ~102m arc) by checking rosbag `/tf` or ego position
+when obstacle first appears. `min_travel_before_placement: 60.0` + 30m ahead should
+give ~90-100m arc — need empirical confirmation.
 
 ---
 
-## Phase 3: Fault + Scenario Combinations ⏳
+## Phase 1: ST-GAT Training
 
-Once Phase 2 establishes "clean" risk scenario baselines, combine with perception faults.
-The hypothesis: perception faults degrade Autoware's ability to handle the risk scenarios,
-producing more dangerous outcomes than either fault or scenario alone.
+Port and train the model from the T-ITS paper. Reference implementation is
+READ-ONLY at `../Graph-Scene-Representation-and-Prediction/`.
 
-### Combination Matrix (priority order)
+Work goes in `st_gat/` within this repo.
 
-| Scenario | Fault | Expected Effect |
-|----------|-------|-----------------|
-| Static obstacle 30m | Dropout 30% | Obstacle may not be detected in time → no lane change |
-| Static obstacle 30m | Position noise 0.5m | Avoidance trajectory displaced → closer pass |
-| Static obstacle 30m | Delay 200ms | Detection arrives late → harder braking, possible collision proxy |
-| Cut-in | Dropout 30% | Cut-in car intermittently invisible → tracking instability |
-| Cut-in | Delay 200ms | Reaction delayed → closer approach |
+### 1.1 Data Extraction
 
-### What "Virtual Collision" Looks Like
+- [ ] Write `st_gat/extract.py`: reads rosbag files from `experiments/data/baseline_all/`
+      and all `nom_v*/` campaigns, extracts per-timestep features:
+      position(2), velocity(2), steering(1), accel(1), obj_distance(1), traffic_light(1)
+- [ ] Output: `st_gat/data/nominal_features.pkl` — one row per timestep, labeled by
+      run_id and velocity_cap
+- [ ] Verify feature distributions look sane (no NaNs, velocity capped at expected values)
 
-In simulation, the injected object has no physical presence — the vehicle cannot actually
-hit it. A "virtual collision" in our framework is defined as:
-- `min_object_distance < 1.5m` at any point
-- Or `collision_proxy_count > 0` (clearance below 2m threshold)
-- Or MRM_SUCCEEDED (emergency stop triggered by the scenario)
+### 1.2 Model Training
 
----
+- [ ] Write `st_gat/config.py`: hyperparams matching T-ITS paper
+- [ ] Write `st_gat/train.py`: train ST-GAT on nominal data (baseline_all + nom_v5/v7/v10),
+      80/20 train/val split
+- [ ] Train and save model checkpoint to `st_gat/checkpoints/`
+- [ ] Verify residuals are low on held-out nominal runs (raw residual < 1σ in majority
+      of timesteps)
 
-## Phase 4: RISE Implementation ⏳
+**Success criterion:** On held-out nominal data, mean raw residual < 0.5 m/s for
+velocity features, < 1.0m for position features.
 
-**Prerequisite:** Phase 2 and 3 data available to characterize what residuals look like
-under risk scenarios.
+### 1.3 Residual Computation
 
-| Status | Task |
-|--------|------|
-| ⏳ | Collect training data covering nominal + risk scenario conditions |
-| ⏳ | Adapt ST-GAT: add scenario-relevant features if needed |
-| ⏳ | Train model, verify residuals spike during obstacle encounters |
-| ⏳ | Implement CVaR computation from residual stream |
-| ⏳ | Design CVaR → velocity limit mapping |
-| ⏳ | Integrate with Autoware velocity_smoother |
-| ⏳ | Validate: Phase 3 fault+scenario with RISE vs without RISE |
+- [ ] Write `st_gat/residuals.py`: run trained model over all experiment rosbags,
+      compute per-timestep Raw, KL, and CUSUM residuals
+- [ ] Output: one residual CSV per run in `st_gat/residuals/`
+- [ ] Plot residual traces for:
+      - A clean nominal run (should be flat near zero)
+      - An obs_stuck run (should spike when obstacle appears)
+      - An obs_recovery run (should spike, then return to nominal)
+      - An obs_noescape run (should spike and stay elevated — no escape)
 
 ---
 
-## Key Configuration
+## Phase 2: Signal Validation
 
-| Item | Value | File |
-|------|-------|------|
-| Sweep goals | goal_007 (915m), goal_011 (780m), goal_021 (849m) | `experiments/configs/goals.json` |
-| Excluded goal | goal_024 (bad map area, MRM_SUCCEEDED always) | — |
-| MRM fix | perception + planning removed from autonomous mode gate | `autoware/.../autoware-main.yaml` |
-| Planning input | `objects_filtered` (interceptor must be running) | `tier4_planning_component.launch.xml:11` |
+**Goal:** Confirm the residual signal empirically differentiates solvable from
+unsolvable scenarios before building any control logic.
+
+### 2.1 Solvable vs Unsolvable Separation
+
+- [ ] Compare residual traces: obs_recovery vs obs_noescape
+- [ ] Key question: does the residual pattern (shape, peak, or duration) differ
+      between the two? If yes, it's a viable signal. If no, the hypothesis fails.
+- [ ] Compute a simple scalar: AUC of residual during obstacle window (t_appear to
+      t_escape or timeout) — does it separate the two populations?
+
+**This is the empirical test that validates or invalidates the core hypothesis.**
+If residuals don't separate solvable from unsolvable, redesign before proceeding.
+
+### 2.2 Velocity-Dependent Residual Baseline
+
+- [ ] For each velocity level (5, 7, 10 m/s), compute the 95th-percentile residual
+      during nominal driving → this is A₀(v), the "what's normal for this speed"
+- [ ] Check: does A₀ vary significantly across velocity levels? (Expected: yes, higher
+      speed = richer dynamics = higher variance)
+- [ ] These per-speed baselines will anchor conformal calibration in Phase 3
 
 ---
 
-## Open Questions
+## Phase 3: Conformal Prediction Calibration
 
-1. **Are injected objects landing on single-lane road segments?** Current evidence says
-   Autoware always lane-changes. Need to verify route geometry for goals 007/011/021.
+**Goal:** Get a distribution-free guarantee: at velocity cap v, P[prediction error ≤
+r(A)] ≥ 1-δ, where r(A) is the conformal bound at anomaly score A.
 
-2. **Is 20–30m close enough to prevent lane change?** At 20m, Autoware may still have
-   time. May need to also test with lateral_offset partially in adjacent lane to block both.
+### 3.1 Per-Speed Calibration
 
-3. **TTC metric is broken for static scenarios.** Static objects have zero velocity →
-   TTC = ∞ always. Need a dedicated closing-distance metric (time to reach obstacle
-   at current speed) for static obstacle scenarios.
+For each velocity level (v5, v7, v10):
+- [ ] Split nominal runs into D_train (fit residual→error mapping) / D_conf (calibrate)
+- [ ] Fit isotonic regression: anomaly score Aₜ → expected position error at t+H
+- [ ] Compute conformity scores on D_conf; find q̂_{1-δ} quantile
+- [ ] Verify empirical coverage ≥ 0.94 at δ=0.05
+
+**Success criterion:** Coverage check passes for all three velocity levels.
+
+### 3.2 Coverage Visualization
+
+- [ ] Plot: residual score vs. actual prediction error, with conformal bound overlaid
+- [ ] Show coverage fraction across the calibration set
+- [ ] This becomes Figure X in the thesis
+
+---
+
+## Phase 4: Constraint Mapping and Validation
+
+**Goal:** Show the framework can select a velocity constraint that enables forward
+progress while satisfying the conformal bound.
+
+### 4.1 Constraint Selection Logic
+
+- [ ] Given residual A at time t and obstacle distance d:
+      v_max(t) = max(v_min, (d - d_min - r(A)) / H)
+- [ ] Implement as `st_gat/constraint.py`
+- [ ] Test on obs_recovery rosbag data (offline): does the computed v_max allow the
+      vehicle to reach the obstacle swerve zone?
+
+### 4.2 ROS2 Constraint Publisher (if offline validation passes)
+
+- [ ] Write a ROS2 node that subscribes to residual stream, publishes v_max to
+      `/planning/scenario_planning/max_velocity`
+- [ ] Run live on obs_stuck scenario: does constraint relaxation let Autoware proceed?
+- [ ] Compare: obs_stuck baseline (stops) vs. framework-active (swerves or proceeds)
+
+---
+
+## Key Design Parameters
+
+| Parameter | Value | Source |
+|-----------|-------|--------|
+| Velocity levels | 5, 7, 10 m/s | Nominal campaign caps |
+| Obstacle distance | 30m | obs_* scenarios |
+| Conformal δ | 0.05 | Standard 95% coverage |
+| Planning horizon H | 3s | Kinematic stopping distance |
+| Min clearance d_min | 2m | Physical buffer |
+| ST-GAT features | pos(2), vel(2), steer(1), accel(1), obj_dist(1), tl(1) | T-ITS 2025 |
+| Goals | 007, 011, 021 | Verified in Shinjuku map |
+
+---
+
+## Explicitly Out of Scope
+
+- Perception faults (dropout30, position noise) — not needed for core Pareto claim
+- Obstacle removal / disappearing obstacle — artificial, doesn't reflect real recovery
+- Multi-fault type comparison matrix
+- Scenarios other than static obstacle (cut-in, pedestrian, slow lead vehicle)
+- Distance sweep (20m, 50m, 100m) — 30m is the one scenario
+- Weight modulation of ST-GAT (constraint tightening is the intervention)
+- RISE name and framing
+
+These are valid future work for the thesis "Limitations and Future Work" section.

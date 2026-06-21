@@ -1,0 +1,14 @@
+scenario_type: static_obstacle
+description: >
+  Static CAR placed 30m ahead in a single-lane segment (LL 241, ~102m arc from spawn).
+  No adjacent lane exists at this point — Autoware correctly cannot avoid.
+  This is the "unsolvable" case on the Pareto frontier: stopping IS the optimal action.
+  Used to validate that the framework does NOT attempt recovery when the map
+  provides no viable path.
+  Obstacle lands in the northward single-lane corridor at approximately (81400, 50023).
+  Requires: min_travel_before_placement = 60m so obstacle appears at ~90m arc (in LL 241).
+params:
+  distance: 30.0
+  lateral_offset: 0.0
+  min_travel_before_placement: 60.0
+  obj_type: CAR
