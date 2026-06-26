@@ -1,0 +1,339 @@
+"""
+SequenceBuilder: adapts the T-ITS SequenceProcessor for our pipeline.
+
+Key differences from the reference SequenceProcessor:
+  1. Accepts our list-of-frame-dicts from bag_reader (no timestamp keys)
+  2. Adds position_uncertainty (x_var, y_var) to every timestep's feature dict
+  3. Reads route from the rosbag (LaneletRoute message) instead of route.json
+  4. Imports GraphBuilder and MapProcessor from the reference codebase
+
+The output sequence format is identical to the reference:
+    {
+        'past':   [processed_timestep, ...],   # INPUT_SEQ_LEN items
+        'future': [processed_timestep, ...],   # OUTPUT_SEQ_LEN items
+        'graph':  networkx.Graph,
+        'graph_bounds': [x_min, x_max, y_min, y_max],
+    }
+
+Each processed_timestep now has an 'uncertainty' key:
+    {
+        'position':               [scaled_x, scaled_y],
+        'velocity':               [scaled_vx, scaled_vy],
+        'steering':               float,
+        'acceleration':           float,
+        'object_distance':        float,
+        'traffic_light_detected': 0 or 1,
+        'uncertainty':            [scaled_x_var, scaled_y_var],   # NEW
+        'objects':                [...],  # scaled, kept for compatibility
+    }
+"""
+
+import sys
+import os
+import math
+from typing import List, Tuple, Optional
+
+# Reference codebase on sys.path — read-only, do not modify
+_REF_ROOT = os.path.join(
+    os.path.dirname(__file__),
+    '..', '..', '..',
+    'Graph-Scene-Representation-and-Prediction'
+)
+_REF_ROOT = os.path.normpath(_REF_ROOT)
+if _REF_ROOT not in sys.path:
+    sys.path.insert(0, _REF_ROOT)
+
+from Data_Curator.Point import Point
+from State_Estimator.GraphBuilder import GraphBuilder
+
+from . import config as cfg
+
+
+def _load_map_processor():
+    """
+    Lazy import of MapProcessor: requires lanelet2, only available with Autoware workspace.
+    Patches the reference codebase's relative MAP_FILE path to our absolute path first.
+    """
+    import Data_Curator.config as _dc_config
+    _dc_config.config.MAP_FILE = cfg.MAP_FILE
+    from State_Estimator.MapProcessor import MapProcessor
+    return MapProcessor()
+
+
+# ── Route extraction ───────────────────────────────────────────────────────
+
+def extract_route_from_bag(bag_dir: str) -> List[int]:
+    """
+    Read the first LaneletRoute message from the bag and return its lanelet IDs.
+    Falls back to [] if the topic is absent (graph nodes will have path_node=0).
+    """
+    from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
+    from rclpy.serialization import deserialize_message
+
+    try:
+        from autoware_planning_msgs.msg import LaneletRoute
+    except ImportError:
+        return []
+
+    storage_options   = StorageOptions(uri=bag_dir, storage_id='sqlite3')
+    converter_options = ConverterOptions(
+        input_serialization_format='cdr',
+        output_serialization_format='cdr',
+    )
+    reader = SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    while reader.has_next():
+        topic, data, _ = reader.read_next()
+        if topic == '/planning/mission_planning/route':
+            msg = deserialize_message(data, LaneletRoute)
+            return [seg.preferred_primitive.id for seg in msg.segments]
+    return []
+
+
+# ── Feature scaling helpers ────────────────────────────────────────────────
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _scale_velocity(vel_dict: dict) -> List[float]:
+    vx_min, vx_max = cfg.VELOCITY_X_RANGE
+    vy_min, vy_max = cfg.VELOCITY_Y_RANGE
+    return [
+        _clamp01((vel_dict['longitudinal'] - vx_min) / (vx_max - vx_min)),
+        _clamp01((vel_dict['lateral']      - vy_min) / (vy_max - vy_min)),
+    ]
+
+
+def _scale_steering(steering: float) -> float:
+    s_min, s_max = cfg.STEERING_RANGE
+    return _clamp01((steering - s_min) / (s_max - s_min))
+
+
+def _scale_acceleration(accel: float) -> float:
+    a_min, a_max = cfg.ACCEL_RANGE
+    return _clamp01((accel - a_min) / (a_max - a_min))
+
+
+def _scale_uncertainty(x_var: float, y_var: float) -> List[float]:
+    """
+    Scale EKF covariance values to [0, 1].
+    UNCERTAINTY_CAP (0.5 m²) maps to 1.0.
+    Nominal (0.003 m²) → 0.006.
+    """
+    cap = cfg.UNCERTAINTY_CAP
+    return [
+        _clamp01(x_var / cap),
+        _clamp01(y_var / cap),
+    ]
+
+
+def _scale_position(point: Point, x_min, x_max, y_min, y_max) -> List[float]:
+    return [
+        _clamp01((point.x - x_min) / (x_max - x_min)),
+        _clamp01((point.y - y_min) / (y_max - y_min)),
+    ]
+
+
+def _scale_object(obj_dict: dict, x_min, x_max, y_min, y_max) -> dict:
+    pos = Point.convert_coordinate_frame(
+        obj_dict['position']['x'], obj_dict['position']['y'],
+        cfg.REFERENCE_POINTS
+    )
+    return {
+        'position': _scale_position(pos, x_min, x_max, y_min, y_max),
+        'velocity': [
+            _clamp01((obj_dict['velocity']['x'] - cfg.VELOCITY_X_RANGE[0]) /
+                     (cfg.VELOCITY_X_RANGE[1] - cfg.VELOCITY_X_RANGE[0])),
+            _clamp01((obj_dict['velocity']['y'] - cfg.VELOCITY_Y_RANGE[0]) /
+                     (cfg.VELOCITY_Y_RANGE[1] - cfg.VELOCITY_Y_RANGE[0])),
+        ],
+        'classification': obj_dict['classification'],
+    }
+
+
+def _closest_object_distance(ego_pos_scaled, objects_scaled) -> float:
+    if not objects_scaled:
+        return 1.0
+    min_d = float('inf')
+    for obj in objects_scaled:
+        op = obj.get('position', [])
+        if len(op) >= 2:
+            d = math.sqrt((ego_pos_scaled[0] - op[0])**2 + (ego_pos_scaled[1] - op[1])**2)
+            if d < min_d:
+                min_d = d
+    return min_d if min_d != float('inf') else 1.0
+
+
+def _traffic_light_detected(G, ego_pos_scaled) -> int:
+    closest = min(
+        G.nodes(data=True),
+        key=lambda n: (n[1]['x'] - ego_pos_scaled[0])**2 + (n[1]['y'] - ego_pos_scaled[1])**2
+    )
+    return int(closest[1].get('traffic_light_detection_node', 0))
+
+
+# ── Scale graph ────────────────────────────────────────────────────────────
+
+def _scale_graph(G):
+    xs = [d['x'] for _, d in G.nodes(data=True)]
+    ys = [d['y'] for _, d in G.nodes(data=True)]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    for node_id, data in G.nodes(data=True):
+        G.nodes[node_id]['x'] = _clamp01((data['x'] - x_min) / (x_max - x_min))
+        G.nodes[node_id]['y'] = _clamp01((data['y'] - y_min) / (y_max - y_min))
+    return G, x_min, x_max, y_min, y_max
+
+
+# ── Per-timestep processing ────────────────────────────────────────────────
+
+def _process_frame(frame: dict, G, x_min, x_max, y_min, y_max) -> dict:
+    """Convert one raw frame dict → scaled feature dict (includes uncertainty)."""
+    ego = frame['ego']
+
+    # Convert map → local coordinate frame, then scale to graph bounds
+    ego_point = Point.convert_coordinate_frame(
+        ego['position']['x'], ego['position']['y'],
+        cfg.REFERENCE_POINTS
+    )
+    ego_pos_scaled = _scale_position(ego_point, x_min, x_max, y_min, y_max)
+
+    objects_scaled = [_scale_object(o, x_min, x_max, y_min, y_max) for o in frame['objects']]
+
+    unc = ego['position_uncertainty']
+
+    return {
+        'position':               ego_pos_scaled,
+        'velocity':               _scale_velocity(ego['velocity']),
+        'steering':               _scale_steering(ego['steering']),
+        'acceleration':           _scale_acceleration(ego['acceleration']),
+        'object_distance':        _closest_object_distance(ego_pos_scaled, objects_scaled),
+        'traffic_light_detected': _traffic_light_detected(G, ego_pos_scaled),
+        'uncertainty':            _scale_uncertainty(unc['x_var'], unc['y_var']),
+        'objects':                objects_scaled,
+    }
+
+
+# ── Main builder ───────────────────────────────────────────────────────────
+
+class SequenceBuilder:
+    """
+    Builds sliding-window sequences from a list of 10Hz frame dicts.
+
+    Usage:
+        builder = SequenceBuilder.from_bag(bag_dir)
+        sequences = builder.build(frames)
+    """
+
+    def __init__(self, map_data, route: List[int]):
+        self.map_data = map_data
+        self.route = route
+        self.graph_builder = GraphBuilder(
+            map_data              = map_data,
+            route                 = route,
+            min_dist_between_node = cfg.MIN_DIST_BETWEEN_NODES,
+            connection_threshold  = cfg.CONNECTION_THRESHOLD,
+            max_nodes             = cfg.MAX_GRAPH_NODES,
+            min_nodes             = cfg.MIN_GRAPH_NODES,
+        )
+
+    @classmethod
+    def from_bag(cls, bag_dir: str) -> 'SequenceBuilder':
+        """Load map data (expensive) and extract route from the bag."""
+        map_processor = _load_map_processor()
+        route = extract_route_from_bag(bag_dir)
+        return cls(map_processor.map_data, route)
+
+    # Rebuild the graph only when the window centre moves more than this
+    # (in local map coordinates, metres). At 10 Hz with ~3 m/s average speed,
+    # one stride = ~0.3 m — so we rebuild roughly every 10 strides.
+    _GRAPH_CACHE_DIST = 5.0   # metres
+
+    def build(self, frames: List[dict], verbose: bool = False) -> List[dict]:
+        """
+        Create sliding-window sequences from the frame list.
+
+        Graph rebuilds are cached: the same graph is reused for consecutive
+        windows whose centre has moved less than _GRAPH_CACHE_DIST metres.
+        This reduces graph builds from O(frames) to O(frames / 10) for typical
+        urban driving speeds (≈3 m/s at 10 Hz).
+
+        Returns list of sequence dicts with 'past', 'future', 'graph', 'graph_bounds'.
+        """
+        n = len(frames)
+        total = cfg.INPUT_SEQ_LEN + cfg.OUTPUT_SEQ_LEN
+
+        if n < total:
+            if verbose:
+                print(f"  [seq_builder] too few frames ({n} < {total}), skipping")
+            return []
+
+        sequences   = []
+        n_windows   = 0
+        n_rebuilds  = 0
+
+        # Graph cache
+        G_cached     = None
+        bounds_cache = None
+        last_init_pt = None
+        last_last_pt = None
+
+        for i in range(0, n - total + 1, cfg.STRIDE):
+            window = frames[i : i + total]
+
+            init_frame = window[0]['ego']
+            last_frame  = window[-1]['ego']
+
+            init_pt = Point.convert_coordinate_frame(
+                init_frame['position']['x'], init_frame['position']['y'],
+                cfg.REFERENCE_POINTS
+            )
+            last_pt = Point.convert_coordinate_frame(
+                last_frame['position']['x'], last_frame['position']['y'],
+                cfg.REFERENCE_POINTS
+            )
+
+            # Rebuild graph only if window centre shifted significantly
+            rebuild = (
+                G_cached is None
+                or math.sqrt(
+                    (init_pt.x - last_init_pt.x) ** 2 +
+                    (init_pt.y - last_init_pt.y) ** 2
+                ) > self._GRAPH_CACHE_DIST
+            )
+
+            if rebuild:
+                import copy
+                G_raw = self.graph_builder.create_expanded_graph(init_pt, last_pt)
+                G_cached, x_min, x_max, y_min, y_max = _scale_graph(G_raw)
+                bounds_cache  = (x_min, x_max, y_min, y_max)
+                last_init_pt  = init_pt
+                last_last_pt  = last_pt
+                n_rebuilds   += 1
+
+            x_min, x_max, y_min, y_max = bounds_cache
+
+            # Deep-copy the cached graph so each sequence owns an independent copy
+            # (needed because pickle serialises the graph and we don't want aliasing)
+            import copy
+            G_seq = copy.deepcopy(G_cached)
+
+            past_seq   = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max)
+                          for f in window[:cfg.INPUT_SEQ_LEN]]
+            future_seq = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max)
+                          for f in window[cfg.INPUT_SEQ_LEN:]]
+
+            sequences.append({
+                'past':         past_seq,
+                'future':       future_seq,
+                'graph':        G_seq,
+                'graph_bounds': [x_min, x_max, y_min, y_max],
+            })
+            n_windows += 1
+
+        if verbose:
+            print(f"  [seq_builder] {n_windows} sequences, {n_rebuilds} graph builds")
+
+        return sequences

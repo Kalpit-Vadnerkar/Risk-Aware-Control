@@ -1,0 +1,34 @@
+THE THREE-SIGNAL FEASIBILITY CLASSIFIER
+
+Decision logic — all three conditions must hold for avoidance to be enabled:
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Signal 1 (Topology):   has_adjacent_lane(ego_pos, HD_map)?    │
+  │  Signal 2 (Kinematic):  TTC = obj_dist / v_approach > τ_min?  │
+  │  Signal 3 (Behavioral): CVaR_α(NLL residual_t) > θ ?          │
+  │                                                                  │
+  │  IF all three → AVOIDANCE WARRANTED → override policy=auto     │
+  │  IF any fails → MRC MANDATORY      → maintain policy=manual    │
+  └─────────────────────────────────────────────────────────────────┘
+
+What each signal handles:
+
+  Signal 1 (Topology):
+    → Fails when: obstacle on single-lane road, no driveable neighbor
+    → Deterministic: HD map lookup, no uncertainty
+    → Cannot distinguish: multi-lane with adequate time vs. multi-lane too close
+
+  Signal 2 (Kinematic):
+    → Fails when: obstacle detected too late (<5m), no time for path planning
+    → Semi-deterministic: depends on perception accuracy of distance/speed
+    → Cannot distinguish: adjacent lane exists vs. does not exist
+
+  Signal 3 (Behavioral — digital twin):
+    → Fails when: situation appears nominally plausible (normal deceleration)
+    → Probabilistic: CVaR from learned distribution residual
+    → Necessary because: Signals 1+2 alone cannot distinguish real obstacles
+      from routine stops (traffic lights, crosswalks) — no trajectory anomaly exists
+      until the vehicle has already committed to a stop
+
+Integration point: signals are evaluated at 10 Hz; threshold τ_min and θ calibrated
+on held-out nominal runs using conformal prediction (finite-sample coverage guarantee)

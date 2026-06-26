@@ -1,0 +1,26 @@
+PROBLEM STATEMENT & CONTRIBUTION
+
+Formal problem:
+  Given: Ego vehicle at speed v encountering an unexpected static obstacle at distance d
+  Classify in real-time: {avoidance warranted, MRC mandatory}
+  With: formal coverage guarantee on the classification error rate
+
+Scope (this work):
+  → Single unexpected static obstacle, obstacle detected by onboard perception
+  → Single adjacent lane considered for avoidance (first-order case)
+  → No NPC vehicles in adjacent lane (controlled simulation)
+  → Static environment (no dynamic obstacles other than the primary one)
+
+Hypothesis:
+  A composite signal combining three independently necessary components correctly
+  classifies avoidance feasibility across all failure modes:
+    (1) Topological feasibility:   ∃ adjacent driveable lanelet in HD map
+    (2) Temporal feasibility:      TTC = d / v_approach > τ_min
+    (3) Behavioral confirmation:   CVaR_α(residual) > θ  (digital twin detects non-nominal event)
+
+  Each component is necessary for a distinct failure mode;
+  no two-signal subset achieves equivalent classification accuracy (ablation study).
+
+Contribution:
+  First empirically validated, real-time feasibility classifier for the avoidance-vs-MRC decision
+  using a composite signal with conformal prediction coverage guarantee on the behavioral component

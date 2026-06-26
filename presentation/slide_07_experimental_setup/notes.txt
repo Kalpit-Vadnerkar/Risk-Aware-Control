@@ -1,0 +1,5 @@
+AWSIM + Autoware is the standard simulation platform for AV research in the ROS2 ecosystem and is used by multiple research groups and Toyota's AV division. Its advantage over CARLA or similar is native Autoware integration — the full production stack runs unmodified, so behaviors seen in simulation (avoidance, MRM triggers, AEB events) are representative of what a real vehicle would do with the same software. This is important: we are not studying a toy planner, we are studying the actual decision-making of a production AV system.
+
+The 10Hz data collection rate matters: it matches the ST-GAT model's training frequency, so there is no interpolation or resampling needed between the rosbag and the inference pipeline. The stride=1 means every consecutive window of 30 frames is a training/test sample, giving high temporal resolution for the residual time series.
+
+The single-vehicle obstacle is intentionally simple — we want to isolate the avoidance decision problem from multi-agent interaction. The extension to NPC vehicles in adjacent lanes is stated future work.

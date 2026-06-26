@@ -1,0 +1,55 @@
+The two-phase structure is the key message on this slide. Phase 1 answers "does the signal work in ideal conditions?" — Phase 2 answers "how much can we trust it when sensors degrade?"
+
+PHASE 1 FRAMING FOR DR. PISU:
+
+The two-row structure of existing data (recovery vs. noescape with identical inputs) is
+the critical empirical setup. Stress this: these are the SAME scenario from the
+framework's input perspective. Same road, same obstacle distance, same speed. The ONLY
+difference is a single Autoware config parameter (avoidance policy = manual vs. auto).
+The framework's job is to output "avoidance warranted" for both — the comparison of
+outcomes proves that acting on that output makes a difference (vehicle avoids vs. stays
+stuck). This is how we isolate the framework's contribution from confounding variables.
+
+The two needed conditions (obs_singlelane, obs_tooclosetoreact) complete the validation
+by providing the "MRC mandatory" ground truth cases. Without them, we can validate
+"avoidance warranted" detection but not the rejection criterion. Framing them as
+"planned collection on the new machine" rather than "missing data" shows the research
+design is complete — execution is just pending hardware access.
+
+Route diversity note: the committee will likely ask whether the results generalize
+beyond three similar Shinjuku routes. The honest answer is: not yet validated. New
+routes should be selected to include topological variety (single-lane sections, different
+intersection types, busier traffic patterns) before claiming generalization.
+
+PHASE 2 FRAMING FOR DR. PISU:
+
+The confidence function C(fault_type, magnitude) is what elevates this from a binary
+classifier to a reliability-aware decision system. Dr. Pisu's controls background will
+recognize this as analogous to sensor fusion with uncertain measurements — the system
+knows "how much to trust" each signal given current sensor health.
+
+Camera fault → traffic light recognition: If the camera is degraded, the model may not
+know that the traffic light is red, and therefore predicts the vehicle will NOT decelerate
+— but the vehicle does decelerate (because Autoware has other ways to detect red lights,
+or the light was detected intermittently). This would produce a false NLL spike. The
+confidence function shows how often this happens at each fault magnitude.
+
+IMU fault → ego state estimate: IMU noise propagates through the localization EKF into
+the kinematic_state topic, which feeds the ST-GAT's position/velocity/heading inputs.
+Degraded inputs produce noisier residuals, which may either suppress real spikes (false
+negatives) or create spurious ones (false positives). The confidence function captures
+this degradation empirically.
+
+The Phase 2 conditions are chosen to be minimal but sufficient: two fault types × two
+magnitudes × two base scenarios = 8 conditions. Each condition gets ~12 runs. This is
+approximately 4 days of data collection on the new machine — realistic within a semester.
+
+ANTICIPATED QUESTION — "Why not test obs_singlelane and obs_tooclosetoreact under faults
+as well?"
+
+Answer: That would add 8 more conditions (16 more if two magnitudes). The marginal value
+is low — we already know Signal 1 and Signal 2 are deterministic (topology from HD map,
+kinematics from planning). Sensor faults that matter most are those that affect Signal 3
+(the behavioral residual), because that is the only stochastic component. Topology lookup
+from the map is not affected by camera or IMU faults; TTC from planned trajectory is
+minimally affected. This is why fault experiments focus on the obs_recovery base scenario.

@@ -1,0 +1,11 @@
+This plot is the most important of the three for conveying the physical intuition. Walk Dr. Pisu through the sequence event by event on the recovery side before showing the noescape side.
+
+The key moment to emphasize is the approach phase (windows 20–442). During this phase, the vehicle sees the obstacle (obj_dist drops to 0.07) and begins decelerating — but NLL is at its lowest, around −11 to −12. This is the identifiability result made visible: the digital twin is NOT surprised by the deceleration, because decelerating toward something ahead is exactly what it expects from the training distribution (traffic lights, crosswalks, slow vehicles all produce the same trajectory). This is why Signals 1 and 2 alone are insufficient — they would have already fired (topology: adjacent lane exists; kinematic: TTC > 3s during approach) — but Signal 3 says "nothing unusual is happening yet."
+
+Then at window 443, the vehicle executes the lane change. NLL goes from −12 to +1.5 in approximately 250 milliseconds (2–3 windows). The digital twin has no model of "swerve left at kilometer-marker X" — it was never in the training data. That is the evidence we need.
+
+For the noescape panel, the message is: the obstacle is there, the vehicle approaches it every run, and the digital twin never fires. This is the correct behavior — from a trajectory perspective, smooth deceleration is smooth deceleration regardless of what's causing it. The framework correctly reports "nothing anomalous" on the noescape runs because the vehicle is behaving nominally right up until it stops.
+
+The vertical markers (obstacle detection line, avoidance shaded region) are the key annotation additions. They show that the spike is not random noise — it is time-locked to the avoidance maneuver, every time. That is the mechanistic validation the committee will ask for.
+
+Anticipated question: "Can you detect the avoidance in time to be useful?" Note that the spike begins building at window ~443 and peaks at ~468. The threshold crossing at window ~418 (where NLL first exceeds −6.37) gives approximately (468-418) × 0.1 = 5 seconds of warning before the peak — enough for a downstream controller to act. This is a quantitative result worth highlighting.

@@ -1,0 +1,25 @@
+RESULT 1: POPULATION-LEVEL NLL TIME-SERIES
+(Plot: nll_timeseries.png)
+
+Setup:
+  • 18 runs per condition (obs_recovery, obs_noescape)
+  • Each run normalized to [0, 1] time axis so runs of different lengths can be averaged
+  • 30-window moving average applied before averaging (smooths window-to-window noise)
+  • Shaded band = ±1 SD across runs — shows run-to-run variability, not measurement noise
+
+What to read:
+  • Blue (recovery):  mean near nominal → brief SPIKE at ~25% through run → returns to nominal
+    — spike = avoidance maneuver (lane change); NLL crosses 3σ threshold
+    — spike at ~25% because vehicle encounters obstacle, avoids, then drives ~75% more of route
+    — wide SD band at spike = avoidance happens at slightly different normalized times across runs
+  • Orange (noescape): mean flat throughout, never crosses threshold
+    — vehicle brakes and waits every run; no unexpected maneuver; digital twin is never surprised
+
+Key message:
+  The spike is brief (~2–3 s out of a 60–160 s run).
+  Full-run CVaR averages over all the nominal driving time and HIDES the spike.
+  → Max NLL (or short-window CVaR) is the right statistic for classification — shown next.
+
+Note on the early variance in recovery:
+  Wide band at t=0 is an artifact of one anomalously short run (42 windows) stretching to fill [0,1].
+  It does not indicate early anomalies — it reflects the normalization of a run that ended quickly.

@@ -1,0 +1,54 @@
+EXPERIMENT CONDITIONS: TWO-PHASE VALIDATION DESIGN
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 1 — SIGNAL VALIDATION (No Sensor Faults)
+Goal: Each signal correctly identifies the scenario type
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Condition             | Obstacle | Road Type   | Avoidance  | Ground Truth                     | Signal Tested         | Status
+  ----------------------|----------|-------------|------------|----------------------------------|-----------------------|------------------
+  obs_recovery          | 30 m     | Multi-lane  | auto (ON)  | Avoidance warranted + executed   | S3: Behavioral CUSUM  | 18 runs ✓
+  obs_noescape          | 30 m     | Multi-lane  | manual(OFF)| Avoidance warranted, suppressed  | S3: Behavioral CUSUM  | 18 runs ✓
+  obs_singlelane        | 30 m     | Single-lane | auto (ON)  | MRC mandatory (no adjacent lane) | S1: HD map topology   | 0 — NEEDED
+  obs_tooclosetoreact   | 5–8 m    | Multi-lane  | auto (ON)  | MRC mandatory (TTC < τ_min)      | S2: Kinematic TTC     | 0 — NEEDED
+
+  ⚠ Route note: current runs use goal_007/011/021 (similar road segments, same neighborhood).
+    New collection needs routes with: (a) guaranteed single-lane section for obs_singlelane;
+    (b) varied traffic light configs to test S3 false-positive rate on planned stops.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 2 — FAULT ROBUSTNESS
+Goal: Compute confidence C(fault_type, magnitude) = P(correct classification | fault)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Camera fault — corrupts traffic light state recognition:
+
+  Base scenario     | Fault                  | Magnitude | Purpose
+  ------------------|------------------------|-----------|--------------------------------------
+  nominal           | TL state dropout       | 20%       | Baseline signal under mild camera fault
+  nominal           | TL state dropout       | 60%       | Baseline signal under severe camera fault
+  obs_recovery      | TL state dropout       | 20%       | Avoidance detection — mild camera fault
+  obs_recovery      | TL state dropout       | 60%       | Avoidance detection — severe camera fault
+
+  IMU fault — corrupts ego state estimates (position/velocity/heading) fed to ST-GAT:
+
+  Base scenario     | Fault                  | Magnitude      | Purpose
+  ------------------|------------------------|----------------|--------------------------------------
+  nominal           | IMU additive noise     | σ = 0.05 rad/s | Baseline signal under mild IMU noise
+  nominal           | IMU additive noise     | σ = 0.25 rad/s | Baseline signal under severe IMU noise
+  obs_recovery      | IMU additive noise     | σ = 0.05 rad/s | Avoidance detection — mild IMU noise
+  obs_recovery      | IMU additive noise     | σ = 0.25 rad/s | Avoidance detection — severe IMU noise
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GENERALIZATION COVERAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Phase 1 + Phase 2 combined covers:
+  → Two road topologies (multi-lane, single-lane)
+  → Two avoidance policy states (auto, manual)
+  → Two obstacle distances (30 m, 5–8 m)
+  → Two fault types (camera TL, IMU state) × two magnitudes (mild, severe)
+  → Nominal + obstacle × fault: four combinations per fault type
+
+  Minimum set to justify: "framework generalizes across topology, kinematic,
+  and behavioral axes under realistic sensor degradation."

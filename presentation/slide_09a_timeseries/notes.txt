@@ -1,0 +1,83 @@
+WHAT THE PLOT IS SHOWING
+
+The y-axis is the digital twin's "surprise score" — formally the Negative Log-Likelihood (NLL) of the
+vehicle's actual behavior under the model's prediction. Think of it this way: the digital twin has
+learned what normal Autoware driving looks like. Every tenth of a second, it asks "how surprising
+is what the vehicle just did?" A very negative number (−12, −14) means "exactly what I expected —
+perfectly normal driving." A number near zero or positive means "this vehicle is doing something I
+have never seen before — something is wrong."
+
+The x-axis is normalized run time — 0 is the moment the vehicle starts, 1 is the moment the run
+ends (either because the vehicle reached its goal, or because it got stuck behind the obstacle and
+couldn't move). The normalization is necessary because recovery runs vary widely in length
+(42 to 1622 windows) while noescape runs are shorter and more uniform (~274 windows). Without
+normalizing, you cannot average across runs — a 162-second run and a 4-second run would have their
+avoidance events at completely different x positions. By stretching every run to [0, 1], we align
+all runs so that "the avoidance event" and "the stuck event" land at roughly the same normalized
+time across runs.
+
+Each line is the average surprise score across all 18 runs for that condition, taken at each point
+in normalized time. The shaded band is the spread (±1 standard deviation) — wider band means runs
+vary more from each other at that moment.
+
+GUIDING THE INTERPRETATION
+
+Start at the left side of the plot (x = 0). Both lines start at similar values, around −11 to −12.
+This means at the beginning of every run, the vehicle is driving normally and the digital twin is
+not surprised. So far, both conditions look identical — the vehicle has not reached the obstacle yet.
+
+Now look at the blue line (obs_recovery, avoidance enabled). Around x = 0.25, there is a clear bump
+upward — the surprise score rises from −12 toward −9 or so before dropping back down. This bump is
+the avoidance maneuver: at this moment, the vehicle is executing a lane change to go around the
+obstacle. The digital twin was never shown this behavior at this location during training, so its
+surprise score spikes. After the maneuver (x > 0.35), the vehicle is past the obstacle and driving
+normally again — the surprise score drops back to −12 and stays there for the rest of the run.
+
+Now look at the orange line (obs_noescape, avoidance disabled). It stays flat and low (around −12
+to −14) for the entire run. The vehicle approaches the obstacle, brakes smoothly, and waits. Smooth
+braking is completely normal — the digital twin has seen that thousands of times. No surprise. No
+spike. The run ends (x = 1) because the vehicle is stuck, not because anything anomalous happened
+from the model's perspective.
+
+The gray dashed line (−6.37) is the anomaly threshold. A run that crosses this line is classified
+as anomalous by the framework. Notice that the averaged blue line barely reaches −9 at its peak —
+it does not cross the threshold on average. This is important to explain correctly (see below).
+
+WHAT THE PLOT LACKS AND WHY IT'S OKAY
+
+The averaged blue line does not cross the threshold, even though individual recovery runs do (as
+shown in the box plot on the next slide). This is a consequence of the averaging: the avoidance
+maneuver happens at slightly different normalized times across the 18 runs. When you average 18
+spikes that are slightly offset from each other, the average peak is lower than any individual
+spike. The signal is real — it just gets smoothed out by the averaging.
+
+Think of it like this: if 18 people all clap their hands but not quite at the same instant, the
+average sound level stays low even though each individual clap is loud. The box plot (slide 09b)
+is the "did any individual run produce a loud clap?" question — and the answer there is clearly yes.
+
+WHAT THE NEW DATA WILL ADD
+
+This plot only tests Signal 3 (behavioral residual) because both conditions are on the same
+multi-lane roads with the obstacle at the same distance. The new data collection adds two conditions
+that directly test the other two signals:
+
+  obs_singlelane (~12 runs): obstacle placed in a single-lane section of the Shinjuku route.
+    When the vehicle approaches, there is no adjacent lane — avoidance is geometrically impossible.
+    Expected result: Autoware stops (or AEB fires). The digital twin will still see the same
+    braking behavior, but Signal 1 (topology check) will now fire "no adjacent lane" and correctly
+    prevent the framework from declaring avoidance warranted. If this works, we expect the orange
+    (noescape) and singlelane lines to look similar on this plot — both flat — because in both
+    cases the vehicle brakes and stops without any anomalous maneuver.
+
+  obs_tooclosetoreact (~12 runs): obstacle placed 5–8 m ahead (vs. 30 m in current data).
+    At this distance, TTC is less than 1 second — physically impossible to execute a lane change
+    safely even if one is geometrically available. Expected result: AEB fires immediately.
+    Signal 2 (kinematic TTC check) should fire and prevent avoidance from being declared.
+    On this plot, the surprise score may actually spike (because AEB braking is aggressive and
+    unexpected) but the framework should correctly label it "MRC mandatory" not "avoidance warranted"
+    — because Signal 2 already blocked the avoidance output before Signal 3 was evaluated.
+
+With all four conditions in one plot, the story becomes clearer: the surprise score spike is
+necessary but not sufficient. The topology and kinematic signals tell you when the spike should
+trigger avoidance vs. when it should trigger a conservative stop. That is the three-signal
+AND-gate in action.

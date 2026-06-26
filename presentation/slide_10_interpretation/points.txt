@@ -1,0 +1,28 @@
+INTERPRETATION: WHAT THE RESULTS TELL US
+
+The identifiability problem (fundamental, not a model limitation):
+  obs_noescape: vehicle decelerates toward obstacle → trajectory locally identical to deceleration at traffic light
+  obs_recovery: vehicle performs lateral avoidance → trajectory is anomalous relative to training distribution
+  → No trajectory-based signal can distinguish "stopping because blocked" from "stopping because planned"
+  → This is not fixed by a better model — it is a structural property of the observation space
+
+What the ST-GAT residual CAN do:
+  ✓ Detect anomalous maneuvers (lane changes, emergency avoidance) — validated p=0.034
+  ✓ Distinguish "vehicle doing something unexpected" from "vehicle on nominal trajectory"
+  ✗ Predict BEFORE an obstacle encounter whether avoidance will be needed
+  ✗ Distinguish obstacle approach from traffic-light deceleration during the approach phase
+
+What this means for the framework:
+  → Signal 3 (residual) is a CONFIRMATION signal, not a PREDICTION signal
+  → It fires DURING avoidance (reactive) to confirm a non-nominal event is occurring
+  → Signals 1 (topology) and 2 (kinematics) are the PROACTIVE signals — they fire
+    before the vehicle commits to any action, based on fixed environmental properties
+  → The three signals are complementary: topology and kinematics are proactive but dumb;
+    residual is smart but reactive — together they cover the decision space
+
+Revised framework timing:
+  → At t=0 (obstacle first detected): check topology (Signal 1) + compute TTC (Signal 2)
+  → If both pass: enable avoidance contingent on Signal 3 confirming behavioral anomaly
+  → If Signal 3 does not fire within τ windows: revert to MRC (obstacle may be spurious)
+  → This creates a "hold and confirm" logic: geometry + kinematics say "feasible",
+    digital twin confirms "actually happening"

@@ -1,0 +1,20 @@
+THE PROBLEM: AV Safety Defaults Are Binary and Static
+
+Scenario: autonomous vehicle encounters an unexpected static obstacle at 30m, traveling at 7 m/s
+
+Current behavior (Autoware default):
+  → Minimum Risk Condition (MRC): decelerate to a complete stop in-lane
+  → Conservative, always "safe" in the collision-avoidance sense
+
+But MRC creates secondary risks:
+  → Stopped vehicle in active traffic lane → rear-end collision hazard
+  → Traffic blockage, mission failure, emergency vehicle obstruction
+  → In urban environments, MRC may be the MORE dangerous outcome
+
+The right action depends on context:
+  → Adjacent lane available + enough lead time → avoidance is safer
+  → No adjacent lane OR obstacle too close → MRC is correct
+  → Current systems cannot distinguish these cases at runtime
+
+The gap: avoidance policy is a fixed parameter (manual vs. auto), not a runtime decision
+  → No system assesses whether the specific situation makes avoidance warranted

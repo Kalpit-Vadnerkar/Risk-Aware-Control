@@ -1,0 +1,32 @@
+THE DIGITAL TWIN COMPONENT: ST-GAT Behavioral Residual
+
+From prior work (T-ITS 2025): Spatial-Temporal Graph Attention Network (ST-GAT)
+trained exclusively on NOMINAL autonomous driving data
+
+Input (per 3-second window at 10 Hz):
+  → Ego state history: position (x,y), velocity (vx,vy), steering angle, acceleration
+  → Sensor-derived context: closest object distance [0,1], traffic light detected {0,1}
+  → EKF position uncertainty: (σ²_x, σ²_y) — covariance of localization estimate
+  → HD map graph: lane geometry and connectivity as node features + adjacency matrix
+  Total: 10 features × 30 timesteps + graph structure
+
+Output (probabilistic):
+  → Predicted distributions at each future timestep: (μ_pos, σ²_pos), (μ_vel, σ²_vel), (μ_steer, σ²_steer)
+  → NOT a point prediction — the model outputs the PARAMETERS of a Gaussian distribution
+  → Uncertainty is both aleatoric (sensor noise, encoded in σ²) and epistemic (distribution shift)
+
+Residual computation — Gaussian Negative Log-Likelihood (NLL):
+  NLL_pos  = 0.5 · [log(2πσ²_pos) + (actual − μ_pos)² / σ²_pos]    (per dimension)
+  NLL_vel  = 0.5 · [log(2πσ²_vel) + (actual − μ_vel)² / σ²_vel]
+  NLL_combined = NLL_pos + 0.8 · NLL_vel + 0.5 · NLL_steer          (training-matched weights)
+
+  Key property: NLL < 0 for well-calibrated confident predictions (nominal driving)
+                NLL → large positive when actual deviates from predicted distribution
+                NLL captures BOTH prediction error (μ wrong) AND overconfidence (σ² too small)
+
+CVaR risk measure (α = 0.95):
+  CVaR_α = E[NLL | NLL ≥ VaR_α]   — expected value in the worst 5% of windows
+  → Robust to brief nominally-plausible sections; sensitive to sustained tail events
+
+Model: 486,712 parameters; best validation NLL = −513.7 (epoch 110/130)
+Training data: 64 nominal runs at 5, 7, 10 m/s speed limits; 9 runs for calibration

@@ -1,0 +1,9 @@
+Real-Time Feasibility Classification for Emergency Avoidance Decisions in Autonomous Vehicles
+
+Using Digital Twin Residuals, HD Map Topology, and Kinematic Constraints
+
+Kalpit Vadnerkar — PhD Candidate
+Advisor: Dr. Pierluigi Pisu
+Department of Electrical and Computer Engineering
+Center for Connected Multimodal Mobility (C2M2)
+Clemson University

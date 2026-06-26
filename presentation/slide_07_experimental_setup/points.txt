@@ -1,0 +1,29 @@
+EXPERIMENTAL PLATFORM
+
+Simulation stack:
+  → Simulator:  AWSIM Labs v1.6.1 (Unity-based, ROS2 native, physics-accurate sensors)
+  → AV stack:   Autoware Universe (production-grade; same stack used in real-vehicle deployments)
+  → Interface:  ROS2 Humble; all data logged via rosbag2 at 10 Hz
+  → Map:        Shinjuku HD map (Lanelet2 OSM format, urban multi-lane environment)
+
+Obstacle:
+  → Type: Static parked vehicle (CAR object, 4.5m × 1.8m)
+  → Baseline placement: 30m ahead of ego at 150m route distance from spawn
+  → Placed in LL 238 (confirmed two-lane: LL 238 with adjacent LL 237)
+
+Route profiles used:
+  → Goal 007: 710m route, northward corridor through Shinjuku
+  → Goal 011: 633m route, same corridor, different terminal
+  → Goal 021: 697m route, extended northern approach
+
+Data collection procedure:
+  1. Launch AWSIM (obstacle placed via scenario config)
+  2. Launch Autoware with target goal
+  3. Run until goal reached or stuck timeout (200s stationary)
+  4. Save rosbag; compute metrics (goal_reached, stuck, MRM count)
+  5. Process rosbag through ST-GAT inference pipeline → per-window residuals CSV
+
+Per-run output:
+  → rosbag (all ROS2 topics at full rate)
+  → result.json (status, driving_time, MRM events)
+  → residuals CSV (one row per 1-step window: NLL, obj_dist, has_adjacent_lane, CUSUM)

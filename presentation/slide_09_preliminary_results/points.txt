@@ -1,0 +1,18 @@
+PRELIMINARY RESULTS OVERVIEW
+(This slide introduces three result slides: 09a, 09b, 09c)
+
+Dataset: obs_recovery (avoidance enabled) vs. obs_noescape (avoidance disabled)
+         18 runs each, same Shinjuku route, obstacle at 30m, multi-lane road
+
+Summary table of all signals tested:
+
+  Signal                  | Recovery        | Noescape        | p-value  | Verdict
+  ------------------------|-----------------|-----------------|----------|------------------
+  max_combined_NLL        | −2.82 ± 6.50    | −6.65 ± 1.85    | 0.034 ** | Useful (reactive)
+  CVaR₉₅ NLL (full run)  | −7.17 ± 3.48    | −8.71 ± 1.40    | 0.94     | Too diluted
+  has_adjacent_lane (frac)| 0.73 ± 0.14     | 0.84 ± 0.02     | 0.999    | Wrong dataset
+
+Three plots follow — each on its own slide:
+  → slide_09a: NLL time-series (population view, 18 runs each)
+  → slide_09b: Box plots of per-run statistics (statistical separation)
+  → slide_09c: Single-run deep dive with event markers (mechanistic view)

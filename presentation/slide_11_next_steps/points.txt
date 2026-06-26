@@ -1,0 +1,31 @@
+NEXT STEPS
+
+Immediate (data collection — est. 1-2 weeks):
+  1. obs_singlelane: place obstacle at ~500m from spawn in single-lane section of Shinjuku route
+     → 12 runs × 3 goals = 36 runs; avoidance=auto; expected outcome: Autoware stops (no adjacent lane)
+     → Validates: Signal 1 (topology) correctly forces MRC when adjacent lane absent
+
+  2. obs_tooclosetoreact: place obstacle at 5-8m ahead (vs. 30m baseline)
+     → 12 runs × 3 goals = 36 runs; avoidance=auto; expected outcome: AEB activates (emergency brake)
+     → Validates: Signal 2 (kinematic TTC) correctly forces MRC when reaction time insufficient
+
+Framework validation (after new data):
+  3. Ablation study:
+     → Full three-signal classifier accuracy across all four conditions
+     → Leave-one-out: accuracy with only Signals {1,2}, {1,3}, {2,3}
+     → Shows each signal is necessary for at least one condition
+
+  4. Conformal prediction calibration:
+     → Use 9 held-out nominal runs to set CVaR threshold θ
+     → Report finite-sample coverage: P(classifier correct) ≥ 1 − α with specified α
+     → This is the formal safety guarantee for the behavioral component
+
+  5. Online integration:
+     → Implement the three-signal classifier as a ROS2 node in Autoware
+     → Run closed-loop experiment: does real-time framework activation actually enable avoidance?
+     → Compare: stuck rate with framework OFF vs. stuck rate with framework ON
+
+Questions for advisor:
+  → Is the scope (single static obstacle, no adjacent-lane occupants) appropriate for a dissertation chapter?
+  → What level of formal guarantee is expected — conformal prediction, or full stability analysis?
+  → Are there additional comparison methods we should benchmark against?

@@ -1,0 +1,25 @@
+LITERATURE GAP: The Avoidance Decision Has No Owner
+
+Body 1 — Avoidance PLANNING (well-studied):
+  → MPC, CBF, polynomial trajectory optimization, reachability analysis
+  → Assumption: the decision to avoid is already made upstream
+  → Representative work: Ziegler et al. (2014), Brito et al. (2019), Pek & Althoff (2020)
+
+Body 2 — Risk ASSESSMENT (well-studied):
+  → Time-to-Collision (TTC), Post-Encroachment Time (PET), probabilistic risk bounds
+  → Quantifies risk of current state but prescribes no action
+  → Representative work: Jansson (2005), Lefèvre et al. (2014), our prior T-ITS 2025
+
+Body 3 — Emergency Braking / AEB (well-studied):
+  → Purely kinematic threshold logic: TTC < τ → brake
+  → No lane availability check, no learned model, no distinction between obstacle types
+  → ISO 22737, Euro NCAP AEB protocols
+
+The gap — Avoidance DECISION-MAKING (unstudied):
+  → No framework asks: "Given this specific situation, is avoidance the correct response?"
+  → Systems default to MRC (stop) or avoidance (go) based on a static configuration parameter
+  → The decision is made by the system integrator at deployment time, not by the vehicle at runtime
+
+Our problem statement fills this gap:
+  → Real-time binary classification: {avoidance warranted, MRC mandatory}
+  → Validated across conditions where the correct answer differs

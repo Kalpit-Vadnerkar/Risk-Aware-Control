@@ -1,0 +1,15 @@
+The key point for Dr. Pisu: risk assessment tells you HOW risky a situation is, and avoidance planning tells you HOW to avoid — but nothing tells you WHEN avoidance is the appropriate response vs. stopping. This is the decision-theory layer that sits between risk quantification and action execution. It is analogous to the mode-switching logic in hybrid systems control, which is well-studied in controls theory but not in the AV safety context.
+
+Be prepared for the question: "Isn't this just threshold-based TTC with a lane check?"
+
+The answer is no — and this is worth defending carefully because it is the core justification for Signal 3.
+
+Consider the false-positive problem: a vehicle decelerates toward a red light at 25m ahead, at 6 m/s. TTC = 25/6 ≈ 4.2 s. The road is two-lane. Signal 1 (topology) passes. Signal 2 (kinematic) passes if the TTC threshold is τ_min = 3 s. A pure TTC + lane-check system would output "avoidance warranted" — and Autoware would attempt a lane change at an intersection, which is dangerous. This would fire on every red light, crosswalk stop, or slow vehicle on a multi-lane road.
+
+The fundamental problem is that "decelerating toward something 30m ahead on a multi-lane road" is kinematically and topologically identical whether that something is a red light or a blocked lane. The trajectory alone cannot distinguish them. Distinguishing them requires either (a) semantic scene understanding — classify what's ahead — which depends on the quality of the perception pipeline and fails under occlusion; or (b) a model of nominal behavior that flags when the vehicle's response is unexpected. We use (b).
+
+The digital twin was trained on nominal driving, which includes stopping at signals, yielding at crosswalks, and following slow vehicles. When the vehicle performs a planned stop, the model predicts smooth deceleration and NLL stays low — the stop is in the model's distribution. When an unexpected obstacle blocks the lane and the vehicle executes an avoidance maneuver (lateral lane change, off-trajectory swerve), the model has no prior for that behavior at that point in the route. NLL spikes sharply — precisely because the vehicle is doing something it has never done at that location in training.
+
+This is the only real-time evidence that distinguishes "unexpected blockage requiring a decision" from "planned stop." Without Signal 3, Signals 1 and 2 produce an unacceptable false-positive rate on ordinary urban driving. Signal 3 is the gating condition that makes the system safe to activate.
+
+Additional nuance: lowering the TTC threshold does not solve this — it just delays the false positive until the vehicle is dangerously close. And raising it misses real fast-approaching obstacles. The residual signal has no such trade-off: it fires based on the vehicle's behavioral deviation, not on distance or time alone.

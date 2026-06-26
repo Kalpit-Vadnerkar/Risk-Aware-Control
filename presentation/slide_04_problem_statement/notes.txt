@@ -1,0 +1,26 @@
+The conformal prediction coverage guarantee is the formal safety claim for Signal 3. Here is the actual mechanism, explained from first principles:
+
+CONFORMAL PREDICTION IN THREE STEPS:
+
+Step 1 — Calibration set.
+Take 9 held-out nominal driving runs (no obstacle, successful mission completion). For each run, compute the run-level behavioral score: CVaR₉₅(NLL), the expected NLL in the worst 5% of windows. This gives 9 scalar scores: s₁, s₂, ..., s₉, one per nominal run.
+
+Step 2 — Threshold construction.
+Sort the scores in ascending order. Set the threshold θ at the ⌈(n+1)(1−α)⌉-th order statistic, where n=9 and α=0.05. For n=9, α=0.05: ⌈10 × 0.95⌉ = ⌈9.5⌉ = 10, so θ = the empirical maximum of the calibration scores (most conservative). For α=0.10 with n=9: θ = the 9th largest = the 9th of 9 = the maximum. Practical note: with more calibration runs (say 20), we get θ at the 19th percentile with tighter control. This motivates collecting more nominal data.
+
+Step 3 — Classification and guarantee.
+For any new run: compute s_new = CVaR₉₅(NLL_new). If s_new > θ, classify as anomalous (avoidance warranted). The conformal prediction guarantee is:
+
+    P(s_new > θ | nominal driving) ≤ α
+
+This holds without any assumption on the distribution of NLL — it does not require Gaussianity, known variance, or any parametric model. The only assumption is exchangeability: the calibration and test runs are from the same data-generating process (same simulation, same Autoware configuration). This is a finite-sample guarantee, not asymptotic.
+
+ANALOGY FOR DR. PISU:
+The 3σ rule in statistical process control gives P(false alarm) ≈ 0.0027 — but only if the process output is Gaussian. Conformal prediction gives the same type of guarantee (P(false alarm) ≤ α) without the Gaussianity assumption, using actual data quantiles instead of a distributional formula. If the residuals happen to be Gaussian, conformal prediction recovers the same bound; if they are not, it still holds.
+
+APPLICATION HERE:
+The threshold θ controls the false positive rate of Signal 3: at most α of nominal runs will be incorrectly classified as anomalous. The false negative rate (missing a real obstacle condition) is an empirical result from obs_recovery vs. obs_noescape. Together, they give a complete characterization of the classifier's performance in terms a committee can evaluate.
+
+The guarantee applies specifically to the behavioral component. Signals 1 and 2 (topology, kinematics) are deterministic — they have no probabilistic content and need no statistical treatment. The three-signal AND gate inherits the Signal 3 false positive bound: P(all three fire | nominal driving) ≤ P(Signal 3 fires | nominal) ≤ α.
+
+Emphasize the scope carefully. Limiting to single static obstacle / no adjacent-lane traffic is not a weakness — it establishes the foundational case. Extensions to multi-agent and dynamic obstacles are valid future work, and stating them explicitly shows awareness of the full problem space.

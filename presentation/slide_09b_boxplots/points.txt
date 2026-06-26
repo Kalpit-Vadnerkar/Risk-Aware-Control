@@ -1,0 +1,28 @@
+RESULT 2: PER-RUN STATISTICS — THREE CANDIDATE SIGNALS
+(Plot: boxplot_metrics.png)
+
+Each box: distribution of one run-level statistic across 18 runs per condition.
+Mann-Whitney U test (one-sided, non-parametric) — reports p-value and significance.
+
+LEFT — Max NLL (per run):
+  Recovery:  max NLL ≈ −3 to +2   (wide range, spikes above 0)
+  Noescape:  max NLL ≈ −6 to −6.3 (narrow range, never crosses threshold)
+  p = 0.034 (**) → statistically significant separation
+  → Validates Signal 3: the behavioral residual spike correctly distinguishes the two conditions
+
+MIDDLE — CVaR₉₅ over entire run:
+  Recovery ≈ Noescape (distributions nearly overlap)
+  p ≈ 0.94  → NO separation
+  → Confirms why full-run CVaR is a poor statistic:
+    the spike is too brief relative to the run length — diluted by 99% nominal windows
+
+RIGHT — Fraction of windows with adjacent lane (has_adjacent_lane):
+  Noescape slightly HIGHER than recovery  (wrong direction)
+  p ≈ 0.999 → strongly not significant
+  → Both datasets are on the same multi-lane roads — topology cannot separate them
+  → This is expected: the topology signal requires obs_singlelane data (not yet collected)
+
+Implication:
+  Max NLL = the correct statistic for the behavioral classifier.
+  The topology and kinematic signals cannot be validated on this dataset alone.
+  → New data collection (obs_singlelane, obs_tooclosetoreact) is the clear next step.

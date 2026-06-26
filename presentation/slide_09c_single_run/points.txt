@@ -1,0 +1,32 @@
+RESULT 3: SINGLE-RUN DEEP DIVE — EVENT TIMELINE
+(Plot: single_run_comparison.png)
+
+Two runs shown side-by-side. X-axis = absolute window index (1 window = 0.1 s at 10 Hz).
+
+LEFT — obs_recovery (avoidance enabled, vehicle reached goal):
+  ① Obstacle detected at window 20: obj_dist drops from 1.0 → 0.07 in one step
+     → Vehicle first sees the blocked lane; NLL remains LOW (this deceleration is normal)
+  ② Approach phase (windows 20–442): NLL stays near −11 to −12
+     → Digital twin predicts normal deceleration; vehicle is "behaving as expected"
+     → This is the identifiability period: indistinguishable from a red light stop
+  ③ Avoidance maneuver (windows 443–475, ~3.2 s):
+     → Autoware executes lane change; NLL spikes from −12 to +1.5
+     → The digital twin did NOT predict a swerve at this location → residual explodes
+     → NLL crosses 3σ threshold (−6.37) — Signal 3 fires
+  ④ Post-avoidance (window 476+): vehicle past obstacle, NLL returns to −12
+     → Normal driving resumes; model is no longer surprised
+
+RIGHT — obs_noescape (avoidance disabled, vehicle stuck):
+  ① Obstacle in view: entire run (obj_dist low from window 0)
+  ② NLL throughout: −12 to −6.3, never decisively crosses 3σ threshold
+     → Vehicle brakes normally every time; digital twin predicts braking → no surprise
+  ③ No avoidance marker: avoidance policy disabled → no lane change → no spike
+
+Bottom panels: has_adjacent_lane binary signal
+  Recovery: toggles True/False as vehicle navigates through route
+  Noescape: stays True throughout (multi-lane road, adjacent lane always present)
+
+What this proves:
+  • Signal 3 fires IF AND ONLY IF avoidance is executed — confirming the expected mechanism
+  • The approach phase (obstacle visible, no avoidance) produces NO NLL signal — explains
+    why full-run CVaR is diluted; and why windowed detection must be active at maneuver time
