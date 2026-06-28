@@ -115,6 +115,7 @@ def process_dataset(
     dataset: str,
     shared_builder: SequenceBuilder,
     verbose: bool = False,
+    filter_mrm: bool = False,
 ) -> Tuple[List[str], List[str]]:
     """
     Process all runs in a dataset. Returns (train_run_dirs, cal_run_dirs).
@@ -173,7 +174,8 @@ def process_dataset(
                 min_nodes             = cfg.MIN_GRAPH_NODES,
             )
 
-            sequences = shared_builder.build(frames, verbose=verbose)
+            sequences = shared_builder.build(frames, verbose=verbose,
+                                             filter_mrm=filter_mrm)
             if not sequences:
                 print(f"    WARNING: zero sequences built, skipping")
                 continue
@@ -255,7 +257,9 @@ def main():
     all_cal_dirs: List[str]   = []
 
     for dataset in args.datasets:
-        train_dirs, cal_dirs = process_dataset(dataset, shared_builder, verbose=args.verbose)
+        train_dirs, cal_dirs = process_dataset(dataset, shared_builder,
+                                               verbose=args.verbose,
+                                               filter_mrm=False)
         all_train_dirs.extend(train_dirs)
         all_cal_dirs.extend(cal_dirs)
 

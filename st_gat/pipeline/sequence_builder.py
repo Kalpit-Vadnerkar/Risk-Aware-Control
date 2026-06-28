@@ -15,16 +15,19 @@ The output sequence format is identical to the reference:
         'graph_bounds': [x_min, x_max, y_min, y_max],
     }
 
-Each processed_timestep now has an 'uncertainty' key:
+Each processed_timestep (13 features + objects):
     {
-        'position':               [scaled_x, scaled_y],
-        'velocity':               [scaled_vx, scaled_vy],
-        'steering':               float,
-        'acceleration':           float,
-        'object_distance':        float,
-        'traffic_light_detected': 0 or 1,
-        'uncertainty':            [scaled_x_var, scaled_y_var],   # NEW
-        'objects':                [...],  # scaled, kept for compatibility
+        'position':                 [scaled_x, scaled_y],
+        'velocity':                 [scaled_vx, scaled_vy],
+        'steering':                 float,
+        'acceleration':             float,
+        'object_distance':          float,
+        'traffic_light_detected':   0 or 1,   # graph node: upcoming lane has TL
+        'traffic_light_state':      float,    # perception color [0, 0.33, 0.67, 1.0]
+        'closest_object_velocity':  float,    # |velocity| nearest object, scaled
+        'has_adjacent_lane':        0.0/1.0,  # lanelet2 routing graph adjacency
+        'uncertainty':              [scaled_x_var, scaled_y_var],
+        'objects':                  [...],    # scaled, kept for compatibility
     }
 """
 
@@ -166,12 +169,84 @@ def _closest_object_distance(ego_pos_scaled, objects_scaled) -> float:
     return min_d if min_d != float('inf') else 1.0
 
 
+# color from bag_reader: 1=RED, 2=AMBER, 3=GREEN
+_LIGHT_COLOR_VALUE = {1: 1.0, 2: 0.67, 3: 0.33}
+
+
+def _traffic_light_state(traffic_lights: list) -> float:
+    """Most restrictive visible traffic light color, normalized to [0,1]."""
+    if not traffic_lights:
+        return 0.0
+    return max(_LIGHT_COLOR_VALUE.get(tl['color'], 0.0) for tl in traffic_lights)
+
+
+def _closest_object_velocity(ego_pos_raw: dict, objects_raw: list) -> float:
+    """Scaled |longitudinal velocity| of the nearest tracked object."""
+    if not objects_raw:
+        return 0.0
+    ex, ey = ego_pos_raw['x'], ego_pos_raw['y']
+    nearest = min(
+        objects_raw,
+        key=lambda o: (o['position']['x'] - ex)**2 + (o['position']['y'] - ey)**2,
+    )
+    vx_min, vx_max = cfg.VELOCITY_X_RANGE
+    return _clamp01((abs(nearest['velocity']['x']) - vx_min) / (vx_max - vx_min))
+
+
 def _traffic_light_detected(G, ego_pos_scaled) -> int:
     closest = min(
         G.nodes(data=True),
         key=lambda n: (n[1]['x'] - ego_pos_scaled[0])**2 + (n[1]['y'] - ego_pos_scaled[1])**2
     )
     return int(closest[1].get('traffic_light_detection_node', 0))
+
+
+# ── Lanelet adjacency ──────────────────────────────────────────────────────
+
+class LaneletAdjacencyChecker:
+    """
+    Precomputes has_adjacent_lane for all lanelets in the map using the
+    lanelet2 routing graph.  Query is O(n_lanelets) at init, O(n) per frame
+    where n is number of lanelets (979 for nishishinjuku ≈ fast enough).
+
+    Coordinate frame: lanelet2 LocalCartesian ≡ the reference frame produced
+    by Point.convert_coordinate_frame — same origin, nearly identity scale.
+    """
+
+    def __init__(self, map_data):
+        self._centroids: List[Tuple[float, float, int]] = []  # (x, y, ll_id)
+        self._adjacency: dict = {}                            # ll_id -> bool
+        self._available = False
+        self._build(map_data)
+
+    def _build(self, map_data):
+        try:
+            import lanelet2
+            traffic_rules = lanelet2.traffic_rules.create(
+                lanelet2.traffic_rules.Locations.Germany,
+                lanelet2.traffic_rules.Participants.Vehicle,
+            )
+            graph = lanelet2.routing.RoutingGraph(map_data, traffic_rules)
+            for ll in map_data.laneletLayer:
+                adj_l = graph.adjacentLeft(ll)
+                adj_r = graph.adjacentRight(ll)
+                self._adjacency[ll.id] = (adj_l is not None) or (adj_r is not None)
+                cl = ll.centerline
+                if len(cl) > 0:
+                    mid = cl[len(cl) // 2]
+                    self._centroids.append((mid.x, mid.y, ll.id))
+            self._available = True
+        except Exception as exc:
+            print(f"  [seq_builder] WARNING: has_adjacent_lane disabled ({exc})")
+
+    def query(self, ref_x: float, ref_y: float) -> float:
+        if not self._available or not self._centroids:
+            return 0.0
+        _, _, ll_id = min(
+            self._centroids,
+            key=lambda c: (c[0] - ref_x) ** 2 + (c[1] - ref_y) ** 2,
+        )
+        return 1.0 if self._adjacency.get(ll_id, False) else 0.0
 
 
 # ── Scale graph ────────────────────────────────────────────────────────────
@@ -189,11 +264,15 @@ def _scale_graph(G):
 
 # ── Per-timestep processing ────────────────────────────────────────────────
 
-def _process_frame(frame: dict, G, x_min, x_max, y_min, y_max) -> dict:
-    """Convert one raw frame dict → scaled feature dict (includes uncertainty)."""
+def _process_frame(
+    frame: dict,
+    G,
+    x_min, x_max, y_min, y_max,
+    adj_checker: Optional['LaneletAdjacencyChecker'] = None,
+) -> dict:
+    """Convert one raw frame dict → scaled feature dict."""
     ego = frame['ego']
 
-    # Convert map → local coordinate frame, then scale to graph bounds
     ego_point = Point.convert_coordinate_frame(
         ego['position']['x'], ego['position']['y'],
         cfg.REFERENCE_POINTS
@@ -201,18 +280,20 @@ def _process_frame(frame: dict, G, x_min, x_max, y_min, y_max) -> dict:
     ego_pos_scaled = _scale_position(ego_point, x_min, x_max, y_min, y_max)
 
     objects_scaled = [_scale_object(o, x_min, x_max, y_min, y_max) for o in frame['objects']]
-
     unc = ego['position_uncertainty']
 
     return {
-        'position':               ego_pos_scaled,
-        'velocity':               _scale_velocity(ego['velocity']),
-        'steering':               _scale_steering(ego['steering']),
-        'acceleration':           _scale_acceleration(ego['acceleration']),
-        'object_distance':        _closest_object_distance(ego_pos_scaled, objects_scaled),
-        'traffic_light_detected': _traffic_light_detected(G, ego_pos_scaled),
-        'uncertainty':            _scale_uncertainty(unc['x_var'], unc['y_var']),
-        'objects':                objects_scaled,
+        'position':                 ego_pos_scaled,
+        'velocity':                 _scale_velocity(ego['velocity']),
+        'steering':                 _scale_steering(ego['steering']),
+        'acceleration':             _scale_acceleration(ego['acceleration']),
+        'object_distance':          _closest_object_distance(ego_pos_scaled, objects_scaled),
+        'traffic_light_detected':   _traffic_light_detected(G, ego_pos_scaled),
+        'traffic_light_state':      _traffic_light_state(frame.get('traffic_lights', [])),
+        'closest_object_velocity':  _closest_object_velocity(ego['position'], frame['objects']),
+        'has_adjacent_lane':        adj_checker.query(ego_point.x, ego_point.y) if adj_checker else 0.0,
+        'uncertainty':              _scale_uncertainty(unc['x_var'], unc['y_var']),
+        'objects':                  objects_scaled,
     }
 
 
@@ -238,6 +319,7 @@ class SequenceBuilder:
             max_nodes             = cfg.MAX_GRAPH_NODES,
             min_nodes             = cfg.MIN_GRAPH_NODES,
         )
+        self._adj_checker = LaneletAdjacencyChecker(map_data)
 
     @classmethod
     def from_bag(cls, bag_dir: str) -> 'SequenceBuilder':
@@ -251,7 +333,8 @@ class SequenceBuilder:
     # one stride = ~0.3 m — so we rebuild roughly every 10 strides.
     _GRAPH_CACHE_DIST = 5.0   # metres
 
-    def build(self, frames: List[dict], verbose: bool = False) -> List[dict]:
+    def build(self, frames: List[dict], verbose: bool = False,
+              filter_mrm: bool = False) -> List[dict]:
         """
         Create sliding-window sequences from the frame list.
 
@@ -259,6 +342,12 @@ class SequenceBuilder:
         windows whose centre has moved less than _GRAPH_CACHE_DIST metres.
         This reduces graph builds from O(frames) to O(frames / 10) for typical
         urban driving speeds (≈3 m/s at 10 Hz).
+
+        filter_mrm: if True, skip any window that contains a frame where MRM
+            was non-NORMAL. Use this when building calibration sequences from
+            nominal bags so that control-gate transients don't inflate the
+            nominal residual distribution. Leave False for inference so the
+            CUSUM signal sees MRM co-occurring with obstacle events.
 
         Returns list of sequence dicts with 'past', 'future', 'graph', 'graph_bounds'.
         """
@@ -282,6 +371,9 @@ class SequenceBuilder:
 
         for i in range(0, n - total + 1, cfg.STRIDE):
             window = frames[i : i + total]
+
+            if filter_mrm and any(f.get('mrm_active', False) for f in window):
+                continue
 
             init_frame = window[0]['ego']
             last_frame  = window[-1]['ego']
@@ -320,9 +412,11 @@ class SequenceBuilder:
             import copy
             G_seq = copy.deepcopy(G_cached)
 
-            past_seq   = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max)
+            past_seq   = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max,
+                                         self._adj_checker)
                           for f in window[:cfg.INPUT_SEQ_LEN]]
-            future_seq = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max)
+            future_seq = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max,
+                                         self._adj_checker)
                           for f in window[cfg.INPUT_SEQ_LEN:]]
 
             sequences.append({

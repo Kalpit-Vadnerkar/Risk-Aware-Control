@@ -40,13 +40,18 @@ class TrajectoryDataset(Dataset):
     Each processed timestep dict has:
         position (list[2]), velocity (list[2]), steering (float),
         acceleration (float), object_distance (float),
-        traffic_light_detected (int), uncertainty (list[2])
+        traffic_light_detected (int/float), traffic_light_state (float),
+        closest_object_velocity (float), has_adjacent_lane (float),
+        uncertainty (list[2])
     """
 
-    _SCALAR_KEYS = ('steering', 'acceleration', 'object_distance', 'traffic_light_detected')
+    _SCALAR_KEYS = (
+        'steering', 'acceleration', 'object_distance', 'traffic_light_detected',
+        'traffic_light_state', 'closest_object_velocity', 'has_adjacent_lane',
+    )
     _VECTOR_KEYS = ('position', 'velocity', 'uncertainty')
-    # Uncertainty is optional for backwards compatibility with old pkl files
-    _OPTIONAL_KEYS = ('uncertainty',)
+    # Keys added after initial pipeline release; default to 0 for old pkl files
+    _OPTIONAL_KEYS = ('uncertainty', 'traffic_light_state', 'closest_object_velocity', 'has_adjacent_lane')
 
     def __init__(self, data_folder: str):
         self.sequences = []
@@ -72,13 +77,16 @@ class TrajectoryDataset(Dataset):
     def _build_feature_tensors(self, steps: list) -> dict:
         """Convert a list of timestep dicts → dict of float32 tensors."""
         buf = {
-            'position':               [],
-            'velocity':               [],
-            'steering':               [],
-            'acceleration':           [],
-            'object_distance':        [],
-            'traffic_light_detected': [],
-            'uncertainty':            [],
+            'position':                 [],
+            'velocity':                 [],
+            'steering':                 [],
+            'acceleration':             [],
+            'object_distance':          [],
+            'traffic_light_detected':   [],
+            'traffic_light_state':      [],
+            'closest_object_velocity':  [],
+            'has_adjacent_lane':        [],
+            'uncertainty':              [],
         }
 
         for step in steps:
@@ -88,11 +96,10 @@ class TrajectoryDataset(Dataset):
             buf['acceleration'].append([step['acceleration']])
             buf['object_distance'].append([step['object_distance']])
             buf['traffic_light_detected'].append([float(step['traffic_light_detected'])])
-
-            # uncertainty was added in the RISE pipeline; default to [0, 0] for
-            # any old pkl files that predate it
-            unc = step.get('uncertainty', [0.0, 0.0])
-            buf['uncertainty'].append(unc)
+            buf['traffic_light_state'].append([float(step.get('traffic_light_state', 0.0))])
+            buf['closest_object_velocity'].append([float(step.get('closest_object_velocity', 0.0))])
+            buf['has_adjacent_lane'].append([float(step.get('has_adjacent_lane', 0.0))])
+            buf['uncertainty'].append(step.get('uncertainty', [0.0, 0.0]))
 
         return {k: torch.tensor(v, dtype=torch.float32) for k, v in buf.items()}
 

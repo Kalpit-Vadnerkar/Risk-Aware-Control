@@ -3,7 +3,7 @@ STGAT — Spatial-Temporal Graph Attention Network (RISE edition).
 
 Architecture overview:
   1. GraphEncoder  — 2-layer GCN with LayerNorm, mean-pool → d_g context vector
-  2. InputNorm     — BatchNorm1d across (batch × time) for each of the 10 input features
+  2. InputNorm     — BatchNorm1d across (batch × time) for each input feature
   3. InputProj     — Linear(F → d_m) → GELU → LayerNorm
   4. GraphFusion   — learned linear maps graph context into d_m, adds to each timestep
   5. TemporalAttn  — nn.TransformerEncoderLayer (nhead=4, ffn=2×d_m) for global mixing
@@ -109,7 +109,7 @@ class STGAT(nn.Module):
         nhead     = config.get('nhead', 4)
         node_fdim = config['graph_sizes']['node_features']
 
-        F_total = sum(config['feature_sizes'].values())   # 10
+        F_total = sum(config['feature_sizes'].values())   # 13 with RISE features
 
         self.feature_keys = list(config['feature_sizes'].keys())
 

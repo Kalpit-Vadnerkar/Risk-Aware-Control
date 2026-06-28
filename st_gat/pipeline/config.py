@@ -33,10 +33,13 @@ FEATURE VECTOR (per timestep, 10 Hz)
     steering (1): actual tire angle  [/vehicle/status/steering_status]
     acceleration (1): commanded accel [/control/command/control_cmd]
     object_distance (1): distance to nearest tracked object
-    traffic_light_detected (1): 1 if red/amber in ego's upcoming lane nodes
-  New 2 features (RISE):
+    traffic_light_detected (1): 1 if upcoming lane node has traffic light
+  New 5 features (RISE):
     position_uncertainty (2): x_var, y_var from EKF covariance
-  Total: 10 features per timestep
+    traffic_light_state (1): perceived color [0=none, 0.33=green, 0.67=amber, 1.0=red]
+    closest_object_velocity (1): |velocity| of nearest tracked object, scaled
+    has_adjacent_lane (1): 1 if lanelet2 routing graph has adjacent lane (HD map)
+  Total: 13 features per timestep
 
 SYNCHRONIZATION
 ───────────────
@@ -65,7 +68,7 @@ import torch
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DATA_ROOT    = os.path.join(REPO_ROOT, 'experiments', 'data')
-MAP_FILE     = os.path.join(REPO_ROOT, 'Shinjuku-Map', 'map', 'lanelet2_map.osm')
+MAP_FILE     = os.path.normpath(os.path.join(REPO_ROOT, '..', 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm'))
 OUTPUT_ROOT  = os.path.join(REPO_ROOT, 'st_gat', 'data')
 
 EXTRACTED_DIR  = os.path.join(OUTPUT_ROOT, 'extracted')    # Stage 1: per-run 10Hz dicts
@@ -76,7 +79,7 @@ CAL_DIR        = os.path.join(SEQUENCES_DIR, 'calibration')
 # ── Data split ─────────────────────────────────────────────────────────────
 
 # Datasets to use for training + calibration (nominal behavior only)
-NOMINAL_DATASETS = ['baseline_all', 'nom_v5', 'nom_v7', 'nom_v10']
+NOMINAL_DATASETS = ['baseline_all', 'nom_v5', 'nom_v7', 'nom_v11']
 
 # Datasets reserved for inference/evaluation only
 TEST_DATASETS = ['obs_recovery', 'obs_noescape', 'obs_stuck']
@@ -89,7 +92,7 @@ SPEED_LABELS = {
     'baseline_all': 'default',
     'nom_v5': '5ms',
     'nom_v7': '7ms',
-    'nom_v10': '10ms',
+    'nom_v11': '11ms',
 }
 
 # ── Bag reading ─────────────────────────────────────────────────────────────
@@ -163,13 +166,16 @@ REFERENCE_POINTS = [
 # ── Model config (input feature sizes — updated for uncertainty) ───────────
 
 FEATURE_SIZES = {
-    'position':             2,   # scaled x, y
-    'velocity':             2,   # longitudinal, lateral
-    'steering':             1,
-    'acceleration':         1,
-    'object_distance':      1,
-    'traffic_light_detected': 1,
-    'uncertainty':          2,   # EKF x_var, y_var (new)
+    'position':                 2,   # scaled x, y
+    'velocity':                 2,   # longitudinal, lateral
+    'steering':                 1,
+    'acceleration':             1,
+    'object_distance':          1,
+    'traffic_light_detected':   1,   # graph node: upcoming lane has traffic light
+    'traffic_light_state':      1,   # perception: most restrictive visible color
+    'closest_object_velocity':  1,   # |velocity| of nearest tracked object
+    'has_adjacent_lane':        1,   # lanelet2 routing graph: adjacent lane exists
+    'uncertainty':              2,   # EKF x_var, y_var
 }
 
 MODEL_CONFIG = {

@@ -43,6 +43,7 @@ Examples:
 """
 
 import argparse
+import math
 import os
 import signal
 import sys
@@ -50,6 +51,7 @@ import time
 import subprocess
 import json
 from datetime import datetime
+from typing import Tuple
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
@@ -60,6 +62,7 @@ from config import (
 )
 from ros_utils import (
     wait_for_topic, get_autoware_state, get_mrm_state, get_velocity,
+    get_vehicle_position,
     clear_route, engage_autonomous, set_goal,
     start_rosbag_recording, stop_rosbag_recording,
     wait_for_mrm_recovery, recover_from_emergency,
@@ -222,13 +225,23 @@ class ExperimentRunner:
         # Engage autonomous mode
         print("Engaging autonomous mode...")
         engage_autonomous()
-        time.sleep(3)
+        time.sleep(2)
 
-        # Verify MRM is still NORMAL after engage
-        mrm_state, mrm_behavior = get_mrm_state()
-        if mrm_state is not None and mrm_state != MrmState.NORMAL:
-            print(f"ERROR: MRM triggered immediately after engage ({mrm_state.name})")
-            return False
+        # Check MRM state after engage. MRM_SUCCEEDED fires transiently in the
+        # first few seconds as the control_command_gate timeout fires before the
+        # first control command arrives — this is self-clearing and the vehicle
+        # will still drive. Only abort on MRM_FAILED (terminal) or if
+        # MRM_SUCCEEDED does not clear within 15 seconds.
+        mrm_state, _ = get_mrm_state()
+        if mrm_state not in (None, MrmState.NORMAL):
+            if mrm_state == MrmState.MRM_FAILED:
+                print(f"ERROR: MRM_FAILED after engage — aborting")
+                return False
+            print(f"  Transient MRM ({mrm_state.name}) after engage — waiting for recovery...")
+            if not wait_for_mrm_recovery(timeout=15.0):
+                print(f"ERROR: MRM did not recover within 15s after engage — aborting")
+                return False
+            print("  MRM recovered — proceeding")
 
         return True
 
@@ -458,6 +471,53 @@ class ExperimentRunner:
             print(f"ERROR computing metrics: {e}")
 
 
+def start_fault_injector(
+    tl_fault: str | None,
+    tl_params: dict,
+    imu_fault: str | None,
+    imu_params: dict,
+    fault_delay: float,
+    log_file: str,
+) -> subprocess.Popen:
+    """Launch the fault injector as a subprocess."""
+    injector_script = os.path.join(
+        os.path.dirname(__file__), '..', 'lib', 'fault_injector.py'
+    )
+
+    cmd = ['python3', injector_script, '--log-file', log_file]
+    if tl_fault:
+        cmd += ['--tl-fault', tl_fault, '--tl-params', json.dumps(tl_params)]
+    if imu_fault:
+        cmd += ['--imu-fault', imu_fault, '--imu-params', json.dumps(imu_params)]
+    if fault_delay > 0:
+        cmd += ['--fault-delay', str(fault_delay)]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    time.sleep(2.0)
+
+    if proc.poll() is not None:
+        stderr = proc.stderr.read().decode() if proc.stderr else ''
+        raise RuntimeError(f'FaultInjector failed to start: {stderr}')
+
+    print(f"FaultInjector started (PID {proc.pid}): tl={tl_fault}, imu={imu_fault}, delay={fault_delay:.0f}s")
+    return proc
+
+
+def stop_fault_injector(proc: subprocess.Popen):
+    """Stop the fault injector gracefully."""
+    if proc is None:
+        return
+    try:
+        proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+    except Exception:
+        pass
+    print("FaultInjector stopped")
+
+
 def start_interceptor(strategy: str, params: dict) -> subprocess.Popen:
     """Launch the perception interceptor as a subprocess."""
     interceptor_script = os.path.join(
@@ -503,8 +563,30 @@ def stop_interceptor(proc: subprocess.Popen):
     print("Interceptor stopped")
 
 
+def _get_start_xy() -> Tuple[float, float]:
+    """Return (x, y) of the experiment starting position from baseline config."""
+    baseline = os.path.join(CONFIG_DIR, 'baseline.json')
+    try:
+        with open(baseline) as f:
+            cfg = json.load(f)
+        pos = cfg['egoConfiguration']['egoPosition']
+        return pos['x'], pos['y']
+    except Exception:
+        return 81384.60, 49922.00  # hard-coded fallback
+
+
+# Vehicles within this distance of start don't need an AWSIM teleport.
+_NEAR_START_THRESHOLD_M = 25.0
+
+
 def reset_vehicle(max_retries: int = 2):
-    """Reset vehicle to starting position with retry on failure."""
+    """Reset vehicle to starting position with retry on failure.
+
+    If the vehicle is already within _NEAR_START_THRESHOLD_M of the start pose,
+    skip the AWSIM teleport and only clear the route + wait for diagnostics.
+    The teleport triggers a full localization re-init which is expensive and
+    unnecessary when the vehicle hasn't moved far from start (e.g. early MRM).
+    """
     reset_script = os.path.join(SCRIPTS_DIR, 'reset_vehicle.py')
     if not os.path.exists(reset_script):
         print("WARNING: reset_vehicle.py not found")
@@ -517,6 +599,18 @@ def reset_vehicle(max_retries: int = 2):
         clear_route()
         time.sleep(2)
         wait_for_mrm_recovery(timeout=10.0)
+
+    # Check whether the vehicle is already near the start position.
+    # If so, skip the teleport — route is already cleared above.
+    pos = get_vehicle_position()
+    if pos is not None:
+        sx, sy = _get_start_xy()
+        dist = math.hypot(pos[0] - sx, pos[1] - sy)
+        if dist <= _NEAR_START_THRESHOLD_M:
+            print(f"  Vehicle {dist:.1f}m from start — skipping teleport, waiting for diagnostics")
+            if wait_for_clean_diagnostics(timeout=60.0, stable_duration=5.0):
+                return True
+            print("  Diagnostics did not clear — falling back to full teleport reset")
 
     for attempt in range(max_retries):
         try:
@@ -596,6 +690,18 @@ def main():
                         help='Campaign name (subdirectory under data/)')
     parser.add_argument('--velocity-limit', type=float, default=0.0,
                         help='Max velocity cap in m/s (0 = Autoware default ~20 m/s)')
+    parser.add_argument('--tl-fault', type=str, default=None,
+                        choices=['tl_confidence', 'tl_unknown', 'tl_blackout'],
+                        help='Traffic light fault mode')
+    parser.add_argument('--tl-params', type=str, default='{}',
+                        help='JSON params for TL fault, e.g. {"dropout_rate":0.5}')
+    parser.add_argument('--imu-fault', type=str, default=None,
+                        choices=['imu_bias'],
+                        help='IMU fault mode')
+    parser.add_argument('--imu-params', type=str, default='{}',
+                        help='JSON params for IMU fault, e.g. {"accel_bias_ms2":0.5,"gyro_bias_rads":0.1}')
+    parser.add_argument('--fault-delay', type=float, default=30.0,
+                        help='Seconds after engage before faults activate (default: 30)')
     args = parser.parse_args()
 
     # Handle metrics-only mode
@@ -703,6 +809,27 @@ def main():
         print(f"ERROR: Failed to start interceptor: {e}")
         return 1
 
+    # Start fault injector (always-running relay; passthrough when no fault specified)
+    fault_injector_proc = None
+    tl_params_parsed  = json.loads(args.tl_params) if isinstance(args.tl_params, str) else args.tl_params
+    imu_params_parsed = json.loads(args.imu_params) if isinstance(args.imu_params, str) else args.imu_params
+    batch_fault_log   = os.path.join(DATA_DIR, args.campaign, 'fault_log.jsonl')
+    os.makedirs(os.path.join(DATA_DIR, args.campaign), exist_ok=True)
+    try:
+        print(f"\nStarting fault injector: tl={args.tl_fault or 'passthrough'}, imu={args.imu_fault or 'passthrough'}")
+        fault_injector_proc = start_fault_injector(
+            tl_fault=args.tl_fault,
+            tl_params=tl_params_parsed,
+            imu_fault=args.imu_fault,
+            imu_params=imu_params_parsed,
+            fault_delay=args.fault_delay,
+            log_file=batch_fault_log,
+        )
+    except RuntimeError as e:
+        print(f"ERROR: Failed to start fault injector: {e}")
+        stop_interceptor(interceptor_proc)
+        return 1
+
     # Run experiments
     results = []
     skipped_count = 0
@@ -756,6 +883,15 @@ def main():
                 # Compute metrics
                 runner.compute_and_save_metrics()
 
+                # Copy fault log snapshot into this run's directory
+                if os.path.exists(batch_fault_log):
+                    import shutil
+                    run_fault_log = os.path.join(runner.config.data_dir, 'fault_log.jsonl')
+                    try:
+                        shutil.copy2(batch_fault_log, run_fault_log)
+                    except Exception as exc:
+                        print(f"WARNING: Could not copy fault log: {exc}")
+
                 results.append({
                     'experiment_id': exp_id,
                     'goal_id': goal.id,
@@ -783,8 +919,9 @@ def main():
                     else:
                         time.sleep(5)
     finally:
-        # Always stop interceptor
+        # Always stop interceptor and fault injector
         stop_interceptor(interceptor_proc)
+        stop_fault_injector(fault_injector_proc)
 
     # Summary
     print("\n" + "="*60)
@@ -822,9 +959,16 @@ def main():
 
 
 if __name__ == '__main__':
+    exit_code = 1
     try:
         exit_code = main()
     finally:
-        # Clean shutdown of ROS2
-        shutdown_ros()
-    sys.exit(exit_code)
+        try:
+            shutdown_ros()
+        except Exception:
+            pass
+    # rclpy C++ destructors throw during Python's normal exit path, producing
+    # "terminate called without an active exception" + core dump. os._exit()
+    # bypasses Python garbage collection and atexit handlers, exiting cleanly.
+    import os as _os
+    _os._exit(exit_code)

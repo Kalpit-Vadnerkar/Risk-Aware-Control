@@ -9,12 +9,22 @@
 #   ./collect.sh <campaign> [--trials N] [--goals GOALS] [--dry-run]
 #
 # Campaigns:
-#   nom_v5        Nominal driving, 5 m/s velocity cap
-#   nom_v7        Nominal driving, 7 m/s velocity cap
-#   nom_v10       Nominal driving, 10 m/s velocity cap
-#   obs_stuck     30m obstacle, Autoware stops (default policy)
-#   obs_recovery  30m obstacle, Autoware swerves (avoidance=auto)
-#   obs_noescape  30m obstacle in single-lane segment, no path forward
+#   nom_v5              Nominal driving, 5 m/s velocity cap
+#   nom_v7              Nominal driving, 7 m/s velocity cap
+#   nom_v11             Nominal driving, 11.11 m/s (Autoware map speed limit)
+#   obs_stuck           30m obstacle, Autoware stops (avoidance=manual)
+#   obs_recovery        30m obstacle, Autoware swerves (avoidance=auto)
+#   obs_noescape        30m obstacle in single-lane (LL 241), no path forward
+#   obs_singlelane      30m obstacle, no adjacent lane — Signal 1 validation
+#   obs_tooclosetoreact 6m obstacle, multi-lane — Signal 2 (TTC) validation
+#   tl_fault_s1         TL confidence degraded to 0.5 (fog/mild — reactive gating)
+#   tl_fault_s2         TL confidence degraded to 0.1 (heavy occlusion — reactive gating)
+#   tl_fault_s3         TL classification → UNKNOWN (reactive gating)
+#   tl_fault_s4         TL full blackout during detection windows (reactive gating)
+#   imu_fault_s1        IMU bias accel=0.1 m/s² gyro=0.05 rad/s, 30s on / 30s off
+#   imu_fault_s2        IMU bias accel=0.5 m/s² gyro=0.10 rad/s, 30s on / 30s off
+#   imu_fault_s3        IMU bias accel=1.0 m/s² gyro=0.30 rad/s, 20s on / 10s off
+#   imu_fault_s4        IMU bias accel=2.0 m/s² gyro=0.50 rad/s, sustained
 #
 # Examples:
 #   ./collect.sh nom_v7
@@ -30,7 +40,8 @@ BLUE='\033[0;34m';  RED='\033[0;31m'; NC='\033[0m'
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUTOWARE_DIR="$SCRIPT_DIR/autoware"
+WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+AUTOWARE_DIR="$WORKSPACE_DIR/autoware"
 EXPERIMENTS_DIR="$SCRIPT_DIR/experiments"
 RUNNER="$EXPERIMENTS_DIR/scripts/run_experiments.py"
 SCENARIOS_DIR="$EXPERIMENTS_DIR/configs/scenarios"
@@ -45,7 +56,8 @@ DRY_RUN=""
 if [[ $# -eq 0 ]]; then
     echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--dry-run]${NC}"
     echo ""
-    echo "Campaigns: nom_v5  nom_v7  nom_v10  obs_stuck  obs_recovery  obs_noescape"
+    echo "Campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
+    echo "           tl_fault_s1..s4  imu_fault_s1..s4"
     exit 1
 fi
 
@@ -77,20 +89,7 @@ if ! ros2 topic list 2>/dev/null | grep -q "/sensing/lidar/top/pointcloud_raw"; 
     echo -e "${RED}ERROR: AWSIM not running. Start it first: ./Run_AWSIM.sh${NC}"; exit 1
 fi
 echo -e "  AWSIM:     ${GREEN}OK${NC}"
-
-AUTOWARE_UP=false
-for i in 1 2 3; do
-    if ros2 topic list 2>/dev/null | grep -qE "/autoware/state|/localization/kinematic_state"; then
-        AUTOWARE_UP=true; break
-    fi
-    sleep 2
-done
-if [ "$AUTOWARE_UP" = false ]; then
-    echo -e "${YELLOW}WARNING: Autoware topics not detected (may still be initializing).${NC}"
-    echo -e "${YELLOW}         Continuing — the runner will wait for Autoware readiness.${NC}"
-else
-    echo -e "  Autoware:  ${GREEN}OK${NC}"
-fi
+echo -e "  Autoware:  (readiness checked by the experiment runner)"
 echo ""
 
 # ── Helper: run the Python experiment runner ──────────────────────────────────
@@ -146,17 +145,19 @@ case "$CAMPAIGN" in
 
     nom_v5)
         echo -e "${BLUE}Nominal driving — 5 m/s velocity cap${NC}"
+        trap 'echo -e "\n${YELLOW}Restoring velocity limit to default (11.11 m/s)...${NC}"; ros2 param set /planning/scenario_planning/external_velocity_limit_selector max_vel 11.11 2>/dev/null || true' EXIT
         run nom_v5 nom_v5 --velocity-limit 5.0
         ;;
 
     nom_v7)
         echo -e "${BLUE}Nominal driving — 7 m/s velocity cap${NC}"
+        trap 'echo -e "\n${YELLOW}Restoring velocity limit to default (11.11 m/s)...${NC}"; ros2 param set /planning/scenario_planning/external_velocity_limit_selector max_vel 11.11 2>/dev/null || true' EXIT
         run nom_v7 nom_v7 --velocity-limit 7.0
         ;;
 
-    nom_v10)
-        echo -e "${BLUE}Nominal driving — 10 m/s velocity cap${NC}"
-        run nom_v10 nom_v10 --velocity-limit 10.0
+    nom_v11)
+        echo -e "${BLUE}Nominal driving — 11.11 m/s (Autoware map speed limit, no external cap)${NC}"
+        run nom_v11 nom_v11
         ;;
 
     obs_stuck)
@@ -185,9 +186,99 @@ case "$CAMPAIGN" in
             --scenario "$SCENARIOS_DIR/obs_noescape.yaml"
         ;;
 
+    obs_singlelane)
+        echo -e "${BLUE}Static obstacle — single-lane section, Signal 1 validation${NC}"
+        avoidance_verify "manual"
+        run obs_singlelane obs_singlelane \
+            --scenario "$SCENARIOS_DIR/obs_singlelane.yaml"
+        ;;
+
+    obs_tooclosetoreact)
+        echo -e "${BLUE}Static obstacle — 6m ahead, Signal 2 (TTC) validation${NC}"
+        echo -e "${YELLOW}NOTE: Temporarily sets avoidance policy to \"auto\".${NC}"
+        avoidance_set "auto"
+        trap 'echo -e "\n${YELLOW}Restoring avoidance policy to manual...${NC}"; avoidance_set "manual"' EXIT
+        run obs_tooclosetoreact obs_tooclosetoreact \
+            --scenario "$SCENARIOS_DIR/obs_tooclosetoreact.yaml"
+        ;;
+
+    # ── Traffic light fault campaigns ─────────────────────────────────────────
+    # Fault delay = 30s so localization converges before the fault activates.
+    # Faults only applied during active TL detection windows (reactive gating).
+    # Severity levels: Deng et al. (2023), ISO 21448 SOTIF.
+
+    tl_fault_s1)
+        echo -e "${BLUE}TL camera fault — S1: confidence degraded to 0.5 (mild, e.g. fog)${NC}"
+        run tl_fault_s1 tl_fault_s1 \
+            --tl-fault tl_confidence \
+            --tl-params '{"confidence_scale":0.5}' \
+            --fault-delay 30
+        ;;
+
+    tl_fault_s2)
+        echo -e "${BLUE}TL camera fault — S2: confidence degraded to 0.1 (heavy occlusion)${NC}"
+        run tl_fault_s2 tl_fault_s2 \
+            --tl-fault tl_confidence \
+            --tl-params '{"confidence_scale":0.1}' \
+            --fault-delay 30
+        ;;
+
+    tl_fault_s3)
+        echo -e "${BLUE}TL camera fault — S3: all elements forced to UNKNOWN (classification failure)${NC}"
+        run tl_fault_s3 tl_fault_s3 \
+            --tl-fault tl_unknown \
+            --fault-delay 30
+        ;;
+
+    tl_fault_s4)
+        echo -e "${BLUE}TL camera fault — S4: full blackout during detection windows${NC}"
+        run tl_fault_s4 tl_fault_s4 \
+            --tl-fault tl_blackout \
+            --fault-delay 30
+        ;;
+
+    # ── IMU bias fault campaigns ───────────────────────────────────────────────
+    # Periodic bias: ON for on_seconds then OFF for off_seconds, cycling.
+    # S4 is sustained (off_seconds=0). Bias accumulates in EKF → x_var/y_var rises.
+    # Magnitudes: Woodman (2007) UCAM-CL-TR-696; Abdel-Hafez et al. (2021).
+    # Fault delay = 30s gives EKF time to converge on nominal trajectory first.
+
+    imu_fault_s1)
+        echo -e "${BLUE}IMU bias fault — S1: accel=0.1 m/s², gyro=0.05 rad/s, 30s on / 30s off${NC}"
+        run imu_fault_s1 imu_fault_s1 \
+            --imu-fault imu_bias \
+            --imu-params '{"accel_bias_ms2":0.1,"gyro_bias_rads":0.05,"on_seconds":30,"off_seconds":30}' \
+            --fault-delay 30
+        ;;
+
+    imu_fault_s2)
+        echo -e "${BLUE}IMU bias fault — S2: accel=0.5 m/s², gyro=0.10 rad/s, 30s on / 30s off${NC}"
+        run imu_fault_s2 imu_fault_s2 \
+            --imu-fault imu_bias \
+            --imu-params '{"accel_bias_ms2":0.5,"gyro_bias_rads":0.10,"on_seconds":30,"off_seconds":30}' \
+            --fault-delay 30
+        ;;
+
+    imu_fault_s3)
+        echo -e "${BLUE}IMU bias fault — S3: accel=1.0 m/s², gyro=0.30 rad/s, 20s on / 10s off${NC}"
+        run imu_fault_s3 imu_fault_s3 \
+            --imu-fault imu_bias \
+            --imu-params '{"accel_bias_ms2":1.0,"gyro_bias_rads":0.30,"on_seconds":20,"off_seconds":10}' \
+            --fault-delay 30
+        ;;
+
+    imu_fault_s4)
+        echo -e "${BLUE}IMU bias fault — S4: accel=2.0 m/s², gyro=0.50 rad/s, sustained${NC}"
+        run imu_fault_s4 imu_fault_s4 \
+            --imu-fault imu_bias \
+            --imu-params '{"accel_bias_ms2":2.0,"gyro_bias_rads":0.50,"on_seconds":9999,"off_seconds":0}' \
+            --fault-delay 30
+        ;;
+
     *)
         echo -e "${RED}Unknown campaign: ${CAMPAIGN}${NC}"
-        echo "Valid campaigns: nom_v5  nom_v7  nom_v10  obs_stuck  obs_recovery  obs_noescape"
+        echo "Valid campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
+        echo "                 tl_fault_s1..s4  imu_fault_s1..s4"
         exit 1
         ;;
 esac

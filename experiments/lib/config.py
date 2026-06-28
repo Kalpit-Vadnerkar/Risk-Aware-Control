@@ -23,31 +23,57 @@ RECORDING_TOPICS = [
     # Core state & transforms
     '/localization/kinematic_state',
     '/localization/pose_with_covariance',
+    '/localization/acceleration',           # EKF-fused acceleration (ST-GAT accel feature)
     '/awsim/ground_truth/localization/kinematic_state',
-    '/tf',  # Vehicle pose in map frame (critical for spatial computation)
+    '/tf',
+    '/tf_static',                           # Static coordinate frames
+
+    # IMU - raw sensor data (acceleration feature source; needed for IMU fault injection)
+    '/sensing/imu/imu_data',
 
     # Vehicle status
     '/vehicle/status/velocity_status',
     '/vehicle/status/steering_status',
     '/vehicle/status/gear_status',
+    '/vehicle/status/actuation_status',     # Actual throttle/brake/steer feedback
+    '/vehicle/status/control_mode',         # Autonomous / manual / override
+
+    # Control commands
+    '/control/command/control_cmd',
+    '/control/command/actuation_cmd',       # Low-level actuator commands
 
     # Perception - objects (original + filtered for interceptor comparison)
     '/perception/object_recognition/objects',
     '/perception/object_recognition/objects_filtered',
     '/perception/object_recognition/tracking/objects',
 
-    # Perception - traffic lights (all related topics)
+    # Perception - traffic lights
+    # traffic_signals_raw: raw recognition output (pre-fault-injection)
+    # traffic_signals: what planning sees (may be faulted by fault_injector)
+    '/perception/traffic_light_recognition/traffic_signals_raw',
     '/perception/traffic_light_recognition/traffic_signals',
     '/perception/traffic_light_recognition/traffic_light_states',
 
-    # Planning
+    # Planning - trajectories & paths
     '/planning/scenario_planning/trajectory',
     '/planning/mission_planning/route',
     '/planning/scenario_planning/lane_driving/behavior_planning/path',
+    '/planning/scenario_planning/lane_driving/behavior_planning/path_with_lane_id',  # Lane topology
 
-    # Control
-    '/control/command/control_cmd',
-    # '/control_performance/performance_vars',  # Requires launching control_performance_analysis node
+    # Planning - velocity constraints
+    '/planning/scenario_planning/max_velocity',           # RISE Phase 4 writes here
+    '/planning/scenario_planning/current_max_velocity',   # Actual enforced cap
+
+    # Planning factors - which module is active and why (avoidance decision timestamp)
+    '/planning/planning_factors/behavior_path_planner',
+    '/planning/planning_factors/motion_velocity_planner',
+
+    # Behavior path planner - avoidance module debug (lateral shift decision)
+    '/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/debug/static_obstacle_avoidance',
+
+    # Motion velocity planner - obstacle stop/cruise planning info (TTC / Signal 2)
+    '/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/debug/obstacle_stop/planning_info',
+    '/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/debug/obstacle_cruise/planning_info',
 
     # System state
     '/autoware/state',
@@ -55,7 +81,7 @@ RECORDING_TOPICS = [
     '/system/fail_safe/mrm_state',
     '/system/operation_mode/state',
 
-    # Mission planning (for expected time/distance if available)
+    # Mission planning
     '/planning/remaining_distance_time_calculator/output/mission_remaining_distance_time',
 
     # Diagnostics
