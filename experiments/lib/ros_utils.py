@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 from enum import IntEnum
 
 import rclpy
+import rclpy.parameter
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from rclpy.executors import SingleThreadedExecutor
@@ -23,8 +24,8 @@ from autoware_adapi_v1_msgs.srv import SetRoutePoints
 from autoware_vehicle_msgs.msg import Engage, VelocityReport
 from autoware_planning_msgs.msg import Trajectory
 from geometry_msgs.msg import Pose, Point, Quaternion
+from nav_msgs.msg import Odometry
 from std_msgs.msg import Header
-from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 
 
 class AutowareState(IntEnum):
@@ -76,7 +77,16 @@ class StateMonitorNode(Node):
     """ROS2 node for monitoring Autoware states."""
 
     def __init__(self):
-        super().__init__('experiment_state_monitor')
+        super().__init__(
+            'experiment_state_monitor',
+            parameter_overrides=[
+                rclpy.parameter.Parameter(
+                    'use_sim_time',
+                    rclpy.parameter.Parameter.Type.BOOL,
+                    True
+                )
+            ]
+        )
 
         # State storage with thread-safe access
         self._lock = threading.Lock()
@@ -86,6 +96,8 @@ class StateMonitorNode(Node):
         self._mrm_behavior = None
         self._velocity = None
         self._velocity_time = None
+        self._position = None
+        self._position_time = None
 
         # QoS for volatile topics (autoware/state, mrm_state)
         volatile_qos = QoSProfile(
@@ -132,23 +144,18 @@ class StateMonitorNode(Node):
             volatile_qos
         )
 
+        self.create_subscription(
+            Odometry,
+            '/awsim/ground_truth/localization/kinematic_state',
+            self._position_callback,
+            volatile_qos
+        )
+
         self._trajectory_ready = False
         self.create_subscription(
             Trajectory,
             '/planning/scenario_planning/trajectory',
             self._trajectory_callback,
-            volatile_qos
-        )
-
-        # Diagnostic aggregator — track ERROR count across all subsystems.
-        # Used to gate between-run resets: only proceed when the system is
-        # genuinely clean, not just momentarily NORMAL between MRM oscillations.
-        self._diag_error_count = None  # None = no message received yet
-        self._diag_last_update = 0.0
-        self.create_subscription(
-            DiagnosticArray,
-            '/diagnostics_agg',
-            self._diagnostics_callback,
             volatile_qos
         )
 
@@ -172,10 +179,29 @@ class StateMonitorNode(Node):
             self._velocity = msg.longitudinal_velocity
             self._velocity_time = time.time()
 
+    def _position_callback(self, msg):
+        with self._lock:
+            p = msg.pose.pose.position
+            self._position = (p.x, p.y)
+            self._position_time = time.time()
+
+    def get_position(self) -> Tuple[Optional[Tuple[float, float]], Optional[float]]:
+        with self._lock:
+            if self._position is None:
+                return None, None
+            age = time.time() - self._position_time if self._position_time else None
+            return self._position, age
+
     def _trajectory_callback(self, msg):
         with self._lock:
             if msg.points:
-                self._trajectory_ready = True
+                # Only mark ready if the trajectory timestamp is fresh (within 3s).
+                # Stale trajectories published just before clear_route() can race
+                # with reset_trajectory_ready() and cause a spurious early True.
+                now_sec = self.get_clock().now().nanoseconds / 1e9
+                msg_sec = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
+                if abs(now_sec - msg_sec) < 3.0:
+                    self._trajectory_ready = True
 
     def is_trajectory_ready(self) -> bool:
         with self._lock:
@@ -184,22 +210,6 @@ class StateMonitorNode(Node):
     def reset_trajectory_ready(self):
         with self._lock:
             self._trajectory_ready = False
-
-    def _diagnostics_callback(self, msg):
-        error_count = sum(
-            1 for s in msg.status
-            if s.level == DiagnosticStatus.ERROR
-        )
-        with self._lock:
-            self._diag_error_count = error_count
-            self._diag_last_update = time.time()
-
-    def get_diagnostic_error_count(self) -> Optional[int]:
-        """Return current ERROR count from /diagnostics_agg, or None if no msg yet."""
-        with self._lock:
-            if time.time() - self._diag_last_update > 5.0:
-                return None  # stale
-            return self._diag_error_count
 
     def get_autoware_state(self) -> Tuple[Optional[AutowareState], str]:
         with self._lock:
@@ -381,6 +391,20 @@ def get_velocity(timeout: float = 2.0) -> Optional[float]:
     return None
 
 
+def get_vehicle_position(timeout: float = 2.0) -> Optional[Tuple[float, float]]:
+    """Return current (x, y) from AWSIM ground truth, or None on timeout."""
+    _ensure_node_running()
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        pos, age = _monitor_node.get_position()
+        if pos is not None and age is not None and age < 1.0:
+            return pos
+        time.sleep(0.05)
+
+    return None
+
+
 def clear_route(timeout: float = 10.0) -> bool:
     """Clear the current route."""
     try:
@@ -411,63 +435,57 @@ def clear_route(timeout: float = 10.0) -> bool:
 
 
 def wait_for_clean_diagnostics(
-    timeout: float = 60.0,
+    timeout: float = 30.0,
     stable_duration: float = 5.0,
-    max_errors: int = 0,
+    max_errors: int = 0,  # kept for API compatibility
 ) -> bool:
-    """Wait until /diagnostics_agg reports no ERROR entries for `stable_duration` seconds.
+    """Wait until the system is in a stable ready state between experiments.
 
-    This is the ground-truth health check for between-run resets. The contaminated
-    state produces 14+ simultaneous ERROR entries across planning, control, and system
-    nodes. MRM NORMAL is a *consequence* of clean diagnostics — checking MRM alone
-    misses the window between oscillations. Checking the raw diagnostic count directly
-    tells us when the system is actually ready.
+    Checks that MRM is NORMAL and Autoware is in WAITING_FOR_ROUTE or
+    WAITING_FOR_ENGAGE for `stable_duration` consecutive seconds.
 
-    Args:
-        timeout: Maximum seconds to wait before giving up.
-        stable_duration: Consecutive seconds of clean diagnostics required.
-        max_errors: Maximum allowed ERROR count (0 = fully clean).
-
-    Returns:
-        True if diagnostics stayed clean for stable_duration seconds within timeout.
+    Note: /diagnostics_agg is not published by this Autoware setup.
+    MRM state is the practical stability proxy — it reflects the same
+    underlying diagnostic health that the aggregator would expose.
     """
     _ensure_node_running()
 
-    print(f"Waiting for clean diagnostics (max_errors={max_errors}, stable={stable_duration}s)...")
+    print(f"Waiting for system ready (MRM=NORMAL, stable={stable_duration}s)...")
     stable_since = None
     start = time.time()
 
+    READY_STATES = {AutowareState.WAITING_FOR_ROUTE, AutowareState.WAITING_FOR_ENGAGE}
+
     while time.time() - start < timeout:
-        error_count = _monitor_node.get_diagnostic_error_count()
+        mrm_state, _ = _monitor_node.get_mrm_state()
+        aw_state, aw_name = _monitor_node.get_autoware_state()
 
-        if error_count is None:
-            # No message received yet — wait for the aggregator to publish
-            print("  [waiting for /diagnostics_agg...]")
-            time.sleep(1.0)
-            continue
+        is_ready = (mrm_state == MrmState.NORMAL and aw_state in READY_STATES)
 
-        if error_count <= max_errors:
+        if is_ready:
             if stable_since is None:
                 stable_since = time.time()
             elapsed_stable = time.time() - stable_since
             if elapsed_stable >= stable_duration:
                 total = round(time.time() - start, 1)
-                print(f"  Diagnostics clean ({error_count} errors) for {stable_duration}s — system ready ({total}s total)")
+                print(f"  System ready (MRM=NORMAL, state={aw_name}) for {stable_duration}s ({total}s total)")
                 return True
         else:
             if stable_since is not None:
-                print(f"  ERROR count jumped to {error_count} — resetting stability window")
+                mrm_name = mrm_state.name if mrm_state else "UNKNOWN"
+                print(f"  Stability broken — MRM={mrm_name}, state={aw_name}")
             stable_since = None
 
         elapsed = time.time() - start
         if int(elapsed) % 10 == 0 and int(elapsed) > 0:
-            err_str = str(error_count) if error_count is not None else "?"
-            print(f"  [{elapsed:.0f}s] diagnostic errors: {err_str}")
+            mrm_name = mrm_state.name if mrm_state else "UNKNOWN"
+            print(f"  [{elapsed:.0f}s] MRM={mrm_name}, state={aw_name}")
         time.sleep(1.0)
 
-    elapsed = time.time() - start
-    error_count = _monitor_node.get_diagnostic_error_count()
-    print(f"  Diagnostics did not clear within {timeout}s (current errors: {error_count})")
+    mrm_state, _ = _monitor_node.get_mrm_state()
+    _, aw_name = _monitor_node.get_autoware_state()
+    mrm_name = mrm_state.name if mrm_state else "UNKNOWN"
+    print(f"  System not ready within {timeout}s (MRM={mrm_name}, state={aw_name})")
     return False
 
 
@@ -532,35 +550,30 @@ def recover_from_emergency(max_attempts: int = 3) -> bool:
     return False
 
 
+_VELOCITY_SELECTOR_NODE = '/planning/scenario_planning/external_velocity_limit_selector'
+_VELOCITY_DEFAULT_MPS = 11.11   # matches max_vel in common.param.yaml
+
+
 def set_velocity_limit(limit_mps: float) -> bool:
-    """Publish an external velocity limit to Autoware.
+    """Set the external velocity cap via the velocity limit selector node parameter.
 
-    Publishes to /planning/scenario_planning/max_velocity, which the velocity
-    smoother node reads at each planning cycle. Takes effect within ~0.1s.
-    Publishing 0.0 removes the limit (restores Autoware default of 20 m/s).
+    Uses `ros2 param set` on external_velocity_limit_selector/max_vel — more
+    reliable than topic publishing because the parameter persists for the lifetime
+    of the node, whereas the /max_velocity topic is VOLATILE and gets reset on
+    node startup (publishing once was never received by a fresh subscriber).
 
-    Uses a persistent publisher so the velocity smoother never sees an
-    'unmatched publisher' event — which would cause it to reset the limit.
+    Pass 0 or negative to restore the common.param.yaml default (11.11 m/s).
     """
-    global _velocity_publisher
+    target = float(limit_mps) if limit_mps > 0 else _VELOCITY_DEFAULT_MPS
     try:
-        from autoware_internal_planning_msgs.msg import VelocityLimit
-        _ensure_node_running()
-        if _velocity_publisher is None:
-            _velocity_publisher = _monitor_node.create_publisher(
-                VelocityLimit,
-                '/planning/scenario_planning/max_velocity',
-                1
-            )
-        msg = VelocityLimit()
-        msg.max_velocity = float(limit_mps) if limit_mps > 0 else 20.0
-        msg.use_constraints = False
-        msg.sender = 'experiment_runner'
-        for _ in range(3):
-            _velocity_publisher.publish(msg)
-            time.sleep(0.05)
-        limit_str = f"{limit_mps:.1f} m/s" if limit_mps > 0 else "default (20.0 m/s)"
-        print(f"  Velocity limit set to {limit_str}")
+        result = subprocess.run(
+            ['ros2', 'param', 'set', _VELOCITY_SELECTOR_NODE, 'max_vel', str(target)],
+            capture_output=True, text=True, timeout=5.0,
+        )
+        if result.returncode != 0:
+            print(f"  WARNING: ros2 param set failed: {result.stderr.strip()}")
+            return False
+        print(f"  Velocity limit set to {target:.1f} m/s")
         return True
     except Exception as e:
         print(f"  WARNING: Failed to set velocity limit: {e}")

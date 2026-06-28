@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-HD Map explorer for Shinjuku Autoware scenario.
-Reads the lanelet2 OSM map and analyses route topology for our test goals.
+HD Map explorer for the nishishinjuku_autoware_map (MGRS 54SUE frame).
+
+Analyses lanelet topology, adjacency, and identifies single-lane segments
+for scenario route selection.
 
 Usage (must source ROS/Autoware first):
   source /opt/ros/humble/setup.bash
+  source /home/kvadner/Desktop/Kalpit/autoware/install/setup.bash
   python3 explore_map.py
 """
 
@@ -13,23 +16,19 @@ import json
 import lanelet2
 from lanelet2.core import BasicPoint2d
 
-MAP_FILE = "/home/df/Desktop/Kalpit-2026/Risk-Aware-Control/Shinjuku-Map/map/lanelet2_map.osm"
-# Projector origin matches MapProcessor.py
-ORIGIN = lanelet2.io.Origin(35.67, 139.65, 0)
+MAP_FILE = "/home/kvadner/Desktop/Kalpit/Map/nishishinjuku_autoware_map/lanelet2_map.osm"
 
-# Spawn point in map frame (from captured_goals.json start_position)
+# The map uses MGRS 54SUE projection. The UtmProjector origin that aligns
+# the lanelet2 local frame with the AWSIM/ROS2 map frame (where the spawn
+# position is (81384.6, 49922.0)) is approximately (35.241°N, 138.801°E).
+# Derived empirically: spawn GPS ≈ (35.69°N, 139.70°E); offset back to get
+# local (0,0) at the MGRS 100km-square corner.
+ORIGIN = lanelet2.io.Origin(35.241, 138.801, 0)
+
+GOALS_FILE = "/home/kvadner/Desktop/Kalpit/Risk-Aware-Control/experiments/configs/captured_goals.json"
+
+# Spawn point in AWSIM/ROS2 map frame
 SPAWN = (81384.53, 49921.95)
-
-# Our test goals (id -> (x, y, distance_m))
-GOALS = {
-    "goal_003": (81641.37, 50492.94, 626.0),
-    "goal_007": (81606.78, 50596.17, 709.9),
-    "goal_011": (81497.79, 50544.91, 633.3),
-    "goal_021": (81487.06, 50611.14, 696.9),
-}
-
-# Approximate obstacle placement: 150m travel from spawn along route + 30m ahead
-# The actual point depends on the route, but let's find lanelets around 150-180m from spawn
 
 
 def dist2d(ax, ay, bx, by):
@@ -43,7 +42,6 @@ def lanelet_midpoint(ll):
 
 
 def lanelet_length(ll):
-    """Approximate length of a lanelet via centerline arc."""
     total = 0.0
     pts = list(ll.centerline)
     for i in range(1, len(pts)):
@@ -52,7 +50,6 @@ def lanelet_length(ll):
 
 
 def ll_attr(ll, key, default=""):
-    """Safe attribute access for lanelet2 AttributeMap."""
     try:
         return ll.attributes[key]
     except Exception:
@@ -71,47 +68,31 @@ def closest_lanelets(map_data, x, y, n=5, only_road=True):
     return results[:n]
 
 
-def find_adjacent_lanes(map_data, routing_graph, ll):
-    """Return left/right adjacent lanelets if they exist."""
+def find_adjacent(routing_graph, ll):
     left = routing_graph.left(ll)
     right = routing_graph.right(ll)
-    adjacent_left = routing_graph.adjacentLeft(ll)
-    adjacent_right = routing_graph.adjacentRight(ll)
-    return {
-        "left": left,
-        "right": right,
-        "adjacent_left": adjacent_left,
-        "adjacent_right": adjacent_right,
-    }
+    adj_l = routing_graph.adjacentLeft(ll)
+    adj_r = routing_graph.adjacentRight(ll)
+    return left, right, adj_l, adj_r
 
 
-def lanelets_within_radius(map_data, cx, cy, radius, only_road=True):
-    results = []
-    for ll in map_data.laneletLayer:
-        if only_road and ll_attr(ll, "subtype") != "road":
-            continue
-        mx, my = lanelet_midpoint(ll)
-        if dist2d(cx, cy, mx, my) <= radius:
-            results.append(ll)
-    return results
+def has_adjacent(routing_graph, ll):
+    return any(x is not None for x in find_adjacent(routing_graph, ll))
 
 
 def print_section(title):
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 72)
     print(f"  {title}")
-    print("=" * 70)
+    print("=" * 72)
 
 
 def main():
-    print("Loading lanelet2 map...")
-    projector = lanelet2.projection.LocalCartesianProjector(ORIGIN)
+    print("Loading lanelet2 map (MGRS 54SUE / UtmProjector)...")
+    projector = lanelet2.projection.UtmProjector(ORIGIN)
     map_data, errs = lanelet2.io.loadRobust(MAP_FILE, projector)
-    if errs:
-        print(f"  Load warnings: {errs}")
-    print(f"  Lanelets: {len(list(map_data.laneletLayer))}")
-    print(f"  LineStrings: {len(list(map_data.lineStringLayer))}")
+    road_lls = [ll for ll in map_data.laneletLayer if ll_attr(ll, "subtype") == "road"]
+    print(f"  Road lanelets: {len(road_lls)}  (total: {len(list(map_data.laneletLayer))})")
 
-    # Build routing graph (required for left/right queries)
     traffic_rules = lanelet2.traffic_rules.create(
         lanelet2.traffic_rules.Locations.Germany,
         lanelet2.traffic_rules.Participants.Vehicle
@@ -119,223 +100,146 @@ def main():
     routing_graph = lanelet2.routing.RoutingGraph(map_data, traffic_rules)
 
     # ------------------------------------------------------------------ #
-    # 1. Spawn-point context
+    # 0. Verify projection — spawn-point should be near road lanelets
     # ------------------------------------------------------------------ #
-    print_section("1. Spawn-point neighbourhood")
+    print_section("0. Projection check — spawn-point neighbourhood")
     sx, sy = SPAWN
+    spawn_near = closest_lanelets(map_data, sx, sy, n=5)
     print(f"  Spawn: ({sx:.1f}, {sy:.1f})")
-    spawn_lls = closest_lanelets(map_data, sx, sy, n=5)
-    for d, ll in spawn_lls:
+    for d, ll in spawn_near:
         mx, my = lanelet_midpoint(ll)
-        length = lanelet_length(ll)
-        subtype = ll_attr(ll, "subtype", "?")
-        print(f"  LL id={ll.id:6d}  dist={d:6.1f}m  mid=({mx:.1f},{my:.1f})  "
-              f"len={length:.1f}m  subtype={subtype}")
+        print(f"  LL {ll.id:6d}  dist={d:6.1f}m  mid=({mx:.1f},{my:.1f})  len={lanelet_length(ll):.1f}m")
+
+    if spawn_near[0][0] > 50:
+        print("  WARNING: closest lanelet is >50m from spawn — projection may be off.")
+        print("  Map analysis below may be unreliable. Run test_route_feasibility.py for live testing.")
 
     # ------------------------------------------------------------------ #
-    # 2. Goal-point context
+    # 1. All goals — feasibility snapshot from map topology
     # ------------------------------------------------------------------ #
-    print_section("2. Goal-point neighbourhood")
-    for gname, (gx, gy, gdist) in GOALS.items():
-        print(f"\n  {gname} @ ({gx:.1f},{gy:.1f})  route~{gdist:.0f}m")
-        goal_lls = closest_lanelets(map_data, gx, gy, n=3)
-        for d, ll in goal_lls:
+    print_section("1. All goals — map-topology feasibility")
+    with open(GOALS_FILE) as f:
+        gdata = json.load(f)
+
+    goals = gdata['goals']
+    spawn_lls = [ll for d, ll in closest_lanelets(map_data, sx, sy, n=10)]
+
+    print(f"\n  {'Goal':<12} {'Dist':>6}  {'CloseLL':>8}  {'LLdist':>7}  NearAdj  Notes")
+    print(f"  {'-'*70}")
+    for g in goals:
+        gid = g['id']
+        px = g['goal']['position']['x']
+        py = g['goal']['position']['y']
+        dist = g.get('estimated_distance', '?')
+        replaced = '[repl]' if g.get('original_goal_replaced') else ''
+
+        goal_near = closest_lanelets(map_data, px, py, n=3)
+        close_ll = goal_near[0][1] if goal_near else None
+        close_d = goal_near[0][0] if goal_near else 9999
+
+        if close_ll is not None:
+            adj = has_adjacent(routing_graph, close_ll)
+            adj_str = 'multi' if adj else 'SINGLE'
+        else:
+            adj_str = '?'
+
+        print(f"  {gid:<12} {str(dist):>6}  {(close_ll.id if close_ll else '?'):>8}  "
+              f"{close_d:>7.1f}  {adj_str:<7}  {replaced}")
+
+    # ------------------------------------------------------------------ #
+    # 2. Single-lane segment survey (for obs_singlelane scenario)
+    # ------------------------------------------------------------------ #
+    print_section("2. Single-lane segments across the entire map")
+    single_lane = []
+    for ll in road_lls:
+        if not has_adjacent(routing_graph, ll):
             mx, my = lanelet_midpoint(ll)
-            print(f"    LL id={ll.id:6d}  dist_to_goal={d:.1f}m  subtype={ll.attributes.get('subtype','?')}")
+            d_spawn = dist2d(sx, sy, mx, my)
+            llen = lanelet_length(ll)
+            single_lane.append((d_spawn, llen, ll))
 
-    # ------------------------------------------------------------------ #
-    # 3. Obstacle placement zone (≈ 150-210m from spawn along heading)
-    #    Spawn heading is roughly north (increasing y).  Rough estimate:
-    #    At 150m travel, ego is near (81384, 50072). At 180m, (81384, 50102).
-    #    Let's search a 60m radius around the midpoint.
-    # ------------------------------------------------------------------ #
-    print_section("3. Obstacle placement zone (150-200m from spawn)")
-    # The route heads north from spawn and then curves.
-    # A rough point 175m north of spawn:
-    obs_cx, obs_cy = SPAWN[0], SPAWN[1] + 175.0
-    print(f"  Approximate obstacle zone centre: ({obs_cx:.1f}, {obs_cy:.1f})")
-    zone_lls = lanelets_within_radius(map_data, obs_cx, obs_cy, radius=80, only_road=True)
-    print(f"  Road lanelets within 80m: {len(zone_lls)}")
-
-    for ll in sorted(zone_lls, key=lambda l: dist2d(obs_cx, obs_cy, *lanelet_midpoint(l))):
+    single_lane.sort(key=lambda x: x[0])
+    print(f"  Found {len(single_lane)} single-lane road segments")
+    print(f"\n  {'LL':>8}  {'DistSpawn':>10}  {'Length':>8}  mid-x     mid-y")
+    print(f"  {'-'*55}")
+    for d_s, llen, ll in single_lane[:30]:
         mx, my = lanelet_midpoint(ll)
-        d = dist2d(obs_cx, obs_cy, mx, my)
-        length = lanelet_length(ll)
-        adj = find_adjacent_lanes(map_data, routing_graph, ll)
-        left_id  = adj["left"].id  if adj["left"]  else None
-        right_id = adj["right"].id if adj["right"] else None
-        al_id    = adj["adjacent_left"].id  if adj["adjacent_left"]  else None
-        ar_id    = adj["adjacent_right"].id if adj["adjacent_right"] else None
-
-        can_avoid = any(v is not None for v in [left_id, right_id, al_id, ar_id])
-        d_from_zone = dist2d(obs_cx, obs_cy, mx, my)
-        print(f"  LL id={ll.id:6d}  dist={d_from_zone:5.1f}m  len={length:5.1f}m  "
-              f"left={left_id}  right={right_id}  adj_L={al_id}  adj_R={ar_id}  "
-              f"{'[CAN AVOID]' if can_avoid else '[NO ADJACENT]'}")
+        print(f"  {ll.id:>8}  {d_s:>10.1f}  {llen:>8.1f}  {mx:.1f}  {my:.1f}")
 
     # ------------------------------------------------------------------ #
-    # 4. Route analysis: find all lanelets a routing from spawn→goal uses
-    #    for each of our 4 goals, and check adjacency at each lanelet.
+    # 3. Route adjacency walk for selected goals (to find single-lane spots)
     # ------------------------------------------------------------------ #
-    print_section("4. Route adjacency analysis for test goals")
+    print_section("3. Route adjacency walk — goals closest to spawn")
 
-    # Find the closest routable lanelet to spawn
-    spawn_ll_candidates = closest_lanelets(map_data, sx, sy, n=10)
-    spawn_ll = None
-    for d, ll in spawn_ll_candidates:
-        # Try to get routes from this lanelet
-        try:
-            test_route = routing_graph.getRoute(ll, ll, 0)
-            spawn_ll = ll
-            break
-        except Exception:
-            pass
+    # Try first 5 spawn candidates as start lanelets
+    spawn_candidates = [(d, ll) for d, ll in closest_lanelets(map_data, sx, sy, n=10)]
 
-    # Try each candidate lanelet as start
-    for gname, (gx, gy, gdist) in GOALS.items():
-        print(f"\n  Route to {gname}:")
-        goal_lls = closest_lanelets(map_data, gx, gy, n=5)
+    target_goals = goals  # analyse all goals
+    for g in target_goals:
+        gid = g['id']
+        px = g['goal']['position']['x']
+        py = g['goal']['position']['y']
+        goal_lls = closest_lanelets(map_data, px, py, n=5)
 
-        found_route = False
-        for sd, sll in spawn_ll_candidates[:5]:
+        found = False
+        for sd, sll in spawn_candidates[:5]:
             for gd, gll in goal_lls[:3]:
                 try:
                     route = routing_graph.getRoute(sll, gll, 0)
                     if route is None:
                         continue
-                    llt = route.shortestPath()
-                    if llt is None:
+                    path = route.shortestPath()
+                    if path is None:
                         continue
 
-                    print(f"    Route found: {len(llt)} lanelets  "
-                          f"(spawn LL={sll.id}, goal LL={gll.id})")
+                    n_single = sum(1 for rll in path if not has_adjacent(routing_graph, rll))
+                    n_total = len(path)
 
-                    # Walk the route and check adjacency + approx distance from spawn
-                    cum_dist = 0.0
-                    prev_x, prev_y = sx, sy
-                    no_adj_segments = []
-                    for i, rll in enumerate(llt):
+                    # Summarise single-lane spans
+                    single_spans = []
+                    cum = 0.0
+                    px2, py2 = sx, sy
+                    for rll in path:
                         mx, my = lanelet_midpoint(rll)
-                        step = dist2d(prev_x, prev_y, mx, my)
-                        cum_dist += step
-                        prev_x, prev_y = mx, my
+                        cum += dist2d(px2, py2, mx, my)
+                        px2, py2 = mx, my
+                        if not has_adjacent(routing_graph, rll):
+                            single_spans.append(f"~{cum:.0f}m(LL{rll.id})")
 
-                        adj = find_adjacent_lanes(map_data, routing_graph, rll)
-                        has_adj = any(v is not None for v in adj.values())
-
-                        marker = ""
-                        if 120 <= cum_dist <= 220:  # obstacle zone window
-                            marker = " <<OBSTACLE ZONE>>"
-                            if not has_adj:
-                                no_adj_segments.append((i, rll.id, cum_dist))
-
-                        if 100 <= cum_dist <= 250:  # print a window around obstacle zone
-                            left_id  = adj["left"].id  if adj["left"]  else "—"
-                            right_id = adj["right"].id if adj["right"] else "—"
-                            print(f"      [{i:3d}] LL={rll.id:6d}  ~{cum_dist:5.0f}m  "
-                                  f"left={left_id}  right={right_id}  "
-                                  f"{'OK' if has_adj else 'NO ADJ'}{marker}")
-
-                    if no_adj_segments:
-                        print(f"    WARNING: {len(no_adj_segments)} segment(s) in obstacle zone have NO adjacent lanes")
-                    found_route = True
+                    span_str = ', '.join(single_spans[:5]) if single_spans else 'none'
+                    flag = ' ← SINGLE-LANE ROUTE' if n_single > 0 else ''
+                    print(f"\n  {gid}: {n_total} lanelets, {n_single} single-lane segments{flag}")
+                    print(f"    Single-lane at: {span_str}")
+                    found = True
                     break
-                except Exception as e:
+                except Exception:
                     pass
-            if found_route:
+            if found:
                 break
-        if not found_route:
-            print(f"    Could not compute route (routing graph may need different start LL)")
+        if not found:
+            print(f"\n  {gid}: route not computable from map (test live with Autoware)")
 
     # ------------------------------------------------------------------ #
-    # 5. All goals overview — distance, heading, lane context
+    # 4. Traffic light coverage per route (goal neighbourhood)
     # ------------------------------------------------------------------ #
-    print_section("5. All 25 goals — distance from spawn")
-    goals_file = "/home/df/Desktop/Kalpit-2026/Risk-Aware-Control/experiments/configs/captured_goals.json"
-    try:
-        with open(goals_file) as f:
-            gdata = json.load(f)
-        for g in gdata["goals"]:
-            gid = g["id"]
-            px = g["goal"]["position"]["x"]
-            py = g["goal"]["position"]["y"]
-            edist = g.get("estimated_distance", "?")
-            star = " ***" if gid in ("goal_003", "goal_007", "goal_011", "goal_021") else ""
-            replaced = " [replaced]" if g.get("original_goal_replaced") else ""
-            print(f"  {gid:10s}  pos=({px:.0f},{py:.0f})  est={edist}m{star}{replaced}")
-    except Exception as e:
-        print(f"  Could not load goals file: {e}")
+    print_section("4. Traffic light regulatory elements near each goal")
+    tl_count = {}
+    for g in goals:
+        gid = g['id']
+        px = g['goal']['position']['x']
+        py = g['goal']['position']['y']
+        goal_near_lls = [ll for d, ll in closest_lanelets(map_data, px, py, n=10)]
+        tls = set()
+        for ll in goal_near_lls:
+            for reg in ll.regulatoryElements:
+                if 'traffic_light' in str(type(reg)).lower() or 'TrafficLight' in str(type(reg)):
+                    tls.add(reg.id)
+        tl_count[gid] = len(tls)
 
-    # ------------------------------------------------------------------ #
-    # 6. Summary: what can Autoware do at the obstacle?
-    # ------------------------------------------------------------------ #
-    print_section("6. Autoware obstacle recovery — config summary")
-    print("""
-  From static_obstacle_avoidance.param.yaml:
-    use_lane_type: "opposite_direction_lane"   → can use oncoming lane to avoid
-    avoidance_for_ambiguous_vehicle.policy: "manual"  → WAITS for operator when
-      object not clearly parked (stopped <3s or moving >1m/s)
-    avoidance_for_parking_violation_vehicle.policy: "ignore"  → ignores parked-on-shoulder
-    stop.max_distance: 20.0m  → stops up to 20m before obstacle
-
-  From lane_change.param.yaml:
-    regulation.traffic_light: true  → NO lane change near traffic lights
-    regulation.intersection: true   → NO lane change in intersections
-    stuck_detection.velocity: 0.5 m/s, stop_time: 3.0s  → triggers stuck detection
-
-  Root cause of "getting stuck":
-    1. Obstacle is placed in-lane (lateral_offset=0.0), classified as a stopped car.
-    2. Avoidance module waits for object to be clearly parked (th_stopped_time=3s).
-    3. "ambiguous vehicle" policy is "manual" → needs RTC approval button click.
-    4. Without RTC approval, ego stops and STAYS stopped indefinitely.
-    5. Lane change module may not activate if intersection/traffic-light regulation fires.
-
-  Recovery options (see Section 7 below).
-""")
-
-    print_section("7. Recovery strategies")
-    print("""
-  Option A — RTC AUTO mode (recommended for experiments)
-    Set all RTC modules to AUTO so avoidance/lane-change execute without approval.
-    How: publish to /api/operation_mode/change_to_autonomous OR
-         use Autoware API: OperationModeChangeRequest
-    Risk: ego may make aggressive maneuvers in tight spaces.
-
-  Option B — Publish RTC approve command programmatically
-    Listen to /planning/scenario_planning/lane_driving/behavior_planning/
-              behavior_path_planner/rtc_status
-    Then publish ApproveRequest to the avoidance RTC topic.
-    This explicitly approves the avoidance maneuver from our ROS2 node.
-
-  Option C — Force a reroute (bypass the obstacle)
-    When ego is stuck (velocity < 0.5 m/s for > 3s):
-    - Cancel current route via /api/routing/clear_route
-    - Re-issue SetRoutePoints with an intermediate waypoint that bypasses the obstacle lane
-    - This works if there IS an adjacent lane (confirmed via lanelet analysis above)
-    Limitation: the new route must be topologically reachable.
-
-  Option D — Remove the obstacle after timeout
-    Treat static obstacle as a sensor-limited scenario:
-    - After a configurable timeout (e.g., 30s), remove the obstacle from perception
-    - Autoware resumes on cleared path
-    This is "recovery by perception clearing" — good for the RISE-on scenario
-    because it tests whether RISE constraint relaxes as residuals drop.
-
-  Option E — Freespace planner fallback
-    Autoware has a freespace planner that activates when stuck.
-    Enable it in the launch config; it plans a free-space path around the obstacle.
-    May go off-route briefly, then re-join.
-
-  RECOMMENDATION for RISE experiments:
-    Use Option D (timeout removal) as the primary recovery:
-    - It creates a clean before/after signal in residuals (spike → decay)
-    - CVaR can be computed on the spike + recovery arc
-    - Works regardless of map topology
-    - Simple to implement: add a timer in perception_interceptor.py that removes
-      the obstacle UUID after N seconds of ego being stopped.
-    Combine with Option A (AUTO mode) so avoidance fires immediately when obstacle
-    is removed and path is clear.
-""")
+    print(f"\n  {'Goal':<12}  TL elements near goal")
+    for g in goals:
+        gid = g['id']
+        print(f"  {gid:<12}  {tl_count[gid]}")
 
 
 if __name__ == "__main__":

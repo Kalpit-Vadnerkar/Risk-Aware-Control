@@ -28,10 +28,12 @@ sleep 2
 # Note: Don't reset ROS2 daemon here - AWSIM is already using it
 # If you have issues, run ./cleanup.sh before starting AWSIM
 
-# Directory setup (derive from script location, same pattern as Run_AWSIM.sh)
+# Directory setup
+# Autoware and AWSIM live in the parent directory (../), not inside this repo.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUTOWARE_DIR="$SCRIPT_DIR/autoware"
-MAP_PATH="$SCRIPT_DIR/Shinjuku-Map/map"
+WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+AUTOWARE_DIR="$WORKSPACE_DIR/autoware"
+MAP_PATH="$WORKSPACE_DIR/Map/nishishinjuku_autoware_map"
 VEHICLE_MODEL="awsim_labs_vehicle"
 SENSOR_MODEL="awsim_labs_sensor_kit"
 

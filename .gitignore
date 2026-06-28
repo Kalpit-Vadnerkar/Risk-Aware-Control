@@ -1,24 +1,23 @@
-# AWSIM Labs Binary
-awsim_labs_v1.6.1/
+# External dependencies (live in parent dir /home/kvadner/Desktop/Kalpit/, not inside this repo)
+# autoware/          → /home/kvadner/Desktop/Kalpit/autoware/
+# awsim_labs_v1.6.1/ → /home/kvadner/Desktop/Kalpit/awsim_labs_v1.6.1/
+# Map/               → /home/kvadner/Desktop/Kalpit/Map/nishishinjuku_autoware_map/
 
-# Map Assets
-Shinjuku-Map/
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
 
-# Autoware Build Artifacts
-autoware/build/
-autoware/install/
-autoware/log/
+# Experiment data (large rosbags)
+experiments/data/
 
-# OS and Editor files
+# Downloaded papers
+docs/papers/
+
+# OS and editor files
 .DS_Store
 .vscode/
 .idea/
 *~
 *.swp
-experiments/lib/__pycache__/
-
-# Data
-data/
-
-# Downloaded papers (PDFs)
-docs/papers/
+*.swo

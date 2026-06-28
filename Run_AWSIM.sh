@@ -12,8 +12,10 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Directory setup
+# Autoware and AWSIM live in the parent directory (../), not inside this repo.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AWSIM_DIR="$SCRIPT_DIR/awsim_labs_v1.6.1"
+WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+AWSIM_DIR="$WORKSPACE_DIR/awsim_labs_v1.6.1"
 AWSIM_BINARY="${AWSIM_DIR}/awsim_labs.x86_64"
 DEFAULT_CONFIG="$SCRIPT_DIR/experiments/configs/baseline.json"
 
@@ -44,7 +46,7 @@ cd "$AWSIM_DIR" || exit 1
 
 # Source ROS2 setup (required for topics to publish)
 source /opt/ros/humble/setup.bash
-source "$SCRIPT_DIR/autoware/install/setup.bash"
+source "$WORKSPACE_DIR/autoware/install/setup.bash"
 
 echo -e "${GREEN}Starting AWSIM Labs...${NC}"
 echo "Config: $CONFIG_PATH"

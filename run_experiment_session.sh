@@ -42,8 +42,10 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Directory setup
+# Autoware lives in the parent directory (../), not inside this repo.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUTOWARE_DIR="$SCRIPT_DIR/autoware"
+WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+AUTOWARE_DIR="$WORKSPACE_DIR/autoware"
 EXPERIMENTS_DIR="$SCRIPT_DIR/experiments"
 
 # ── Source ROS2 + Autoware ──────────────────────────────────────────────────

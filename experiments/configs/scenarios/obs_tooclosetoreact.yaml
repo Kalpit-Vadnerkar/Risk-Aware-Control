@@ -1,0 +1,14 @@
+scenario_type: static_obstacle
+description: >
+  Static CAR placed 6m ahead in a multi-lane section — within braking distance at
+  all test velocities (at 10 m/s, stopping distance ≈ 7m with nominal deceleration).
+  Autoware policy = auto: avoidance is topologically possible (adjacent lane exists)
+  but TTC is too short to execute a lane change safely.
+  Signal 2 validation: TTC = obj_dist / v_approach < τ_min → MRC mandatory even
+  when Signal 1 (topology) is True.
+  Placed after sufficient straight corridor (min_travel_before_placement = 150m).
+params:
+  distance: 6.0
+  lateral_offset: 0.0
+  min_travel_before_placement: 150.0
+  obj_type: CAR

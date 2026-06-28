@@ -36,6 +36,7 @@ from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
 from autoware_control_msgs.msg import Control
 from autoware_perception_msgs.msg import TrackedObjects, TrafficLightGroupArray
 from autoware_vehicle_msgs.msg import VelocityReport, SteeringReport
+from autoware_adapi_v1_msgs.msg import MrmState
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovarianceStamped
 
@@ -51,6 +52,10 @@ _MSG_TYPES = {
     cfg.TOPICS['objects']:          TrackedObjects,
     cfg.TOPICS['traffic_lights']:   TrafficLightGroupArray,
 }
+
+# MRM state is recorded but not a required field — forward-fill independently.
+_MRM_TOPIC = '/system/fail_safe/mrm_state'
+_MRM_NORMAL = 1  # MrmState.state value for NORMAL
 
 # Reverse map: topic string → key name
 _TOPIC_KEY = {v: k for k, v in cfg.TOPICS.items()}
@@ -201,12 +206,23 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
     # Timestamp of latest message per topic key (seconds)
     cache_ts: Dict[str, float] = {}
 
+    # MRM state tracked separately — optional, not required for frame emission
+    _mrm_active: bool = False
+
     frames: List[dict] = []
 
     master_topic = cfg.TOPICS[cfg.MASTER_CLOCK_TOPIC]
 
     while reader.has_next():
         topic, data, timestamp_ns = reader.read_next()
+
+        if topic == _MRM_TOPIC:
+            try:
+                msg = deserialize_message(data, MrmState)
+                _mrm_active = (msg.state != _MRM_NORMAL)
+            except Exception:
+                pass
+            continue
 
         if topic not in _MSG_TYPES:
             continue
@@ -276,8 +292,9 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
                     'y_var': cov['y_var'],
                 },
             },
-            'objects':       list(cache['objects']),   # copy
+            'objects':        list(cache['objects']),   # copy
             'traffic_lights': list(cache['traffic_lights']),
+            'mrm_active':     _mrm_active,
         }
         frames.append(frame)
 

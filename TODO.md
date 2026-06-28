@@ -38,16 +38,9 @@ Each velocity level needs its own calibration set (residuals depend on speed).
 
 | Campaign | Status | Command |
 |----------|--------|---------|
-| `nom_v5`  | ✅ Done (16/18 success) | `./collect.sh nom_v5` |
-| `nom_v7`  | ⏳ Next | `./collect.sh nom_v7` |
-| `nom_v10` | ⏳ After v7 | `./collect.sh nom_v10` |
-
-**Notes on nom_v5:**
-- 2 failures both on goal_021 (t2: MRM emergency stop at 42s; t4: engage_failed)
-- High MRM triggers on goal_007_t3 (15) and goal_011_t4 (17) — flag for possible
-  exclusion from calibration set; these will produce elevated residuals in "nominal" data
-- Driving times consistent with 5 m/s cap (goal_011 ~126s × 5 m/s ≈ 630m)
-- 14 clean runs are usable; 2 high-MRM runs to evaluate after ST-GAT training
+| `nom_v5`  | ⏳ Needed | `./collect.sh nom_v5` |
+| `nom_v7`  | ✅ Done (20 runs) | `./collect.sh nom_v7` |
+| `nom_v11` | 🔄 In progress | `./collect.sh nom_v11` |
 
 ### 0.2 Obstacle Campaigns
 
@@ -55,20 +48,23 @@ Three obstacle conditions bracket the (solvable, unsolvable, recovery) space:
 
 | Campaign | Status | What it shows |
 |----------|--------|---------------|
-| `obs_stuck`     | ✅ Done (6 runs, from earlier) | Autoware stops — baseline conservative behavior |
-| `obs_recovery`  | ⏳ Need | Autoware swerves (policy=auto) — actual recovery |
-| `obs_noescape`  | ⏳ Need | Single-lane, no path — stopping IS optimal |
+| `obs_stuck`       | ⏳ Need | Autoware stops — baseline conservative behavior |
+| `obs_recovery`    | ⏳ Need | Autoware swerves (policy=auto) — actual recovery |
+| `obs_noescape`    | ⏳ Need | Single-lane (LL 241), no path — stopping IS optimal |
+| `obs_singlelane`  | ⏳ Need | 30m obstacle, no adjacent lane — Signal 1 validation |
+| `obs_tooclosetoreact` | ⏳ Need | 5–8m obstacle, multi-lane — Signal 2 (TTC) validation |
 
 Commands:
 ```bash
-./collect.sh obs_recovery    # sets policy to "auto", restores on exit
-./collect.sh obs_noescape    # verify obstacle lands in LL 241 (single-lane)
+./collect.sh obs_stuck
+./collect.sh obs_recovery        # sets policy to "auto", restores on exit
+./collect.sh obs_noescape        # verify obstacle lands in LL 241 (single-lane)
+./collect.sh obs_singlelane
+./collect.sh obs_tooclosetoreact
 ```
 
-**Before running obs_noescape:** Verify the obstacle placement actually lands in the
-single-lane segment (LL 241, ~102m arc) by checking rosbag `/tf` or ego position
-when obstacle first appears. `min_travel_before_placement: 60.0` + 30m ahead should
-give ~90-100m arc — need empirical confirmation.
+**Before running obs_noescape / obs_singlelane:** Verify obstacle placement lands in
+LL 241 by checking rosbag `/tf` ego position when obstacle appears. `min_travel_before_placement: 60.0` + 30m ahead ≈ 90–100m arc — confirm empirically on first run.
 
 ---
 
@@ -188,13 +184,13 @@ progress while satisfying the conformal bound.
 
 | Parameter | Value | Source |
 |-----------|-------|--------|
-| Velocity levels | 5, 7, 10 m/s | Nominal campaign caps |
+| Velocity levels | 5, 7, 11.11 m/s | Nominal campaign caps (low / medium / map-limit) |
 | Obstacle distance | 30m | obs_* scenarios |
 | Conformal δ | 0.05 | Standard 95% coverage |
 | Planning horizon H | 3s | Kinematic stopping distance |
 | Min clearance d_min | 2m | Physical buffer |
 | ST-GAT features | pos(2), vel(2), steer(1), accel(1), obj_dist(1), tl(1) | T-ITS 2025 |
-| Goals | 007, 011, 021 | Verified in Shinjuku map |
+| Goals | 007, 011, 021 | Verified live on P5000 (2026-06-27), all routes feasible |
 
 ---
 

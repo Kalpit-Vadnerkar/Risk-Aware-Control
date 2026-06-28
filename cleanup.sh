@@ -16,6 +16,13 @@ pkill -9 -f "component_container" 2>/dev/null || true
 pkill -9 -f "robot_state_publisher" 2>/dev/null || true
 pkill -9 -f "rviz2" 2>/dev/null || true
 pkill -9 -f "autoware" 2>/dev/null || true
+# Kill orphaned nodes not matched by "autoware" pattern
+pkill -9 -f "topic_tools/relay" 2>/dev/null || true
+pkill -9 -f "lib/topic_tools/relay" 2>/dev/null || true
+pkill -9 -f "experiment_state_monitor" 2>/dev/null || true
+pkill -9 -f "perception_interceptor" 2>/dev/null || true
+pkill -9 -f "run_experiments.py" 2>/dev/null || true
+pkill -9 -f "rosbag2_recorder\|ros2.*bag.*record" 2>/dev/null || true
 
 # Check if any remain
 sleep 1

@@ -18,7 +18,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUTOWARE_DIR="$SCRIPT_DIR/autoware"
+WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+AUTOWARE_DIR="$WORKSPACE_DIR/autoware"
 SCENARIOS_DIR="$SCRIPT_DIR/experiments/configs/scenarios"
 SWEEP_SCRIPT="$SCRIPT_DIR/experiments/scripts/run_scenario_sweep.py"
 

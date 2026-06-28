@@ -1,0 +1,12 @@
+scenario_type: static_obstacle
+description: >
+  Static CAR placed 30m ahead in a section with no adjacent lane (single-lane road).
+  Autoware policy = manual (default): vehicle stops and cannot avoidance.
+  Signal 1 validation: has_adjacent_lane(ego_pos, HD_map) = False → MRC mandatory.
+  Uses the same single-lane corridor (LL 241) as obs_noescape.
+  Placed at ~90m arc from spawn (min_travel_before_placement = 60m, obstacle 30m ahead).
+params:
+  distance: 30.0
+  lateral_offset: 0.0
+  min_travel_before_placement: 60.0
+  obj_type: CAR
