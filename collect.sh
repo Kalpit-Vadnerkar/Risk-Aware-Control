@@ -17,14 +17,15 @@
 #   obs_noescape        30m obstacle in single-lane (LL 241), no path forward
 #   obs_singlelane      30m obstacle, no adjacent lane — Signal 1 validation
 #   obs_tooclosetoreact 6m obstacle, multi-lane — Signal 2 (TTC) validation
-#   tl_fault_s1         TL confidence degraded to 0.5 (fog/mild — reactive gating)
-#   tl_fault_s2         TL confidence degraded to 0.1 (heavy occlusion — reactive gating)
-#   tl_fault_s3         TL classification → UNKNOWN (reactive gating)
-#   tl_fault_s4         TL full blackout during detection windows (reactive gating)
-#   imu_fault_s1        IMU bias accel=0.1 m/s² gyro=0.05 rad/s, 30s on / 30s off
-#   imu_fault_s2        IMU bias accel=0.5 m/s² gyro=0.10 rad/s, 30s on / 30s off
-#   imu_fault_s3        IMU bias accel=1.0 m/s² gyro=0.30 rad/s, 20s on / 10s off
-#   imu_fault_s4        IMU bias accel=2.0 m/s² gyro=0.50 rad/s, sustained
+#   tl_fault_s1         TL confidence degraded to 0.5 — time-windowed 45s, then recovery
+#   tl_fault_s2         TL oscillating GREEN/original (5s period) — time-windowed 45s
+#   tl_fault_s3         TL classification → UNKNOWN — time-windowed 45s, then recovery
+#   tl_fault_s4         TL full blackout — time-windowed 45s, then recovery
+#   All TL faults: delay 30s (vehicle gets moving), then active at first TL zone for 45s.
+#   imu_fault_s1        IMU gyro bias 0.05 rad/s (~2.9°/s), 30s on / 30s off
+#   imu_fault_s2        IMU gyro bias 0.15 rad/s (~8.6°/s), 30s on / 20s off
+#   imu_fault_s3        IMU gyro bias 0.30 rad/s (~17.2°/s), 20s on / 10s off
+#   imu_fault_s4        IMU gyro bias 0.60 rad/s (~34.4°/s), sustained
 #
 # Examples:
 #   ./collect.sh nom_v7
@@ -204,74 +205,97 @@ case "$CAMPAIGN" in
 
     # ── Traffic light fault campaigns ─────────────────────────────────────────
     # Fault delay = 30s so localization converges before the fault activates.
-    # Faults only applied during active TL detection windows (reactive gating).
-    # Severity levels: Deng et al. (2023), ISO 21448 SOTIF.
+    # TL fault design (revised 2026-06-28):
+    #   Each fault activates at the FIRST TL detection zone entered after a 30s
+    #   nominal warm-up, stays active for 45s, then deactivates so the vehicle can
+    #   recover and complete the route.  tl_fault_start / tl_fault_end timestamps
+    #   are written to the per-campaign fault_log.jsonl for CUSUM alignment.
+    #
+    #   S1: mild confidence degradation — may produce little behavioral change
+    #       (Autoware still trusts the classification), establishing a baseline
+    #       for what a mild sensor fault looks like to ST-GAT.
+    #   S2: oscillating GREEN/RED — vehicle repeatedly starts/stops at each
+    #       intersection as the signal toggles every 2.5s (5s period). Produces
+    #       distinctive high-frequency velocity residuals that CUSUM accumulates.
+    #   S3: UNKNOWN classification — over-caution, vehicle stops at intersections.
+    #   S4: complete blackout — over-caution, no TL signal at all.
 
     tl_fault_s1)
-        echo -e "${BLUE}TL camera fault — S1: confidence degraded to 0.5 (mild, e.g. fog)${NC}"
+        echo -e "${BLUE}TL fault S1: confidence ×0.5 (fog/mild) — 45s window${NC}"
         run tl_fault_s1 tl_fault_s1 \
             --tl-fault tl_confidence \
             --tl-params '{"confidence_scale":0.5}' \
-            --fault-delay 30
+            --fault-delay 30 \
+            --fault-duration 45
         ;;
 
     tl_fault_s2)
-        echo -e "${BLUE}TL camera fault — S2: confidence degraded to 0.1 (heavy occlusion)${NC}"
+        echo -e "${BLUE}TL fault S2: oscillating GREEN/RED (5s period) — 45s window${NC}"
         run tl_fault_s2 tl_fault_s2 \
-            --tl-fault tl_confidence \
-            --tl-params '{"confidence_scale":0.1}' \
-            --fault-delay 30
+            --tl-fault tl_oscillate \
+            --tl-params '{"period_s":5.0}' \
+            --fault-delay 30 \
+            --fault-duration 45
         ;;
 
     tl_fault_s3)
-        echo -e "${BLUE}TL camera fault — S3: all elements forced to UNKNOWN (classification failure)${NC}"
+        echo -e "${BLUE}TL fault S3: UNKNOWN classification (over-caution) — 45s window${NC}"
         run tl_fault_s3 tl_fault_s3 \
             --tl-fault tl_unknown \
-            --fault-delay 30
+            --fault-delay 30 \
+            --fault-duration 45
         ;;
 
     tl_fault_s4)
-        echo -e "${BLUE}TL camera fault — S4: full blackout during detection windows${NC}"
+        echo -e "${BLUE}TL fault S4: full blackout (no signal) — 45s window${NC}"
         run tl_fault_s4 tl_fault_s4 \
             --tl-fault tl_blackout \
-            --fault-delay 30
+            --fault-delay 30 \
+            --fault-duration 45
         ;;
 
     # ── IMU bias fault campaigns ───────────────────────────────────────────────
-    # Periodic bias: ON for on_seconds then OFF for off_seconds, cycling.
-    # S4 is sustained (off_seconds=0). Bias accumulates in EKF → x_var/y_var rises.
-    # Magnitudes: Woodman (2007) UCAM-CL-TR-696; Abdel-Hafez et al. (2021).
+    # Periodic gyroscope bias injected via fault_injector → imu_data_faulted →
+    # gyro_odometer → EKF twist uncertainty → x_var/y_var in ST-GAT inputs.
+    # AEB reads imu_data directly and is NOT affected (intentional).
+    # gyro_bias_rads is the ONLY parameter that propagates to the EKF;
+    # accel_bias_ms2 has no effect (gyro_odometer ignores linear_acceleration).
     # Fault delay = 30s gives EKF time to converge on nominal trajectory first.
+    #
+    #   S1: gyro=0.05 rad/s, 30s/30s — low-grade MEMS drift (~2.9°/s)
+    #   S2: gyro=0.15 rad/s, 30s/20s — moderate drift (~8.6°/s), more fault dwell
+    #   S3: gyro=0.30 rad/s, 20s/10s — significant drift (~17.2°/s), fast cycle
+    #   S4: gyro=0.60 rad/s, sustained — severe sustained drift (~34.4°/s)
 
     imu_fault_s1)
-        echo -e "${BLUE}IMU bias fault — S1: accel=0.1 m/s², gyro=0.05 rad/s, 30s on / 30s off${NC}"
+        echo -e "${BLUE}IMU bias fault — S1: gyro=0.05 rad/s, 30s on / 30s off${NC}"
         run imu_fault_s1 imu_fault_s1 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.1,"gyro_bias_rads":0.05,"on_seconds":30,"off_seconds":30}' \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.05,"on_seconds":30,"off_seconds":30}' \
             --fault-delay 30
         ;;
 
     imu_fault_s2)
-        echo -e "${BLUE}IMU bias fault — S2: accel=0.5 m/s², gyro=0.10 rad/s, 30s on / 30s off${NC}"
+        echo -e "${BLUE}IMU bias fault — S2: gyro=0.15 rad/s, 30s on / 20s off${NC}"
         run imu_fault_s2 imu_fault_s2 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.5,"gyro_bias_rads":0.10,"on_seconds":30,"off_seconds":30}' \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.15,"on_seconds":30,"off_seconds":20}' \
             --fault-delay 30
         ;;
 
     imu_fault_s3)
-        echo -e "${BLUE}IMU bias fault — S3: accel=1.0 m/s², gyro=0.30 rad/s, 20s on / 10s off${NC}"
+        echo -e "${BLUE}IMU bias fault — S3: gyro=0.30 rad/s, 20s on / 10s off${NC}"
         run imu_fault_s3 imu_fault_s3 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":1.0,"gyro_bias_rads":0.30,"on_seconds":20,"off_seconds":10}' \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.30,"on_seconds":20,"off_seconds":10}' \
             --fault-delay 30
         ;;
 
     imu_fault_s4)
-        echo -e "${BLUE}IMU bias fault — S4: accel=2.0 m/s², gyro=0.50 rad/s, sustained${NC}"
+        echo -e "${BLUE}IMU bias fault — S4: gyro=0.60 rad/s, sustained${NC}"
         run imu_fault_s4 imu_fault_s4 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":2.0,"gyro_bias_rads":0.50,"on_seconds":9999,"off_seconds":0}' \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.60,"on_seconds":9999,"off_seconds":0}' \
             --fault-delay 30
         ;;
 

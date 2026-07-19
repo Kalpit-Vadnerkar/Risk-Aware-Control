@@ -538,6 +538,14 @@ def recover_from_emergency(max_attempts: int = 3) -> bool:
         clear_route()
         time.sleep(2)
 
+        # Request STOP mode to clear the control_cmd-timeout diagnostic.
+        # In MRM_SUCCEEDED the vehicle_cmd_gate blocks all commands, so the
+        # rate-check stays ERROR, keeping the emergency alive (deadlock).
+        # STOP mode has no control_cmd requirement, breaking the cycle.
+        print("  Requesting STOP operation mode...")
+        change_to_stop()
+        time.sleep(3)
+
         # Wait for MRM to recover
         if wait_for_mrm_recovery(timeout=15.0):
             return True
@@ -603,6 +611,31 @@ def wait_for_trajectory(timeout: float = 30.0) -> bool:
 
     print(f"  No trajectory received within {timeout}s")
     return False
+
+
+def change_to_stop(timeout: float = 5.0) -> bool:
+    """Request STOP operation mode via ADAPI.
+
+    Calling this when in MRM_SUCCEEDED state can break the deadlock:
+    STOP mode does not require control_cmd to flow, so the topic-rate-check
+    diagnostic clears, the emergency de-asserts, and MRM returns to NORMAL.
+    """
+    try:
+        from autoware_adapi_v1_msgs.srv import ChangeOperationMode
+        _ensure_node_running()
+        client = _monitor_node.create_client(
+            ChangeOperationMode,
+            '/api/operation_mode/change_to_stop'
+        )
+        if client.wait_for_service(timeout_sec=3.0):
+            future = client.call_async(ChangeOperationMode.Request())
+            start = time.time()
+            while not future.done() and time.time() - start < timeout:
+                time.sleep(0.1)
+        return True
+    except Exception as e:
+        print(f"WARNING: change_to_stop failed: {e}")
+        return False
 
 
 def engage_autonomous(timeout: float = 10.0) -> bool:

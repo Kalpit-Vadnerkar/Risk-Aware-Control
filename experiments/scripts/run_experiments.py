@@ -63,7 +63,7 @@ from config import (
 from ros_utils import (
     wait_for_topic, get_autoware_state, get_mrm_state, get_velocity,
     get_vehicle_position,
-    clear_route, engage_autonomous, set_goal,
+    clear_route, engage_autonomous, change_to_stop, set_goal,
     start_rosbag_recording, stop_rosbag_recording,
     wait_for_mrm_recovery, recover_from_emergency,
     wait_for_clean_diagnostics,
@@ -201,8 +201,11 @@ class ExperimentRunner:
         print("Waiting for planning trajectory before engage...")
         if not self._wait_for_trajectory(timeout=60.0):
             print("No trajectory after 60s — attempting route re-set to recover planning...")
+            # Give the behavior planner time to fully unwind from the previous
+            # (possibly stuck) trial before we try to re-plan.  A 3s sleep wasn't
+            # enough after a 200s stuck scenario; 20s lets the planner settle.
             clear_route()
-            time.sleep(3.0)
+            time.sleep(20.0)
             # Re-set the same goal to re-trigger the behavior planner
             success = set_goal(
                 goal.position['x'],
@@ -210,13 +213,13 @@ class ExperimentRunner:
                 goal.position.get('z', 0.0),
                 goal.orientation.get('z', 0.0),
                 goal.orientation.get('w', 1.0),
-                timeout=30.0
+                timeout=60.0
             )
             if not success:
                 print("ERROR: Route re-set failed — aborting trial (engage_failed)")
                 return False
-            print("Route re-set succeeded. Waiting up to 60s for trajectory...")
-            if not self._wait_for_trajectory(timeout=60.0):
+            print("Route re-set succeeded. Waiting up to 90s for trajectory...")
+            if not self._wait_for_trajectory(timeout=90.0):
                 print("ERROR: No trajectory after route re-set — aborting trial (engage_failed)")
                 print("       System needs a reset before next trial.")
                 return False
@@ -225,7 +228,7 @@ class ExperimentRunner:
         # Engage autonomous mode
         print("Engaging autonomous mode...")
         engage_autonomous()
-        time.sleep(2)
+        time.sleep(5)  # give control pipeline time to start before MRM check
 
         # Check MRM state after engage. MRM_SUCCEEDED fires transiently in the
         # first few seconds as the control_command_gate timeout fires before the
@@ -238,8 +241,8 @@ class ExperimentRunner:
                 print(f"ERROR: MRM_FAILED after engage — aborting")
                 return False
             print(f"  Transient MRM ({mrm_state.name}) after engage — waiting for recovery...")
-            if not wait_for_mrm_recovery(timeout=15.0):
-                print(f"ERROR: MRM did not recover within 15s after engage — aborting")
+            if not wait_for_mrm_recovery(timeout=20.0):
+                print(f"ERROR: MRM did not recover within 20s after engage — aborting")
                 return False
             print("  MRM recovered — proceeding")
 
@@ -477,6 +480,7 @@ def start_fault_injector(
     imu_fault: str | None,
     imu_params: dict,
     fault_delay: float,
+    fault_duration: float,
     log_file: str,
 ) -> subprocess.Popen:
     """Launch the fault injector as a subprocess."""
@@ -491,6 +495,8 @@ def start_fault_injector(
         cmd += ['--imu-fault', imu_fault, '--imu-params', json.dumps(imu_params)]
     if fault_delay > 0:
         cmd += ['--fault-delay', str(fault_delay)]
+    if fault_duration > 0:
+        cmd += ['--fault-duration', str(fault_duration)]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(2.0)
@@ -499,7 +505,7 @@ def start_fault_injector(
         stderr = proc.stderr.read().decode() if proc.stderr else ''
         raise RuntimeError(f'FaultInjector failed to start: {stderr}')
 
-    print(f"FaultInjector started (PID {proc.pid}): tl={tl_fault}, imu={imu_fault}, delay={fault_delay:.0f}s")
+    print(f"FaultInjector started (PID {proc.pid}): tl={tl_fault}, imu={imu_fault}, delay={fault_delay:.0f}s, duration={fault_duration:.0f}s")
     return proc
 
 
@@ -691,7 +697,7 @@ def main():
     parser.add_argument('--velocity-limit', type=float, default=0.0,
                         help='Max velocity cap in m/s (0 = Autoware default ~20 m/s)')
     parser.add_argument('--tl-fault', type=str, default=None,
-                        choices=['tl_confidence', 'tl_unknown', 'tl_blackout'],
+                        choices=['tl_confidence', 'tl_oscillate', 'tl_unknown', 'tl_blackout'],
                         help='Traffic light fault mode')
     parser.add_argument('--tl-params', type=str, default='{}',
                         help='JSON params for TL fault, e.g. {"dropout_rate":0.5}')
@@ -702,6 +708,8 @@ def main():
                         help='JSON params for IMU fault, e.g. {"accel_bias_ms2":0.5,"gyro_bias_rads":0.1}')
     parser.add_argument('--fault-delay', type=float, default=30.0,
                         help='Seconds after engage before faults activate (default: 30)')
+    parser.add_argument('--fault-duration', type=float, default=45.0,
+                        help='Seconds the fault stays active before auto-deactivating (default: 45)')
     args = parser.parse_args()
 
     # Handle metrics-only mode
@@ -785,7 +793,8 @@ def main():
         return 0
 
     print()
-    input("Press Enter to start experiments (Ctrl+C to cancel)...")
+    if sys.stdin.isatty():
+        input("Press Enter to start experiments (Ctrl+C to cancel)...")
 
     # Apply velocity limit if specified
     if args.velocity_limit > 0:
@@ -823,6 +832,7 @@ def main():
             imu_fault=args.imu_fault,
             imu_params=imu_params_parsed,
             fault_delay=args.fault_delay,
+            fault_duration=args.fault_duration,
             log_file=batch_fault_log,
         )
     except RuntimeError as e:

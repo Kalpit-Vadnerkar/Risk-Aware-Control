@@ -88,45 +88,93 @@ for the current research direction.
 
 The Autoware install at `/home/kvadner/Desktop/Kalpit/autoware/` has been modified. The files live in `src/` and are symlinked into `install/` — edit the `src/` path.
 
+> **If Autoware is ever rebuilt or reinstalled, reapply all changes below before running experiments.**
+
 ### 1. Velocity limit
 
-| File | Parameter | Value | Reason |
-|------|-----------|-------|--------|
-| `src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/common.param.yaml` | `max_vel` | `11.11` m/s (40 km/h) | Enable higher-speed driving; default 4.17 m/s (15 km/h) is too slow |
+| File | Change |
+|------|--------|
+| `config/planning/scenario_planning/common/common.param.yaml` | `max_vel: 11.11` (was 4.17 m/s) |
 
-```bash
-# Apply: open file and change max_vel from 4.17 to 11.11
-```
+### 2. PerceptionInterceptor wiring
 
-### 2. MRM wedge fix — remove planning/perception from autonomous mode gate
+| File | Change |
+|------|--------|
+| `launch/components/tier4_planning_component.launch.xml` line 13 | `planning_input_objects_topic_name` → `objects_filtered` |
 
-**File:** `src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/autoware-main.yaml`
+**Why:** Planning must read from `/perception/object_recognition/objects_filtered` (the PerceptionInterceptor output), not the raw perception topic.
 
-**Why:** By default, any planning or routing state error (e.g. during route reset between experiments) blocks autonomous mode and triggers MRM. MRM then cannot self-recover because autonomous mode remains unavailable — the vehicle is permanently wedged. Removing planning and perception from the autonomous mode gate means only localization, control, vehicle, and system failures trigger MRM.
+### 3. MRM deadlock fixes — diagnostic gate for autonomous mode
 
-**Note:** The fix belongs in `autoware-main.yaml`, not `autoware-awsim.yaml`. Defining the same path in both causes a `PathConflict` crash in the diagnostic graph aggregator.
+This is the largest change. The default Autoware diagnostic chain triggers MRM (Minimum Risk Maneuver) on many conditions that are normal during AWSIM experiments — routing resets between trials, TF briefly dropping during teleports, rosbag2_recorder momentarily registering twice, EKF twist updates lagging through the Python IMU relay. Each of these caused MRM_SUCCEEDED deadlocks that permanently wedged the vehicle.
 
-**How to apply:** In the `/autoware/modes/autonomous` unit, remove the two lines:
+**All paths below are relative to** `config/system/diagnostics/` (inside `autoware_launch`).
+
+**Note:** Always edit `autoware-main.yaml`, not `autoware-awsim.yaml`. Defining the same path in both causes a `PathConflict` crash in the diagnostic graph aggregator.
+
+#### `autoware-main.yaml` — simplified `/autoware/modes/autonomous`
+
 ```yaml
-      - { type: link, link: /autoware/planning }
-      - { type: link, link: /autoware/perception }
+- path: /autoware/modes/autonomous
+  type: and
+  list:
+    - { type: link, link: /autoware/map }
+    - { type: link, link: /autoware/control/autonomous }
+    - { type: link, link: /autoware/vehicle }
+    - { type: link, link: /autoware/system/autonomous }
+    - { type: link, link: /adapi/mrm_request/delegate }
+    # planning/perception removed: routing state errors during experiment resets
+    #   block autonomous mode and cause unrecoverable MRM deadlocks.
+    # localization removed: TF/pose_twist/accuracy all fail transiently during
+    #   vehicle teleports between trials. AWSIM provides ground-truth localization.
+    # control/autonomous and system/autonomous defined below.
 ```
 
-### 3. PerceptionInterceptor wiring — planning reads from `objects_filtered`
+#### `control.yaml` — add `/autoware/control/autonomous`
 
-**File:** `src/launcher/autoware_launch/autoware_launch/launch/components/tier4_planning_component.launch.xml` line 13
+Append this unit to the file:
 
-**Why:** The PerceptionInterceptor node publishes injected/filtered objects to `/perception/object_recognition/objects_filtered`. Without this change, planning reads the raw perception topic and the interceptor has no effect on planner behavior.
-
-**How to apply:**
-```bash
-# Change line 13:
-# default="/perception/object_recognition/objects"
-# to:
-# default="/perception/object_recognition/objects_filtered"
+```yaml
+- path: /autoware/control/autonomous
+  type: and
+  list:
+    - { type: link, link: /autoware/control/node_alive_monitoring/command_gate }
+    - { type: link, link: /autoware/control/emergency_braking }
+  # topic_rate_check/control_command and trajectory_follower excluded:
+  # control_cmd is not yet flowing at engage time (0-speed), triggering
+  # immediate MRM_SUCCEEDED before the vehicle can start moving.
+  # lane_departure and control_state excluded: both STALE at engage time.
 ```
 
-If Autoware is ever rebuilt or reinstalled, reapply all three changes before running experiments.
+#### `system.yaml` — add `/autoware/system/autonomous`
+
+Append this unit to the file:
+
+```yaml
+- path: /autoware/system/autonomous
+  type: and
+  list:
+    - { type: link, link: /autoware/system/topic_rate_check/emergency_control_command }
+    - { type: link, link: /autoware/system/emergency_stop_operation }
+  # duplicated_node_checker excluded: rosbag2_recorder briefly registers twice
+  # between experiment trials, firing ERROR → MRM deadlock mid-session.
+```
+
+### 4. Experiment runner — post-stuck recovery timing
+
+**File:** `experiments/scripts/run_experiments.py`
+
+After a stuck trial (vehicle stopped for 200s timeout), the behavior_path_planner needs time to fully unwind its internal state before it can plan a new route. The original 3-second sleep was insufficient — extended to 20 seconds, and the route re-set and trajectory timeouts were increased:
+
+| Parameter | Before | After |
+|-----------|--------|-------|
+| Sleep after `clear_route()` on trajectory timeout | 3 s | 20 s |
+| `set_goal` timeout on re-set attempt | 30 s | 60 s |
+| Trajectory wait after route re-set | 60 s | 90 s |
+
+### 5. Autoware restart cadence
+
+After approximately 18–36 experiments (one or two full campaigns), the behavior_path_planner accumulates internal state that prevents trajectory generation on subsequent route sets. **Restart Autoware between campaigns** to avoid this. The `run_remaining.sh` helper in `experiments/scripts/` handles this automatically.
 
 ---
 
