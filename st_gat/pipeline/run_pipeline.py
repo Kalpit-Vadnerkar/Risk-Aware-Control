@@ -9,7 +9,7 @@ What it does:
   5. Saves .pkl files to TRAIN_DIR and CAL_DIR
 
 Usage (with Autoware workspace sourced):
-  source /home/df/Desktop/Kalpit-2026/Risk-Aware-Control/autoware/install/setup.bash
+  source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
   python3 -m st_gat.pipeline.run_pipeline [--datasets baseline_all nom_v5] [--verbose]
 
 Output pkl format:
@@ -31,12 +31,6 @@ import random
 import sys
 from collections import defaultdict
 from typing import Dict, List, Tuple
-
-import sys as _sys
-import os as _os
-_REF_ROOT = _os.path.normpath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', 'Graph-Scene-Representation-and-Prediction'))
-if _REF_ROOT not in _sys.path:
-    _sys.path.insert(0, _REF_ROOT)
 
 from . import config as cfg
 from .bag_reader import read_bag
@@ -162,7 +156,7 @@ def process_dataset(
                 continue
 
             from .sequence_builder import extract_route_from_bag
-            from State_Estimator.GraphBuilder import GraphBuilder
+            from .vendor.graph_builder import GraphBuilder
             route = extract_route_from_bag(bag_dir)
             shared_builder.route = route
             shared_builder.graph_builder = GraphBuilder(
@@ -247,10 +241,8 @@ def main():
         sys.exit(1)
 
     print("[pipeline] Loading map data (one-time, ~10s)...")
-    import Data_Curator.config as _dc_config
-    _dc_config.config.MAP_FILE = cfg.MAP_FILE   # override relative path with absolute
-    from State_Estimator.MapProcessor import MapProcessor
-    map_processor = MapProcessor()
+    from .vendor.map_processor import MapProcessor
+    map_processor = MapProcessor(cfg.MAP_FILE)
     shared_builder = SequenceBuilder(map_processor.map_data, route=[])
 
     all_train_dirs: List[str] = []

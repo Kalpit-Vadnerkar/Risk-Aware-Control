@@ -301,7 +301,7 @@ class MetricsCollector:
                           '/perception/object_recognition/tracking/objects']:
                 self._process_objects(msg, time_sec)
 
-            elif topic == '/planning/scenario_planning/trajectory':
+            elif topic == '/planning/trajectory':
                 self._process_trajectory(msg, time_sec)
 
             elif topic == '/system/fail_safe/mrm_state':

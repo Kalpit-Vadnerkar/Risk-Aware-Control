@@ -55,7 +55,7 @@ RECORDING_TOPICS = [
     '/perception/traffic_light_recognition/traffic_light_states',
 
     # Planning - trajectories & paths
-    '/planning/scenario_planning/trajectory',
+    '/planning/trajectory',
     '/planning/mission_planning/route',
     '/planning/scenario_planning/lane_driving/behavior_planning/path',
     '/planning/scenario_planning/lane_driving/behavior_planning/path_with_lane_id',  # Lane topology

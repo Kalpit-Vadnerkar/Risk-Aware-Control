@@ -10,26 +10,28 @@ Envelopes).
 
 ---
 
-## Machine Specs (Workstation — P5000)
+## Machine Specs (Workstation — RTX A6000)
 
 | Component | Spec |
 |-----------|------|
-| GPU | NVIDIA Quadro P5000 (16 GB, Pascal SM 6.1) |
-| CPU | Intel Xeon W-2135 @ 3.70 GHz (12 cores) |
-| RAM | 32 GB |
-| OS | Ubuntu 22.04, kernel 6.8.0-124-generic |
-| CUDA driver | 570.211.01 |
+| GPU | NVIDIA RTX A6000 (49 GB) |
+| CPU | Intel Core i9-10920X @ 3.50 GHz (24 threads) |
+| RAM | 62 GB |
+| OS | Ubuntu 22.04.5 LTS, kernel 6.8.0-134-generic |
+| CUDA driver | 610.43.02 |
 | ROS2 | Humble |
+
+Previous workstation (P5000: 16GB, Xeon W-2135, 32GB RAM) specs kept in git history.
 
 ---
 
 ## Workspace Layout
 
 This repo assumes Autoware and AWSIM are installed in the **parent directory**
-(`/home/kvadner/Desktop/Kalpit/`), not inside this repo.
+(`/home/kvadner/Desktop/Dissertation/`), not inside this repo.
 
 ```
-/home/kvadner/Desktop/Kalpit/              ← workspace root
+/home/kvadner/Desktop/Dissertation/        ← workspace root
 ├── autoware/                              ← Autoware Universe (pre-built, NOT in git)
 │   ├── install/                           ← sourced by all scripts
 │   └── src/
@@ -86,7 +88,7 @@ for the current research direction.
 
 ## Autoware Modifications
 
-The Autoware install at `/home/kvadner/Desktop/Kalpit/autoware/` has been modified. The files live in `src/` and are symlinked into `install/` — edit the `src/` path.
+The Autoware install at `/home/kvadner/Desktop/Dissertation/autoware/` has been modified. The files live in `src/` and are symlinked into `install/` — edit the `src/` path.
 
 > **If Autoware is ever rebuilt or reinstalled, reapply all changes below before running experiments.**
 
@@ -176,6 +178,18 @@ After a stuck trial (vehicle stopped for 200s timeout), the behavior_path_planne
 
 After approximately 18–36 experiments (one or two full campaigns), the behavior_path_planner accumulates internal state that prevents trajectory generation on subsequent route sets. **Restart Autoware between campaigns** to avoid this. The `run_remaining.sh` helper in `experiments/scripts/` handles this automatically.
 
+### 6. Trajectory topic renamed upstream (found 2026-07-21, RTX A6000 machine)
+
+This Autoware Universe checkout no longer publishes the final planned trajectory on
+`/planning/scenario_planning/trajectory` (0 publishers) — it now publishes on
+`/planning/trajectory` instead. Symptom: `set_goal_and_engage()` sets the route
+successfully (Autoware reaches `WAITING_FOR_ENGAGE`) but `_wait_for_trajectory()` times
+out forever waiting on the old topic name, with no MRM ever firing (nothing in the
+diagnostic chain watches for trajectory presence). Fixed in `experiments/lib/ros_utils.py`,
+`config.py`, `metrics.py`, and `perception_interceptor.py` to use `/planning/trajectory`.
+If Autoware is ever pulled to a newer commit again, re-check this topic name first if
+trials start failing with `engage_failed` despite a route being SET.
+
 ---
 
 ## Data Collection Campaigns
@@ -208,7 +222,7 @@ Default: 6 trials × 3 goals. Override with `--trials N --goals GOALS`.
 | `/perception/object_recognition/objects` | Detected objects (raw) |
 | `/perception/object_recognition/objects_filtered` | Objects after interceptor |
 | `/perception/traffic_light_recognition/traffic_signals` | Traffic light states |
-| `/planning/scenario_planning/trajectory` | Planned trajectory |
+| `/planning/trajectory` | Planned trajectory |
 | `/planning/mission_planning/route` | Route geometry |
 | `/planning/scenario_planning/lane_driving/behavior_planning/path` | Behavior path |
 | `/control/command/control_cmd` | Control commands |
@@ -222,7 +236,9 @@ Default: 6 trials × 3 goals. Override with `--trials N --goals GOALS`.
 
 - **IEEE T-ITS 2025 Paper:** "Digital Twins as Predictive Models for Real-Time Probabilistic
   Risk Assessment of Autonomous Vehicles"
-- **Reference codebase:** `../Graph-Scene-Representation-and-Prediction/` (READ-ONLY)
+- **Reference codebase:** `../Graph-Scene-Representation-and-Prediction/` (READ-ONLY — not a runtime
+  dependency; `Point`, `GraphBuilder`, and a trimmed `MapProcessor` are vendored into
+  `st_gat/pipeline/vendor/` instead of importing from it directly)
 
 ## Contact
 

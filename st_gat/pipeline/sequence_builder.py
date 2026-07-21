@@ -5,7 +5,7 @@ Key differences from the reference SequenceProcessor:
   1. Accepts our list-of-frame-dicts from bag_reader (no timestamp keys)
   2. Adds position_uncertainty (x_var, y_var) to every timestep's feature dict
   3. Reads route from the rosbag (LaneletRoute message) instead of route.json
-  4. Imports GraphBuilder and MapProcessor from the reference codebase
+  4. Uses GraphBuilder and MapProcessor vendored from the reference codebase (see vendor/)
 
 The output sequence format is identical to the reference:
     {
@@ -36,31 +36,16 @@ import os
 import math
 from typing import List, Tuple, Optional
 
-# Reference codebase on sys.path — read-only, do not modify
-_REF_ROOT = os.path.join(
-    os.path.dirname(__file__),
-    '..', '..', '..',
-    'Graph-Scene-Representation-and-Prediction'
-)
-_REF_ROOT = os.path.normpath(_REF_ROOT)
-if _REF_ROOT not in sys.path:
-    sys.path.insert(0, _REF_ROOT)
-
-from Data_Curator.Point import Point
-from State_Estimator.GraphBuilder import GraphBuilder
+from .vendor.point import Point
+from .vendor.graph_builder import GraphBuilder
 
 from . import config as cfg
 
 
 def _load_map_processor():
-    """
-    Lazy import of MapProcessor: requires lanelet2, only available with Autoware workspace.
-    Patches the reference codebase's relative MAP_FILE path to our absolute path first.
-    """
-    import Data_Curator.config as _dc_config
-    _dc_config.config.MAP_FILE = cfg.MAP_FILE
-    from State_Estimator.MapProcessor import MapProcessor
-    return MapProcessor()
+    """Lazy import: MapProcessor requires lanelet2, only available with Autoware workspace sourced."""
+    from .vendor.map_processor import MapProcessor
+    return MapProcessor(cfg.MAP_FILE)
 
 
 # ── Route extraction ───────────────────────────────────────────────────────

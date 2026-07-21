@@ -163,7 +163,7 @@ class PerceptionInterceptor(Node):
         # Subscriber: planned trajectory for route-based obstacle placement
         self._traj_sub = self.create_subscription(
             Trajectory,
-            '/planning/scenario_planning/trajectory',
+            '/planning/trajectory',
             self._on_trajectory,
             PERCEPTION_QOS,
         )

@@ -6,8 +6,8 @@ and records per-window residuals between model predictions and actual future val
 Uses the 1-step-ahead prediction (future[0]) so residuals are time-aligned.
 
 Usage (with Autoware workspace sourced):
-    source /home/df/Desktop/Kalpit-2026/Risk-Aware-Control/autoware/install/setup.bash
-    cd /home/df/Desktop/Kalpit-2026/Risk-Aware-Control
+    source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
+    cd /home/kvadner/Desktop/Dissertation/Risk-Aware-Control
     python3 -m st_gat.infer [--datasets obs_recovery obs_noescape] [--out results/residuals]
     python3 -m st_gat.infer --rerun   # force re-process all (e.g. after adding columns)
 
@@ -51,13 +51,6 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset
-
-# ── Reference codebase path ────────────────────────────────────────────────
-_HERE    = os.path.dirname(os.path.abspath(__file__))
-_REPO    = os.path.normpath(os.path.join(_HERE, '..'))
-_REF_ROOT = os.path.normpath(os.path.join(_REPO, '..', 'Graph-Scene-Representation-and-Prediction'))
-if _REF_ROOT not in sys.path:
-    sys.path.insert(0, _REF_ROOT)
 
 from st_gat.pipeline import config as cfg
 from st_gat.model import STGAT
@@ -438,10 +431,8 @@ def main():
 
     # ── Pre-load map and build routing graph (once, shared across all runs) ──
     print("[infer] Loading map (one-time, ~10-20s)...")
-    import Data_Curator.config as _dc_config
-    _dc_config.config.MAP_FILE = cfg.MAP_FILE
-    from State_Estimator.MapProcessor import MapProcessor   # noqa: deferred
-    _map_processor = MapProcessor()
+    from st_gat.pipeline.vendor.map_processor import MapProcessor
+    _map_processor = MapProcessor(cfg.MAP_FILE)
     _map_data      = _map_processor.map_data
 
     print("[infer] Building lanelet2 routing graph...")

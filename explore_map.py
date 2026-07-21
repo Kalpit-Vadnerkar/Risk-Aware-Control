@@ -7,7 +7,7 @@ for scenario route selection.
 
 Usage (must source ROS/Autoware first):
   source /opt/ros/humble/setup.bash
-  source /home/kvadner/Desktop/Kalpit/autoware/install/setup.bash
+  source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
   python3 explore_map.py
 """
 
@@ -16,7 +16,7 @@ import json
 import lanelet2
 from lanelet2.core import BasicPoint2d
 
-MAP_FILE = "/home/kvadner/Desktop/Kalpit/Map/nishishinjuku_autoware_map/lanelet2_map.osm"
+MAP_FILE = "/home/kvadner/Desktop/Dissertation/Map/nishishinjuku_autoware_map/lanelet2_map.osm"
 
 # The map uses MGRS 54SUE projection. The UtmProjector origin that aligns
 # the lanelet2 local frame with the AWSIM/ROS2 map frame (where the spawn
@@ -25,7 +25,7 @@ MAP_FILE = "/home/kvadner/Desktop/Kalpit/Map/nishishinjuku_autoware_map/lanelet2
 # local (0,0) at the MGRS 100km-square corner.
 ORIGIN = lanelet2.io.Origin(35.241, 138.801, 0)
 
-GOALS_FILE = "/home/kvadner/Desktop/Kalpit/Risk-Aware-Control/experiments/configs/captured_goals.json"
+GOALS_FILE = "/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/configs/captured_goals.json"
 
 # Spawn point in AWSIM/ROS2 map frame
 SPAWN = (81384.53, 49921.95)

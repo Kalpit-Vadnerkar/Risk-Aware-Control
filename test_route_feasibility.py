@@ -11,7 +11,7 @@ For each goal in captured_goals.json:
 
 AWSIM + Autoware must be running. Run as:
   source /opt/ros/humble/setup.bash
-  source /home/kvadner/Desktop/Kalpit/autoware/install/setup.bash
+  source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
   python3 test_route_feasibility.py [--goals goal_001,goal_007,...]
 """
 

@@ -23,7 +23,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-DATA_DIR = Path("/home/df/Desktop/Kalpit-2026/Risk-Aware-Control/experiments/data")
+DATA_DIR = Path("/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data")
 OUTPUT_DIR = Path("/tmp/avoidance_verification")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -1,12 +1,15 @@
-# External dependencies (live in parent dir /home/kvadner/Desktop/Kalpit/, not inside this repo)
-# autoware/          → /home/kvadner/Desktop/Kalpit/autoware/
-# awsim_labs_v1.6.1/ → /home/kvadner/Desktop/Kalpit/awsim_labs_v1.6.1/
-# Map/               → /home/kvadner/Desktop/Kalpit/Map/nishishinjuku_autoware_map/
+# External dependencies (live in parent dir /home/kvadner/Desktop/Dissertation/, not inside this repo)
+# autoware/          → /home/kvadner/Desktop/Dissertation/autoware/
+# awsim_labs_v1.6.1/ → /home/kvadner/Desktop/Dissertation/awsim_labs_v1.6.1/
+# Map/               → /home/kvadner/Desktop/Dissertation/Map/nishishinjuku_autoware_map/
 
 # Python caches
 __pycache__/
 *.pyc
 *.pyo
+
+# Python venv (torch/CUDA + networkx/tqdm for st_gat, --system-site-packages so ROS stays visible)
+.venv/
 
 # Experiment data (large rosbags)
 experiments/data/

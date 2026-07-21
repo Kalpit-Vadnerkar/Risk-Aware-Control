@@ -71,7 +71,9 @@ LL 241 by checking rosbag `/tf` ego position when obstacle appears. `min_travel_
 ## Phase 1: ST-GAT Training
 
 Port and train the model from the T-ITS paper. Reference implementation is
-READ-ONLY at `../Graph-Scene-Representation-and-Prediction/`.
+READ-ONLY at `../Graph-Scene-Representation-and-Prediction/` — code we need from it
+(`Point`, `GraphBuilder`, `MapProcessor`) is vendored into `st_gat/pipeline/vendor/`,
+not imported live.
 
 Work goes in `st_gat/` within this repo.
 

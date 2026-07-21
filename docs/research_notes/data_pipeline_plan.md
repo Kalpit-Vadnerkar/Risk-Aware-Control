@@ -24,7 +24,7 @@ The T-ITS paper uses a 7-topic recording strategy with 10Hz synchronization. We 
 | Topic | Type | Rate | Purpose |
 |-------|------|------|---------|
 | `/system/fail_safe/mrm_state` | MrmState | 10Hz | MRM state for regime detection |
-| `/planning/scenario_planning/trajectory` | Trajectory | 10Hz | Planned trajectory for deviation calc |
+| `/planning/trajectory` | Trajectory | 10Hz | Planned trajectory for deviation calc (renamed from `/planning/scenario_planning/trajectory` in the Autoware version on the new machine, 2026-07-21) |
 | `/localization/kinematic_state` | Odometry | 30Hz | Localization state |
 | `/awsim/ground_truth/localization/kinematic_state` | Odometry | 60Hz | Ground truth |
 | `/control/command/control_cmd` | Control | 30Hz | Control commands |

@@ -1,8 +1,12 @@
 """
 Training entry point for STGAT-RISE.
 
-Usage:
-    cd /home/df/Desktop/Kalpit-2026/Risk-Aware-Control
+Usage (ROS must be sourced BEFORE activating the venv, so rclpy/rosbag2_py
+resolve from the system site-packages the venv was built with --system-site-packages against):
+    source /opt/ros/humble/setup.bash
+    source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
+    cd /home/kvadner/Desktop/Dissertation/Risk-Aware-Control
+    source .venv/bin/activate
     python3 -m st_gat.train [--epochs 200] [--batch 128] [--lr 4e-4]
 
 Expects pkl files already produced by:
@@ -10,16 +14,10 @@ Expects pkl files already produced by:
 """
 
 import argparse
-import sys
 import os
 
 import torch
 from torch.utils.data import DataLoader
-
-# Reference codebase on path for dataset imports (needed if loading old-format pkl)
-_REF_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'Graph-Scene-Representation-and-Prediction'))
-if _REF_ROOT not in sys.path:
-    sys.path.insert(0, _REF_ROOT)
 
 from st_gat.pipeline import config as cfg
 from st_gat.model import STGAT, TrajectoryDataset, Trainer

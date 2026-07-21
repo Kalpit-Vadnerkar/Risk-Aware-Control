@@ -154,7 +154,7 @@ class StateMonitorNode(Node):
         self._trajectory_ready = False
         self.create_subscription(
             Trajectory,
-            '/planning/scenario_planning/trajectory',
+            '/planning/trajectory',
             self._trajectory_callback,
             volatile_qos
         )
