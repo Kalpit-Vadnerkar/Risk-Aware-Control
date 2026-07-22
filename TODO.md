@@ -101,16 +101,41 @@ definitions inside `collect.sh` itself still work):
 
 | Campaign | Status | What it is |
 |----------|--------|------------|
-| `imu_fault_s1`..`s4` | Exists, not yet run this direction | Gyro bias 0.05→0.60 rad/s, see `fault_injector.py` header |
-| `tl_fault_s1`..`s4`  | Exists, not yet run this direction | TL confidence/oscillate/unknown/blackout, see `fault_injector.py` header |
+| `imu_fault_s1`..`s4` | Exists, not yet run this direction | Gyro bias 0.05→0.60 rad/s, periodic on/off, see `fault_injector.py` header |
+| `tl_fault_s1`..`s4`  | Redesigned 2026-07-22, not yet run | TL confidence/oscillate/unknown/blackout, now **zone-triggered periodic** (repeats at every TL intersection on the route, not just once per trial) |
 
-**Open question (see `docs/research_notes/fault_literature_review.md`):** the existing
-"camera fault" campaigns operate on the traffic-light *classification output*, not raw
-camera pixels — closer to the T-ITS paper's own dominant fault-detection feature (TL
-Status Flag, 29.7% importance) than it first looks, but not a literal camera-sensor
-fault. Decide whether that's sufficient for this study or whether a raw-image-level
-fault (soiling/occlusion mask on the camera topic, closer to the paper's Gaussian
-pixel-noise approach) is worth adding first.
+**Camera scope confirmed (2026-07-22):** verified directly against this project's
+Autoware install — `perception_mode` defaults to `lidar` (object detection is
+LiDAR-only) and the `awsim_labs_sensor_kit` has exactly one camera, feeding
+traffic-light recognition only. So "camera fault" in this repo can only mean a
+TL-detection fault — the existing `tl_*` fault modes are the correct and only
+injection point, not a stand-in for a literal camera-sensor fault. A genuine
+image-level occlusion mask (closer to the T-ITS paper's Gaussian pixel-noise
+approach) remains a deferred stretch goal — see
+`docs/research_notes/periodic_fault_strategy.md` for the full writeup, plus 11
+newly-downloaded papers in `docs/papers/` (gitignored) grounding severity tiers.
+
+**TL fault redesign (2026-07-22):** `fault_injector.py`'s TL state machine was
+one-shot (fires once per trial, at the first TL zone entered, then permanent
+passthrough) — insufficient for a reaction/recovery-time analysis since a route
+with multiple intersections only ever faulted the first one. Redesigned to loop
+(`waiting_zone → fault_active → recovering → waiting_zone → ...`), re-arming at
+every TL zone encountered for the rest of the trial (uncapped by default via
+`--max-tl-cycles 0`), each cycle bounded by a per-zone duration cap
+(`--fault-duration`, still 45s default) or early exit from the zone, followed by
+an 8s (`--tl-recovery-gap`) nominal gap before the next cycle. IMU fault was
+*not* changed — it's already periodic (on/off cycling) and doesn't need
+location-gating, since gyro bias corrupts EKF twist everywhere, not just near a
+landmark. Not yet run against real data — next step is an actual `tl_fault_s1`
+trial to confirm multiple cycles fire correctly across a multi-intersection route.
+
+**Goals and duration cap finalized (2026-07-22):** fault campaigns (`tl_fault_s1`..`s4`,
+`imu_fault_s1`..`s4`) will run on **goal_007, goal_012, goal_026** — measured
+(not guessed) as the routes with the most real TL-zone entries per trial (3, 3,
+and 2 respectively; see `periodic_fault_strategy.md` §4). `--fault-duration`
+(the per-zone cap) set to **15s**, derived from replaying these 3 goals' actual
+recorded TL-zone dwell times (shortest observed: ~21s, on `goal_012`) — see §4.1.
+Still not yet run — see the run commands at the end of that doc.
 
 ---
 

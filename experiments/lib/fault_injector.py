@@ -7,22 +7,34 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
   IN:  /perception/traffic_light_recognition/traffic_signals_raw
   OUT: /perception/traffic_light_recognition/traffic_signals
 
-  Timing model:
+  Timing model (zone-triggered periodic, revised 2026-07-22):
     1. Vehicle drives nominally for --fault-delay seconds.
-    2. On the FIRST entry into a TL detection zone after that delay,
-       the fault activates (tl_fault_start logged).
-    3. After --fault-duration seconds the fault deactivates (tl_fault_end
-       logged) and the node passes through raw signals unchanged for the
-       remainder of the trial.
+    2. On EVERY entry into a TL detection zone after that delay, the fault
+       activates (tl_fault_start logged, cycle counter incremented).
+    3. The fault deactivates (tl_fault_end logged) on whichever comes first:
+       --fault-duration seconds elapsed (per-zone duration cap), or the
+       vehicle leaving the detection zone (a fault that outlasts the
+       intersection isn't meaningful, and this bounds exposure at long
+       dwells e.g. stopped at a red light).
+    4. A --tl-recovery-gap second nominal window follows so residuals have
+       a clean segment to return to, then the injector re-arms and repeats
+       from step 2 at the NEXT detection zone entered — for every
+       intersection the route passes (optionally capped via
+       --max-tl-cycles, default unbounded).
 
-    This gives three clean segments per trial: nominal → fault → recovery.
-    The fault is therefore always anchored to a real TL intersection, and
-    the vehicle can complete the route after the fault window closes.
+    This gives repeated nominal → fault → recovery cycles across a single
+    trial — one per TL intersection encountered (more if a single dwell is
+    long enough to hit the duration cap more than once) — instead of one
+    cycle per trial. Each cycle is anchored to a real TL intersection via
+    the detection-window gating below, which doubles as the "vehicle
+    location" signal: no hardcoded coordinates needed, since a TL fault
+    only has a meaningful effect while a real traffic light is in range.
 
   Detection-window gating (always active):
     Faults are only applied when the vehicle is in an active TL detection
     zone (≥30% of the last 30 raw messages contained non-empty groups).
-    This prevents injecting meaningless faults in open road segments.
+    This prevents injecting meaningless faults in open road segments, and
+    is what makes each fault cycle location-anchored to a real intersection.
 
   Fault modes:
     tl_confidence   Multiply each element's confidence by confidence_scale.
@@ -95,23 +107,22 @@ Usage:
   # Passthrough (nominal):
   python3 fault_injector.py
 
-  # S1 — confidence degradation, 45s window starting at first TL zone:
+  # S1 — confidence degradation, repeats at every TL zone (45s cap/cycle):
   python3 fault_injector.py --tl-fault tl_confidence \\
       --tl-params '{"confidence_scale":0.5}' --fault-delay 30 --fault-duration 45
 
-  # S2 — oscillating GREEN/original (intermittent), 45s window:
+  # S2 — oscillating GREEN/original (intermittent), repeats at every TL zone:
   python3 fault_injector.py --tl-fault tl_oscillate \
       --tl-params '{"period_s":5.0}' --fault-delay 30 --fault-duration 45
 
-  # S3 — UNKNOWN classification, 45s window:
+  # S3 — UNKNOWN classification, repeats at every TL zone:
   python3 fault_injector.py --tl-fault tl_unknown --fault-delay 30 --fault-duration 45
 
-  # S4 — blackout, 45s window:
+  # S4 — blackout, repeats at every TL zone:
   python3 fault_injector.py --tl-fault tl_blackout --fault-delay 30 --fault-duration 45
 """
 
 import argparse
-import copy
 import json
 import threading
 import time
@@ -158,13 +169,15 @@ class FaultInjector(Node):
 
     def __init__(
         self,
-        tl_fault:       Optional[str],
-        tl_params:      Dict[str, Any],
-        imu_fault:      Optional[str],
-        imu_params:     Dict[str, Any],
-        fault_delay:    float,
-        fault_duration: float,
-        log_file:       Optional[str],
+        tl_fault:        Optional[str],
+        tl_params:       Dict[str, Any],
+        imu_fault:       Optional[str],
+        imu_params:      Dict[str, Any],
+        fault_delay:     float,
+        fault_duration:  float,
+        tl_recovery_gap: float,
+        max_tl_cycles:   int,
+        log_file:        Optional[str],
     ):
         super().__init__(
             'fault_injector',
@@ -178,18 +191,33 @@ class FaultInjector(Node):
         self._imu_fault_type: Optional[str]   = None
         self._imu_params                      = imu_params
         self._fault_duration                  = fault_duration
+        self._tl_recovery_gap                 = tl_recovery_gap
+        self._max_tl_cycles                   = max_tl_cycles  # 0 = unbounded
         self._log_file                        = log_file
+        # Opened once and kept open for the node's lifetime (main() already
+        # truncated/created it with the startup record) — avoids an open+close
+        # syscall pair on every logged event, just a buffered write + flush.
+        self._log_fh = open(log_file, 'a') if log_file else None
         self._lock                            = threading.Lock()
 
-        # TL fault state machine
-        # Phases: 'waiting_delay' → 'waiting_zone' → 'fault_active' → 'done'
+        # TL fault state machine — zone-triggered periodic (revised 2026-07-22):
+        # Phases: 'waiting_delay' → 'waiting_zone' → 'fault_active' → 'recovering'
+        #         → 'waiting_zone' → ... (repeats at every TL zone encountered)
+        #         'done' is a terminal passthrough state, only entered if no TL
+        #         fault is configured, or --max-tl-cycles is reached.
         self._tl_phase: str             = 'waiting_delay' if tl_fault else 'done'
-        self._tl_fault_active: bool     = False   # True only during fault window
+        self._tl_fault_active: bool     = False   # True only during a fault window
         self._tl_fault_end_time: float  = 0.0
+        self._tl_recovering_end_time: float = 0.0
+        self._tl_cycle_count: int       = 0
 
-        # Detection-window tracking
-        self._detection_ring: deque   = deque(maxlen=_DETECTION_WINDOW_SIZE)
-        self._in_detection_zone: bool = False
+        # Detection-window tracking. Non-empty count is maintained incrementally
+        # (updated on each push/evict) rather than recomputed with sum(ring) on
+        # every message — this callback runs at TL topic rate (~20Hz observed),
+        # so an O(1) update is cheaper than an O(window) resum each time.
+        self._detection_ring: deque       = deque(maxlen=_DETECTION_WINDOW_SIZE)
+        self._detection_nonempty_count: int = 0
+        self._in_detection_zone: bool     = False
 
         # Counters
         self._msg_count_tl        = 0
@@ -284,34 +312,57 @@ class FaultInjector(Node):
         t.start()
 
     def _start_tl_fault_window(self):
-        """Called when detection zone entered while in waiting_zone phase."""
+        """Called when a detection zone is entered while in waiting_zone phase."""
         end_t = time.time() + self._fault_duration
         with self._lock:
+            self._tl_cycle_count  += 1
+            cycle                  = self._tl_cycle_count
             self._tl_phase         = 'fault_active'
             self._tl_fault_active  = True
             self._tl_fault_end_time = end_t
         self._log_event('tl_fault_start', {
-            'fault_type':    self._tl_fault_config,
-            'params':        self._tl_params,
-            'duration_sec':  self._fault_duration,
+            'fault_type':      self._tl_fault_config,
+            'params':          self._tl_params,
+            'duration_cap_sec': self._fault_duration,
+            'cycle':           cycle,
         })
         self.get_logger().info(
-            f'TL fault ACTIVE: {self._tl_fault_config}, '
-            f'window={self._fault_duration:.0f}s'
+            f'TL fault ACTIVE (cycle {cycle}): {self._tl_fault_config}, '
+            f'duration_cap={self._fault_duration:.0f}s'
         )
 
-    def _end_tl_fault_window(self):
-        """Called when fault duration expires."""
+    def _end_tl_fault_window(self, reason: str):
+        """Called when the fault duration cap elapses or the zone is exited."""
         with self._lock:
-            self._tl_phase        = 'done'
-            self._tl_fault_active = False
+            self._tl_phase              = 'recovering'
+            self._tl_fault_active        = False
+            self._tl_recovering_end_time = time.time() + self._tl_recovery_gap
+            cycle                        = self._tl_cycle_count
         self._log_event('tl_fault_end', {
-            'fault_type':   self._tl_fault_config,
+            'fault_type':    self._tl_fault_config,
             'applied_count': self._tl_fault_applied,
+            'cycle':         cycle,
+            'reason':        reason,
         })
         self.get_logger().info(
-            f'TL fault ENDED — passthrough restored '
-            f'({self._tl_fault_applied} messages faulted)'
+            f'TL fault ENDED (cycle {cycle}, reason={reason}) — '
+            f'recovering for {self._tl_recovery_gap:.0f}s '
+            f'({self._tl_fault_applied} messages faulted so far)'
+        )
+
+    def _rearm_tl_zone_wait(self):
+        """Called when the post-fault recovery gap elapses — arms for the next zone."""
+        with self._lock:
+            self._tl_phase = 'waiting_zone'
+
+    def _exhaust_tl_cycles(self):
+        """Called once --max-tl-cycles is reached — permanent passthrough."""
+        with self._lock:
+            self._tl_phase = 'done'
+        self._log_event('tl_cycles_exhausted', {'cycles': self._tl_cycle_count})
+        self.get_logger().info(
+            f'TL fault cycles exhausted ({self._tl_cycle_count}/{self._max_tl_cycles}) '
+            f'— passthrough for remainder of trial'
         )
 
     # ── Traffic light relay ───────────────────────────────────────────────────
@@ -321,10 +372,15 @@ class FaultInjector(Node):
         is_nonempty = len(msg.traffic_light_groups) > 0
 
         with self._lock:
-            # Update detection ring
+            # Update detection ring — incrementally maintain the non-empty
+            # count rather than recomputing sum(ring) every message.
+            if len(self._detection_ring) == self._detection_ring.maxlen:
+                self._detection_nonempty_count -= self._detection_ring[0]
             self._detection_ring.append(1 if is_nonempty else 0)
+            self._detection_nonempty_count += 1 if is_nonempty else 0
+
             if len(self._detection_ring) >= _DETECTION_WINDOW_SIZE // 3:
-                ratio       = sum(self._detection_ring) / len(self._detection_ring)
+                ratio       = self._detection_nonempty_count / len(self._detection_ring)
                 was_in_zone = self._in_detection_zone
                 if ratio >= _DETECTION_THRESHOLD:
                     self._in_detection_zone = True
@@ -339,15 +395,33 @@ class FaultInjector(Node):
             phase      = self._tl_phase
             in_zone    = self._in_detection_zone
             fault_end  = self._tl_fault_end_time
+            rec_end    = self._tl_recovering_end_time
 
         # ── Phase transitions (outside lock to avoid blocking) ────────────────
+        # Loop: waiting_zone → fault_active → recovering → waiting_zone → ...
+        # repeats at every TL zone encountered, so a single trial accumulates
+        # one (reaction, recovery) sample per intersection instead of one
+        # per trial. See periodic_fault_strategy.md.
         if phase == 'waiting_zone' and in_zone:
-            self._start_tl_fault_window()
-            phase = 'fault_active'
+            if self._max_tl_cycles and self._tl_cycle_count >= self._max_tl_cycles:
+                self._exhaust_tl_cycles()
+                phase = 'done'
+            else:
+                self._start_tl_fault_window()
+                phase = 'fault_active'
 
-        if phase == 'fault_active' and time.time() >= fault_end:
-            self._end_tl_fault_window()
-            phase = 'done'
+        if phase == 'fault_active':
+            now = time.time()
+            if now >= fault_end:
+                self._end_tl_fault_window('duration_cap')
+                phase = 'recovering'
+            elif not in_zone:
+                self._end_tl_fault_window('zone_exited')
+                phase = 'recovering'
+
+        if phase == 'recovering' and time.time() >= rec_end:
+            self._rearm_tl_zone_wait()
+            phase = 'waiting_zone'
 
         # ── Apply or passthrough ──────────────────────────────────────────────
         with self._lock:
@@ -365,12 +439,16 @@ class FaultInjector(Node):
             self._tl_pub.publish(empty)
 
         elif fault == 'tl_confidence':
+            # Mutated in place, not deepcopy'd: rclpy hands this callback a
+            # freshly-deserialized message with no other owner, so there's
+            # nothing to preserve by copying it first (removes an allocation
+            # + full nested-object copy on every message while the fault is
+            # active, which otherwise runs at TL topic rate — ~20Hz observed).
             scale = self._tl_params.get('confidence_scale', 0.5)
-            out   = copy.deepcopy(msg)
-            for group in out.traffic_light_groups:
+            for group in msg.traffic_light_groups:
                 for elem in group.elements:
                     elem.confidence = max(0.0, min(1.0, elem.confidence * scale))
-            self._tl_pub.publish(out)
+            self._tl_pub.publish(msg)
 
         elif fault == 'tl_oscillate':
             # Alternate between forced-GREEN and the original signal on a fixed
@@ -379,22 +457,18 @@ class FaultInjector(Node):
             # signal toggles between GREEN (go) and the true RED (stop).
             period = self._tl_params.get('period_s', 5.0)
             if time.time() % period < period / 2:
-                out = copy.deepcopy(msg)
-                for group in out.traffic_light_groups:
+                for group in msg.traffic_light_groups:
                     for elem in group.elements:
                         elem.color      = TrafficLightElement.GREEN
                         elem.confidence = 1.0
-                self._tl_pub.publish(out)
-            else:
-                self._tl_pub.publish(msg)
+            self._tl_pub.publish(msg)
 
         elif fault == 'tl_unknown':
-            out = copy.deepcopy(msg)
-            for group in out.traffic_light_groups:
+            for group in msg.traffic_light_groups:
                 for elem in group.elements:
                     elem.color      = TrafficLightElement.UNKNOWN
                     elem.confidence = 0.0
-            self._tl_pub.publish(out)
+            self._tl_pub.publish(msg)
 
         else:
             self.get_logger().warn(
@@ -467,10 +541,10 @@ class FaultInjector(Node):
         if extra:
             record.update(extra)
 
-        if self._log_file:
+        if self._log_fh:
             try:
-                with open(self._log_file, 'a') as f:
-                    f.write(json.dumps(record) + '\n')
+                self._log_fh.write(json.dumps(record) + '\n')
+                self._log_fh.flush()
             except Exception as exc:
                 self.get_logger().warn(f'Could not write fault log: {exc}')
 
@@ -493,10 +567,11 @@ class FaultInjector(Node):
             'imu_bias_cycles':   self._imu_bias_on_cycles,
         }
 
-        if self._log_file:
+        if self._log_fh:
             try:
-                with open(self._log_file, 'a') as f:
-                    f.write(json.dumps(record) + '\n')
+                self._log_fh.write(json.dumps(record) + '\n')
+                self._log_fh.flush()
+                self._log_fh.close()
             except Exception:
                 pass
 
@@ -543,10 +618,24 @@ def main():
     parser.add_argument(
         '--fault-duration', type=float, default=45.0,
         help=(
-            'Seconds the TL fault is active once the first detection zone is entered '
-            'after the delay (default: 45). After this window the node passes through '
-            'raw signals unchanged, allowing the vehicle to recover and complete the route.'
+            'Per-zone duration CAP in seconds (default: 45): the fault deactivates '
+            'after this many seconds OR when the vehicle leaves the detection zone, '
+            'whichever comes first, then re-arms for the next TL zone encountered '
+            '(repeats for every intersection on the route).'
         ),
+    )
+    parser.add_argument(
+        '--tl-recovery-gap', type=float, default=8.0,
+        help=(
+            'Seconds of guaranteed nominal passthrough after a TL fault cycle ends '
+            'before re-arming for the next zone (default: 8), giving residuals a '
+            'clean segment to recover into before the next cycle.'
+        ),
+    )
+    parser.add_argument(
+        '--max-tl-cycles', type=int, default=0,
+        help='Cap on TL fault cycles per trial (default: 0 = unbounded, i.e. every '
+             'TL zone on the route).',
     )
     parser.add_argument(
         '--log-file', type=str, default='/tmp/rise_fault_log.jsonl',
@@ -565,22 +654,26 @@ def main():
                 'tl_params':      tl_p,
                 'imu_fault':      args.imu_fault,
                 'imu_params':     imu_p,
-                'fault_delay':    args.fault_delay,
-                'fault_duration': args.fault_duration,
-                'wall_time':      time.time(),
+                'fault_delay':     args.fault_delay,
+                'fault_duration':  args.fault_duration,
+                'tl_recovery_gap': args.tl_recovery_gap,
+                'max_tl_cycles':   args.max_tl_cycles,
+                'wall_time':       time.time(),
             }) + '\n')
     except Exception:
         pass
 
     rclpy.init()
     node = FaultInjector(
-        tl_fault       = args.tl_fault,
-        tl_params      = tl_p,
-        imu_fault      = args.imu_fault,
-        imu_params     = imu_p,
-        fault_delay    = args.fault_delay,
-        fault_duration = args.fault_duration,
-        log_file       = args.log_file,
+        tl_fault        = args.tl_fault,
+        tl_params       = tl_p,
+        imu_fault       = args.imu_fault,
+        imu_params      = imu_p,
+        fault_delay     = args.fault_delay,
+        fault_duration  = args.fault_duration,
+        tl_recovery_gap = args.tl_recovery_gap,
+        max_tl_cycles   = args.max_tl_cycles,
+        log_file        = args.log_file,
     )
 
     try:

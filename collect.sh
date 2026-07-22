@@ -17,11 +17,13 @@
 #   obs_noescape        30m obstacle in single-lane (LL 241), no path forward
 #   obs_singlelane      30m obstacle, no adjacent lane — Signal 1 validation
 #   obs_tooclosetoreact 6m obstacle, multi-lane — Signal 2 (TTC) validation
-#   tl_fault_s1         TL confidence degraded to 0.5 — time-windowed 45s, then recovery
-#   tl_fault_s2         TL oscillating GREEN/original (5s period) — time-windowed 45s
-#   tl_fault_s3         TL classification → UNKNOWN — time-windowed 45s, then recovery
-#   tl_fault_s4         TL full blackout — time-windowed 45s, then recovery
-#   All TL faults: delay 30s (vehicle gets moving), then active at first TL zone for 45s.
+#   tl_fault_s1         TL confidence degraded to 0.5 — repeats at every TL zone (15s cap/cycle)
+#   tl_fault_s2         TL oscillating GREEN/original (5s period) — repeats at every TL zone
+#   tl_fault_s3         TL classification → UNKNOWN — repeats at every TL zone
+#   tl_fault_s4         TL full blackout — repeats at every TL zone
+#   All TL faults: delay 30s (vehicle gets moving), then re-fires at EVERY TL zone
+#   entered for the rest of the trial (15s cap/cycle, 8s recovery gap between
+#   cycles) — one (reaction, recovery) sample per intersection on the route.
 #   imu_fault_s1        IMU gyro bias 0.05 rad/s (~2.9°/s), 30s on / 30s off
 #   imu_fault_s2        IMU gyro bias 0.15 rad/s (~8.6°/s), 30s on / 20s off
 #   imu_fault_s3        IMU gyro bias 0.30 rad/s (~17.2°/s), 20s on / 10s off
@@ -210,11 +212,14 @@ case "$CAMPAIGN" in
 
     # ── Traffic light fault campaigns ─────────────────────────────────────────
     # Fault delay = 30s so localization converges before the fault activates.
-    # TL fault design (revised 2026-06-28):
-    #   Each fault activates at the FIRST TL detection zone entered after a 30s
-    #   nominal warm-up, stays active for 45s, then deactivates so the vehicle can
-    #   recover and complete the route.  tl_fault_start / tl_fault_end timestamps
-    #   are written to the per-campaign fault_log.jsonl for CUSUM alignment.
+    # TL fault design (revised 2026-07-22 — zone-triggered periodic):
+    #   Each fault activates at EVERY TL detection zone entered after a 30s
+    #   nominal warm-up, stays active for up to 15s (or until the zone is
+    #   exited, whichever is first), then an 8s recovery gap before re-arming
+    #   for the NEXT zone — repeating for every intersection on the route.
+    #   tl_fault_start / tl_fault_end timestamps (one pair per cycle) are
+    #   written to the per-campaign fault_log.jsonl for CUSUM alignment; see
+    #   docs/research_notes/periodic_fault_strategy.md for the design rationale.
     #
     #   S1: mild confidence degradation — may produce little behavioral change
     #       (Autoware still trusts the classification), establishing a baseline
@@ -226,37 +231,37 @@ case "$CAMPAIGN" in
     #   S4: complete blackout — over-caution, no TL signal at all.
 
     tl_fault_s1)
-        echo -e "${BLUE}TL fault S1: confidence ×0.5 (fog/mild) — 45s window${NC}"
+        echo -e "${BLUE}TL fault S1: confidence ×0.5 (fog/mild) — 15s cap/cycle${NC}"
         run tl_fault_s1 tl_fault_s1 \
             --tl-fault tl_confidence \
             --tl-params '{"confidence_scale":0.5}' \
             --fault-delay 30 \
-            --fault-duration 45
+            --fault-duration 15
         ;;
 
     tl_fault_s2)
-        echo -e "${BLUE}TL fault S2: oscillating GREEN/RED (5s period) — 45s window${NC}"
+        echo -e "${BLUE}TL fault S2: oscillating GREEN/RED (5s period) — 15s cap/cycle${NC}"
         run tl_fault_s2 tl_fault_s2 \
             --tl-fault tl_oscillate \
             --tl-params '{"period_s":5.0}' \
             --fault-delay 30 \
-            --fault-duration 45
+            --fault-duration 15
         ;;
 
     tl_fault_s3)
-        echo -e "${BLUE}TL fault S3: UNKNOWN classification (over-caution) — 45s window${NC}"
+        echo -e "${BLUE}TL fault S3: UNKNOWN classification (over-caution) — 15s cap/cycle${NC}"
         run tl_fault_s3 tl_fault_s3 \
             --tl-fault tl_unknown \
             --fault-delay 30 \
-            --fault-duration 45
+            --fault-duration 15
         ;;
 
     tl_fault_s4)
-        echo -e "${BLUE}TL fault S4: full blackout (no signal) — 45s window${NC}"
+        echo -e "${BLUE}TL fault S4: full blackout (no signal) — 15s cap/cycle${NC}"
         run tl_fault_s4 tl_fault_s4 \
             --tl-fault tl_blackout \
             --fault-delay 30 \
-            --fault-duration 45
+            --fault-duration 15
         ;;
 
     # ── IMU bias fault campaigns ───────────────────────────────────────────────
