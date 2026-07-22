@@ -10,13 +10,21 @@ Usage:
   source autoware/install/setup.bash
   python3 analyze_mrm_diagnostics.py <rosbag_path>
 
+  # Whole-campaign scan: catches trials with bad diagnostics/zero movement even
+  # when MRM never fired (the MRM-window analysis above finds nothing in that case
+  # since it only looks at diagnostics near MRM triggers).
+  python3 analyze_mrm_diagnostics.py --batch ../data/nom_v11
+
 Example:
   python3 analyze_mrm_diagnostics.py ../data/goal_001/rosbag/
 """
 
+import argparse
+import glob
 import sys
 import os
 import json
+import math
 from collections import defaultdict
 from datetime import datetime
 
@@ -28,6 +36,108 @@ from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
 # Message types (requires sourcing Autoware)
 from autoware_adapi_v1_msgs.msg import MrmState
 from diagnostic_msgs.msg import DiagnosticArray
+from nav_msgs.msg import Odometry
+
+GT_TOPIC = '/awsim/ground_truth/localization/kinematic_state'
+FALLBACK_TOPIC = '/localization/kinematic_state'
+
+
+def _diag_level(level) -> int:
+    """DiagnosticStatus.level deserializes as a 1-byte `bytes` object, not int."""
+    return level[0] if isinstance(level, (bytes, bytearray)) else int(level)
+
+
+def whole_trial_summary(bag_path: str, top_n: int = 5) -> dict:
+    """
+    Single pass over a bag: ERROR/WARN diagnostics across the WHOLE trial (not just
+    near MRM triggers — useful for trials that never fired MRM at all but still went
+    wrong, e.g. a localization/NDT convergence failure that just stalls the vehicle),
+    plus a ground-truth-trajectory movement check (max single-step jump = teleport
+    detector, total distance = did-it-move-at-all check).
+    """
+    storage_options = StorageOptions(uri=bag_path, storage_id='sqlite3')
+    converter_options = ConverterOptions(
+        input_serialization_format='cdr',
+        output_serialization_format='cdr',
+    )
+    reader = SequentialReader()
+    reader.open(storage_options, converter_options)
+    topics = {info.name: info.type for info in reader.get_all_topics_and_types()}
+    gt_topic = GT_TOPIC if GT_TOPIC in topics else FALLBACK_TOPIC
+
+    diag_counts = defaultdict(int)
+    diag_level = {}
+    last_xy = None
+    max_step = 0.0
+    total_dist = 0.0
+    n_points = 0
+
+    while reader.has_next():
+        topic, data, _ts = reader.read_next()
+        if topic == '/diagnostics':
+            msg = deserialize_message(data, DiagnosticArray)
+            for s in msg.status:
+                lvl = _diag_level(s.level)
+                if lvl >= 1:
+                    diag_counts[s.name] += 1
+                    diag_level[s.name] = max(diag_level.get(s.name, 0), lvl)
+        elif topic == gt_topic:
+            msg = deserialize_message(data, Odometry)
+            x, y = msg.pose.pose.position.x, msg.pose.pose.position.y
+            n_points += 1
+            if last_xy is not None:
+                step = math.hypot(x - last_xy[0], y - last_xy[1])
+                total_dist += step
+                max_step = max(max_step, step)
+            last_xy = (x, y)
+
+    top = sorted(diag_counts.items(), key=lambda kv: -kv[1])[:top_n]
+    return {
+        'bag_path': bag_path,
+        'n_gt_points': n_points,
+        'total_distance_m': total_dist,
+        'max_step_m': max_step,
+        'top_diagnostics': [
+            {'name': n, 'count': c, 'level': diag_level[n]} for n, c in top
+        ],
+    }
+
+
+def print_whole_trial_summary(summary: dict):
+    print(f"\nGround truth: {summary['n_gt_points']} points, "
+          f"{summary['total_distance_m']:.1f}m total, "
+          f"max single-step jump {summary['max_step_m']:.2f}m")
+    if summary['max_step_m'] > 3.0:
+        print("  ⚠ jump exceeds 3m — possible teleport/localization glitch")
+    print("Top ERROR/WARN diagnostics (whole trial, not just near MRM):")
+    for d in summary['top_diagnostics']:
+        level_name = {1: 'WARN', 2: 'ERROR'}.get(d['level'], f"?{d['level']}")
+        print(f"  {d['count']:5d} [{level_name}] {d['name']}")
+
+
+def run_batch(data_dir: str):
+    """Scan every goal_*/rosbag under data_dir, flag anomalies."""
+    exp_dirs = sorted(glob.glob(os.path.join(data_dir, 'goal_*')))
+    print(f"Scanning {len(exp_dirs)} experiments under {data_dir}\n")
+    for exp_dir in exp_dirs:
+        bag_dir = os.path.join(exp_dir, 'rosbag')
+        result_f = os.path.join(exp_dir, 'result.json')
+        if not os.path.isdir(bag_dir):
+            continue
+        status = '?'
+        if os.path.exists(result_f):
+            status = json.load(open(result_f)).get('status', '?')
+        s = whole_trial_summary(bag_dir)
+        flags = []
+        if s['max_step_m'] > 3.0:
+            flags.append('TELEPORT')
+        if s['total_distance_m'] < 5.0:
+            flags.append('NO-MOVEMENT')
+        top1 = s['top_diagnostics'][0] if s['top_diagnostics'] else None
+        top1_str = f"{top1['name']} x{top1['count']}" if top1 else '(none)'
+        flag_str = f"  <== {','.join(flags)}" if flags else ''
+        print(f"  {os.path.basename(exp_dir):45s} status={status:15s} "
+              f"dist={s['total_distance_m']:7.1f}m  top_diag={top1_str}{flag_str}")
 
 
 def get_message_type(topic_type_str):
@@ -103,11 +213,12 @@ def analyze_rosbag(bag_path):
                 msg = deserialize_message(data, msg_type)
                 diag_list = []
                 for status in msg.status:
-                    if status.level > 0:  # Not OK
+                    lvl = _diag_level(status.level)
+                    if lvl > 0:  # Not OK
                         diag_list.append({
                             'name': status.name,
-                            'level': status.level,
-                            'level_name': DIAG_LEVEL_NAMES.get(status.level, f'?{status.level}'),
+                            'level': lvl,
+                            'level_name': DIAG_LEVEL_NAMES.get(lvl, f'?{lvl}'),
                             'message': status.message[:200] if status.message else ''
                         })
                 if diag_list:
@@ -289,7 +400,23 @@ def analyze_rosbag(bag_path):
 
 
 def main():
-    if len(sys.argv) < 2:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('bag_path', nargs='?', default=None,
+                         help='Path to a single rosbag dir (default: most recent experiment)')
+    parser.add_argument('--batch', metavar='DATA_DIR', default=None,
+                         help='Scan every goal_*/rosbag under DATA_DIR instead of one bag')
+    args = parser.parse_args()
+
+    if args.batch:
+        if not os.path.isdir(args.batch):
+            print(f"ERROR: {args.batch} is not a directory")
+            return 1
+        run_batch(args.batch)
+        return 0
+
+    bag_path = args.bag_path
+    if bag_path is None:
         # Default to most recent experiment
         script_dir = os.path.dirname(os.path.abspath(__file__))
         data_dir = os.path.join(script_dir, '..', 'data')
@@ -303,8 +430,6 @@ def main():
             print("ERROR: No rosbag found in data directory")
             print("Usage: python3 analyze_mrm_diagnostics.py <rosbag_path>")
             return 1
-    else:
-        bag_path = sys.argv[1]
 
     if not os.path.exists(bag_path):
         print(f"ERROR: Rosbag not found at {bag_path}")
@@ -321,6 +446,10 @@ def main():
         print(f"\nTop 5 diagnostic issues at MRM triggers:")
         for name, count in results['top_diagnostics'][:5]:
             print(f"  - {name}: {count} occurrences")
+
+    # Whole-trial view catches issues MRM-window analysis can't (e.g. a trial with
+    # zero MRM triggers that still never actually drove — see goal_012 2026-07-22).
+    print_whole_trial_summary(whole_trial_summary(bag_path))
 
     return 0
 

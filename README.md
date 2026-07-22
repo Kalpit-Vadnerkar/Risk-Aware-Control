@@ -176,7 +176,7 @@ After a stuck trial (vehicle stopped for 200s timeout), the behavior_path_planne
 
 ### 5. Autoware restart cadence
 
-After approximately 18–36 experiments (one or two full campaigns), the behavior_path_planner accumulates internal state that prevents trajectory generation on subsequent route sets. **Restart Autoware between campaigns** to avoid this. The `run_remaining.sh` helper in `experiments/scripts/` handles this automatically.
+After approximately 18–36 experiments (one or two full campaigns), the behavior_path_planner accumulates internal state that prevents trajectory generation on subsequent route sets. **Restart Autoware between campaigns** to avoid this. `experiments/scripts/run_nominal_batches.sh` handles this automatically (batches goals 3 at a time with an Autoware restart between each).
 
 ### 6. Trajectory topic renamed upstream (found 2026-07-21, RTX A6000 machine)
 

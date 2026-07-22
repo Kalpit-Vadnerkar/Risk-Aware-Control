@@ -1,32 +1,54 @@
 # Risk-Aware Control — Task List
 
-**Last Updated:** 2026-07-21 — direction narrowed to a single max-velocity operating
-condition (see note below); per-speed calibration/campaigns are dropped.
+**Last Updated:** 2026-07-22 — direction pivot: calibration/conformal-prediction work
+(old Phase 3) is deferred. Immediate priority is an exploratory study of how the
+ST-GAT digital twin reacts to IMU and Camera faults, building on the published prior
+work (see below). See `docs/research_notes/fault_literature_review.md` for the
+literature-grounding pass started this session.
 
 ---
 
-## Research Direction (as of May 2026)
+## Research Direction (revised 2026-07-22)
 
-**Core contribution:** ST-GAT residuals continuously characterize the uncertainty
-landscape of an AV's situation. When Autoware stops at a static obstacle (one point
-in safety×progress space), the residuals can tell us *how recoverable* the situation
-is — and what velocity constraint lets the vehicle safely proceed. This moves the
-vehicle toward the Pareto frontier of (safety, progress) rather than defaulting to
-the trivially safe but zero-progress corner.
+**Overarching dissertation goal:** show that this approach can make AVs safer in a
+meaningful, measurable way — not just publish a novel algorithm. Everything below is
+in service of that; conformal prediction and any other specific mechanism is a
+*candidate*, not a commitment.
 
-**Claim to establish:**
-1. Residuals from a nominal ST-GAT model are low during nominal driving and elevated
-   during obstacle encounters
-2. The residual pattern differs between solvable scenarios (adjacent lane exists) and
-   unsolvable ones (single-lane, no escape)
-3. Conformal prediction over nominal residuals at the (single) max-velocity operating
-   condition gives a distribution-free coverage guarantee on prediction error
-4. Constraint adjustment (velocity cap) enables forward progress in solvable cases
-   without violating the conformal bound
+**Prior published work (context, not this repo):** Vadnerkar & Pisu, "Digital Twins as
+Predictive Models for Real-Time Probabilistic Risk Assessment of Autonomous Vehicles,"
+IEEE T-ITS, April 2026 (PDF in project root). Trained an ST-GAT purely on nominal
+Autoware+AWSIM driving data (same Nishishinjuku map/vehicle setup as this repo),
+detected Camera/IMU/LiDAR faults via prediction-observation residuals (Raw, KL
+divergence, CUSUM) + PCA + Random Forest, 93.7% accuracy. Traffic Light Status Flag
+was the single most discriminative feature (29.7% importance); CUSUM consistently beat
+Raw/KL. This repo (`Risk-Aware-Control`) is the follow-on: move from passive fault
+*detection* to active risk-aware *control* — using the residual signal to relax a
+velocity constraint so the AV can make progress instead of defaulting to a full stop,
+pushing toward the Pareto frontier of (safety, progress) rather than the trivially
+safe, zero-progress corner.
+
+**Immediate focus (as of 2026-07-22):** before any control/calibration work, run an
+*exploratory* study of how the ST-GAT digital twin reacts to IMU and Camera faults —
+essentially, does the residual signal actually behave the way the prior paper's
+passive-detection result implies it should, now inside this repo's own pipeline and
+framing. LiDAR is out of scope for this round. See "Phase 1.5" below.
+
+**Distributions over distribution-free:** the prior paper's ST-GAT already outputs
+full predictive distributions (Gaussian mean+variance for continuous features,
+Bernoulli probability for discrete ones) via deep ensembles — that's where the
+uncertainty and interpretability signal actually lives. The dissertation direction is
+to **embrace those distributions directly**, not collapse them into a single
+distribution-free conformal bound. Conformal prediction (old Phase 3 below) remains on
+the table as *one* possible way to turn a residual into a calibrated guarantee, but
+it's no longer the assumed mechanism — alternatives that use the full predicted
+distribution (e.g. likelihood-based risk scores, calibrated probabilistic bounds that
+still exploit the Gaussian/Bernoulli structure rather than discarding it) should be
+considered on equal footing before committing.
 
 **What this is NOT:** Re-implementing Autoware's planner. Autoware already has
-binary stop/avoidance behavior. Our signal is continuous, calibrated, and
-distribution-free — not a fixed policy.
+binary stop/avoidance behavior. Our signal is continuous and probabilistic — not a
+fixed policy, and not required to be distribution-free.
 
 ---
 
@@ -68,6 +90,27 @@ Commands:
 
 **Before running obs_noescape / obs_singlelane:** Verify obstacle placement lands in
 LL 241 by checking rosbag `/tf` ego position when obstacle appears. `min_travel_before_placement: 60.0` + 30m ahead ≈ 90–100m arc — confirm empirically on first run.
+
+### 0.3 Fault Campaigns (IMU + Camera) — feeds Phase 1.5
+
+Needed before Phase 1.5 can run. Infrastructure already exists in
+`experiments/lib/fault_injector.py` and `collect.sh` (built from earlier
+research-direction work, before the obstacle-scenario pivot — the standalone runner
+scripts were deleted in the 2026-07-22 repo cleanup as stale, but the campaign
+definitions inside `collect.sh` itself still work):
+
+| Campaign | Status | What it is |
+|----------|--------|------------|
+| `imu_fault_s1`..`s4` | Exists, not yet run this direction | Gyro bias 0.05→0.60 rad/s, see `fault_injector.py` header |
+| `tl_fault_s1`..`s4`  | Exists, not yet run this direction | TL confidence/oscillate/unknown/blackout, see `fault_injector.py` header |
+
+**Open question (see `docs/research_notes/fault_literature_review.md`):** the existing
+"camera fault" campaigns operate on the traffic-light *classification output*, not raw
+camera pixels — closer to the T-ITS paper's own dominant fault-detection feature (TL
+Status Flag, 29.7% importance) than it first looks, but not a literal camera-sensor
+fault. Decide whether that's sufficient for this study or whether a raw-image-level
+fault (soiling/occlusion mask on the camera topic, closer to the paper's Gaussian
+pixel-noise approach) is worth adding first.
 
 ---
 
@@ -115,10 +158,40 @@ velocity features, < 1.0m for position features.
 
 ---
 
+## Phase 1.5: Exploratory Fault-Reaction Study ← NEXT (added 2026-07-22)
+
+**Goal:** before committing to any control mechanism, actually look at how the ST-GAT
+digital twin's residuals (and its full predicted distributions — mean/variance,
+Bernoulli probabilities) react to IMU and Camera faults inside this repo's own
+pipeline. This is deliberately exploratory, not hypothesis-confirming — the point is
+to build intuition and figure out what the distributional signal looks like before
+deciding how to formalize it into a risk/control mechanism (conformal or otherwise).
+
+- [ ] Read `docs/research_notes/fault_literature_review.md`, resolve its open
+      questions (camera fault definition, accel_bias_ms2 no-op) before running fault
+      campaigns
+- [ ] Run `imu_fault_s1`..`s4` and `tl_fault_s1`..`s4` campaigns (0.3 above)
+- [ ] Run trained ST-GAT (Phase 1.2) over nominal + fault-condition rosbags, compute
+      full predictive distributions and residuals (Raw/KL/CUSUM, matching the T-ITS
+      paper's three types) per timestep
+- [ ] Plot: predicted mean ± variance vs. observed value, through a fault window
+      (onset → sustained → recovery) for both IMU and Camera/TL conditions — does the
+      predicted variance itself widen under fault, independent of the residual?
+- [ ] Compare against the T-ITS paper's finding (CUSUM > KL > Raw, TL Status Flag
+      dominant) — does that hold in this repo's pipeline, or does the shift from
+      obstacle-scenario framing change which features/residuals matter?
+- [ ] Write up findings in `docs/research_notes/` — this is the evidence base the
+      eventual risk/control mechanism gets designed against, not a mechanism itself
+
+---
+
 ## Phase 2: Signal Validation
 
 **Goal:** Confirm the residual signal empirically differentiates solvable from
-unsolvable scenarios before building any control logic.
+unsolvable scenarios before building any control logic. Written against the obstacle-
+scenario framing (Phase 0.2) — revisit after Phase 1.5, which may suggest the
+distributional signal itself (not just a scalar residual) is what should carry forward
+into this validation step.
 
 ### 2.1 Solvable vs Unsolvable Separation
 
@@ -141,10 +214,18 @@ If residuals don't separate solvable from unsolvable, redesign before proceeding
 
 ---
 
-## Phase 3: Conformal Prediction Calibration
+## Phase 3: Conformal Prediction Calibration — ⏸ DEFERRED (2026-07-22)
 
-**Goal:** Get a distribution-free guarantee: at the operating (max) velocity, P[prediction
-error ≤ r(A)] ≥ 1-δ, where r(A) is the conformal bound at anomaly score A.
+Deferred behind Phase 1.5 — calibration runs are on hold until the exploratory
+fault-reaction study is done. Also no longer the assumed mechanism: conformal
+prediction's distribution-free framing is one candidate, not a commitment (see
+"Research Direction" above — the goal is to embrace the ST-GAT's native predictive
+distributions, not necessarily collapse them into a distribution-free bound). Keep
+this phase's content as one option to evaluate against alternatives, not as the plan.
+
+**Goal (as originally scoped):** Get a distribution-free guarantee: at the operating
+(max) velocity, P[prediction error ≤ r(A)] ≥ 1-δ, where r(A) is the conformal bound at
+anomaly score A.
 
 ### 3.1 Calibration (single speed — dropped per-speed loop 2026-07-21)
 
@@ -206,6 +287,8 @@ progress while satisfying the conformal bound.
 - Perception faults (dropout30, position noise) — not needed for core Pareto claim
 - Obstacle removal / disappearing obstacle — artificial, doesn't reflect real recovery
 - Multi-fault type comparison matrix
+- LiDAR faults — deferred for the Phase 1.5 exploratory study (2026-07-22); IMU and
+  Camera only this round, LiDAR can follow once those are understood
 - Scenarios other than static obstacle (cut-in, pedestrian, slow lead vehicle)
 - Distance sweep (20m, 50m, 100m) — 30m is the one scenario
 - Weight modulation of ST-GAT (constraint tightening is the intervention)

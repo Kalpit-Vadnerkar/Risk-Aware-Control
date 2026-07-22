@@ -16,9 +16,7 @@ Usage (must source ROS/Autoware, then the repo venv):
 import argparse
 import glob
 import json
-import math
 import os
-import re
 
 import lanelet2
 from autoware_lanelet2_extension_python.projection import MGRSProjector
@@ -90,6 +88,29 @@ def bbox_hit(ll, xmin, xmax, ymin, ymax):
     return False
 
 
+def traffic_light_points(map_data, xmin, xmax, ymin, ymax):
+    """Midpoint of each traffic-light-head linestring ('refers' role of
+    traffic_light regulatory elements), deduped by regulatory element id."""
+    seen_reg = set()
+    pts = []
+    for ll in map_data.laneletLayer:
+        for reg in ll.regulatoryElements:
+            if ll_attr(reg, 'subtype') != 'traffic_light' or reg.id in seen_reg:
+                continue
+            seen_reg.add(reg.id)
+            try:
+                refers = reg.parameters['refers']
+            except Exception:
+                continue
+            for ls in refers:
+                pts_xy = [(p.x, p.y) for p in ls]
+                mx = sum(p[0] for p in pts_xy) / len(pts_xy)
+                my = sum(p[1] for p in pts_xy) / len(pts_xy)
+                if xmin <= mx <= xmax and ymin <= my <= ymax:
+                    pts.append((mx, my))
+    return pts
+
+
 def read_trajectory(bag_dir):
     storage_options = StorageOptions(uri=bag_dir, storage_id='sqlite3')
     converter_options = ConverterOptions(
@@ -114,18 +135,6 @@ def read_trajectory(bag_dir):
 
 def find_experiments(data_dir, goal_id):
     return sorted(glob.glob(os.path.join(data_dir, f'{goal_id}_*')))
-
-
-def arc_length(traj):
-    total = 0.0
-    for (x0, y0), (x1, y1) in zip(traj, traj[1:]):
-        total += math.hypot(x1 - x0, y1 - y0)
-    return total
-
-
-def trial_tag(run_id):
-    m = re.search(r'_t(\d+)_', run_id)
-    return f't{m.group(1)}' if m else run_id
 
 
 def plot_goal(map_data, goal, data_dir, output_dir, margin):
@@ -155,9 +164,6 @@ def plot_goal(map_data, goal, data_dir, output_dir, margin):
             'run_id': os.path.basename(exp_dir),
             'status': status,
             'traj': traj,
-            'driven_dist': arc_length(traj),
-            'driving_time': result.get('driving_time'),
-            'mrm_count': result.get('mrm_trigger_count'),
         })
 
     if not runs:
@@ -177,21 +183,25 @@ def plot_goal(map_data, goal, data_dir, output_dir, margin):
                               facecolor='#dddddd', edgecolor='#bbbbbb',
                               linewidth=0.3, zorder=1))
 
+    tl_pts = traffic_light_points(map_data, xmin, xmax, ymin, ymax)
+    if tl_pts:
+        ax.scatter([p[0] for p in tl_pts], [p[1] for p in tl_pts],
+                   marker='s', color='#f1c40f', edgecolor='#333333',
+                   linewidth=0.5, s=40, zorder=2, label='traffic light')
+
+    seen_status = set()
     for run in runs:
         traj = run['traj']
         if not traj:
             continue
-        color = STATUS_COLOR.get(run['status'], DEFAULT_COLOR)
-        bits = [f"{trial_tag(run['run_id'])} {run['status']}", f"{run['driven_dist']:.0f}m driven"]
-        if run['driving_time'] is not None:
-            bits.append(f"{run['driving_time']:.0f}s")
-        if run['mrm_count'] is not None:
-            bits.append(f"{run['mrm_count']} MRM")
-        label = ', '.join(bits)
+        status = run['status']
+        color = STATUS_COLOR.get(status, DEFAULT_COLOR)
+        label = status if status not in seen_status else None
+        seen_status.add(status)
         tx = [p[0] for p in traj]
         ty = [p[1] for p in traj]
         ax.plot(tx, ty, color=color, linewidth=1.8, alpha=0.85, zorder=3, label=label)
-        if run['status'] != 'goal_reached':
+        if status != 'goal_reached':
             ax.plot(tx[-1], ty[-1], marker='x', color=color, markersize=10,
                     markeredgewidth=2.5, zorder=5)
 
@@ -203,7 +213,7 @@ def plot_goal(map_data, goal, data_dir, output_dir, margin):
     ax.set_aspect('equal')
     captured_dist = goal.get('estimated_distance')
     dist_str = f'{captured_dist:.0f}m' if captured_dist is not None else 'unknown'
-    ax.set_title(f'{gid}   route length (captured): {dist_str}')
+    ax.set_title(f'{gid}   route length: {dist_str}')
     ax.legend(loc='best', fontsize=7)
     ax.set_xlabel('map x (m)')
     ax.set_ylabel('map y (m)')
@@ -227,18 +237,22 @@ def main():
                          help='Metres of padding around the route bounding box')
     args = parser.parse_args()
 
+    goals_file = args.goals_file
+    if not os.path.isabs(goals_file):
+        goals_file = os.path.join(REPO_DIR, 'experiments', 'configs', goals_file)
+
     os.makedirs(args.output_dir, exist_ok=True)
 
     print(f'Loading lanelet2 map: {args.map_file}')
     map_data = load_map(args.map_file)
 
-    goals_data = json.load(open(args.goals_file))
+    goals_data = json.load(open(goals_file))
     goals = goals_data['goals']
     if args.goal:
         wanted = set(args.goal.split(','))
         goals = [g for g in goals if g['id'] in wanted]
 
-    print(f'Plotting {len(goals)} goal(s) from {args.goals_file}')
+    print(f'Plotting {len(goals)} goal(s) from {goals_file}')
     for goal in goals:
         plot_goal(map_data, goal, args.data_dir, args.output_dir, args.margin)
 
