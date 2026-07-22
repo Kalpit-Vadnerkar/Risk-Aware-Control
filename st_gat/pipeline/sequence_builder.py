@@ -5,7 +5,8 @@ Key differences from the reference SequenceProcessor:
   1. Accepts our list-of-frame-dicts from bag_reader (no timestamp keys)
   2. Adds position_uncertainty (x_var, y_var) to every timestep's feature dict
   3. Reads route from the rosbag (LaneletRoute message) instead of route.json
-  4. Uses GraphBuilder and MapProcessor vendored from the reference codebase (see vendor/)
+  4. Uses GraphBuilder and MapProcessor (in Data_Curator/ and State_Estimator/, same
+     package/class names as the original T-ITS codebase — copied in, not imported live)
 
 The output sequence format is identical to the reference:
     {
@@ -36,15 +37,15 @@ import os
 import math
 from typing import List, Tuple, Optional
 
-from .vendor.point import Point
-from .vendor.graph_builder import GraphBuilder
+from .Data_Curator.Point import Point
+from .State_Estimator.GraphBuilder import GraphBuilder
 
 from . import config as cfg
 
 
 def _load_map_processor():
     """Lazy import: MapProcessor requires lanelet2, only available with Autoware workspace sourced."""
-    from .vendor.map_processor import MapProcessor
+    from .State_Estimator.MapProcessor import MapProcessor
     return MapProcessor(cfg.MAP_FILE)
 
 

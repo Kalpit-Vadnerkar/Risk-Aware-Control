@@ -10,7 +10,7 @@ What it does:
 
 Usage (with Autoware workspace sourced):
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
-  python3 -m st_gat.pipeline.run_pipeline [--datasets baseline_all nom_v5] [--verbose]
+  python3 -m st_gat.pipeline.run_pipeline [--datasets baseline_all nom_v11] [--verbose]
 
 Output pkl format:
   Each file is a list of sequence dicts:
@@ -87,7 +87,7 @@ def _train_cal_split(
     per goal, because baseline_all has 1 run per goal × 22 goals, and forcing
     each to cal would put all diverse route coverage into cal and leave train
     with only the 3 nom-dataset goals (007/011/021). Calibration for conformal
-    prediction is handled primarily by the nom_v5/v7/v10 held-out runs, which
+    prediction is handled primarily by the nom_v11 held-out runs, which
     have 5-6 runs per goal and naturally contribute ≥1 run to cal per goal.
     """
     rng = random.Random(seed)
@@ -156,7 +156,7 @@ def process_dataset(
                 continue
 
             from .sequence_builder import extract_route_from_bag
-            from .vendor.graph_builder import GraphBuilder
+            from .State_Estimator.GraphBuilder import GraphBuilder
             route = extract_route_from_bag(bag_dir)
             shared_builder.route = route
             shared_builder.graph_builder = GraphBuilder(
@@ -241,7 +241,7 @@ def main():
         sys.exit(1)
 
     print("[pipeline] Loading map data (one-time, ~10s)...")
-    from .vendor.map_processor import MapProcessor
+    from .State_Estimator.MapProcessor import MapProcessor
     map_processor = MapProcessor(cfg.MAP_FILE)
     shared_builder = SequenceBuilder(map_processor.map_data, route=[])
 

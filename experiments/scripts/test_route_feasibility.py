@@ -12,7 +12,7 @@ For each goal in captured_goals.json:
 AWSIM + Autoware must be running. Run as:
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
-  python3 test_route_feasibility.py [--goals goal_001,goal_007,...]
+  python3 experiments/scripts/test_route_feasibility.py [--goals goal_001,goal_007,...]
 """
 
 import argparse
@@ -30,10 +30,9 @@ from autoware_planning_msgs.msg import Path
 from autoware_adapi_v1_msgs.srv import SetRoutePoints, ClearRoute
 from autoware_adapi_v1_msgs.msg import RouteState
 
-GOALS_FILE = os.path.join(os.path.dirname(__file__),
-                          'experiments/configs/captured_goals.json')
-RESET_POSE_FILE = os.path.join(os.path.dirname(__file__),
-                               'experiments/configs/reset_pose.json')
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+GOALS_FILE = os.path.join(REPO_DIR, 'experiments/configs/captured_goals.json')
+RESET_POSE_FILE = os.path.join(REPO_DIR, 'experiments/configs/reset_pose.json')
 
 # Thresholds for "feasible" path
 MIN_PATH_POINTS = 15          # behavior path must have at least this many points
@@ -244,7 +243,7 @@ def main():
     print(f'FAILED   ({len(bad_goals)}): {", ".join(bad_goals)}')
 
     # Save results
-    out = os.path.join(os.path.dirname(__file__), 'route_feasibility.json')
+    out = os.path.join(REPO_DIR, 'experiments/analysis/route_feasibility.json')
     with open(out, 'w') as f:
         json.dump({'results': results, 'feasible': ok_goals, 'failed': bad_goals}, f, indent=2)
     print(f'\nResults saved to: {out}')

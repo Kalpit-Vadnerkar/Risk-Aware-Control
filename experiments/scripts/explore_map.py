@@ -8,22 +8,26 @@ for scenario route selection.
 Usage (must source ROS/Autoware first):
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
-  python3 explore_map.py
+  python3 experiments/scripts/explore_map.py
 """
 
 import math
 import json
 import lanelet2
 from lanelet2.core import BasicPoint2d
+from autoware_lanelet2_extension_python.projection import MGRSProjector
 
 MAP_FILE = "/home/kvadner/Desktop/Dissertation/Map/nishishinjuku_autoware_map/lanelet2_map.osm"
 
-# The map uses MGRS 54SUE projection. The UtmProjector origin that aligns
-# the lanelet2 local frame with the AWSIM/ROS2 map frame (where the spawn
-# position is (81384.6, 49922.0)) is approximately (35.241°N, 138.801°E).
-# Derived empirically: spawn GPS ≈ (35.69°N, 139.70°E); offset back to get
-# local (0,0) at the MGRS 100km-square corner.
-ORIGIN = lanelet2.io.Origin(35.241, 138.801, 0)
+# The map uses MGRS 54SUE projection. Autoware's own map loader
+# (autoware_map_projection_loader) projects lanelet2 maps with MGRSProjector
+# when no map_projector_info.yaml is present (the case here), deriving the
+# MGRS grid cell straight from the map's own lat/lon points — that's what
+# actually lines up with the AWSIM/ROS2 map frame (spawn position
+# (81384.6, 49922.0) lands ~3.8m from the nearest road lanelet). A previous
+# version of this file guessed a UtmProjector origin empirically, which was
+# off by >1000m — do not reintroduce that pattern.
+ORIGIN = lanelet2.io.Origin(0.0, 0.0)
 
 GOALS_FILE = "/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/configs/captured_goals.json"
 
@@ -87,8 +91,8 @@ def print_section(title):
 
 
 def main():
-    print("Loading lanelet2 map (MGRS 54SUE / UtmProjector)...")
-    projector = lanelet2.projection.UtmProjector(ORIGIN)
+    print("Loading lanelet2 map (MGRS 54SUE / MGRSProjector)...")
+    projector = MGRSProjector(ORIGIN)
     map_data, errs = lanelet2.io.loadRobust(MAP_FILE, projector)
     road_lls = [ll for ll in map_data.laneletLayer if ll_attr(ll, "subtype") == "road"]
     print(f"  Road lanelets: {len(road_lls)}  (total: {len(list(map_data.laneletLayer))})")

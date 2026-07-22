@@ -51,11 +51,12 @@ AVOIDANCE_CFG="$AUTOWARE_DIR/install/autoware_launch/share/autoware_launch/confi
 # ── Defaults ──────────────────────────────────────────────────────────────────
 TRIALS=6
 GOALS="goal_007,goal_011,goal_021"
+GOALS_FILE=""
 DRY_RUN=""
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
-    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--dry-run]${NC}"
+    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--dry-run]${NC}"
     echo ""
     echo "Campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
     echo "           tl_fault_s1..s4  imu_fault_s1..s4"
@@ -66,9 +67,10 @@ CAMPAIGN="$1"; shift
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --trials)   TRIALS="$2";  shift 2 ;;
-        --goals)    GOALS="$2";   shift 2 ;;
-        --dry-run)  DRY_RUN="--dry-run"; shift ;;
+        --trials)      TRIALS="$2";     shift 2 ;;
+        --goals)       GOALS="$2";      shift 2 ;;
+        --goals-file)  GOALS_FILE="$2"; shift 2 ;;
+        --dry-run)     DRY_RUN="--dry-run"; shift ;;
         *) echo -e "${RED}Unknown argument: $1${NC}"; exit 1 ;;
     esac
 done
@@ -97,12 +99,15 @@ echo ""
 run() {
     local campaign="$1"; local condition="$2"
     shift 2  # remaining args passed through (scenario, velocity-limit, etc.)
+    local goals_file_arg=()
+    [[ -n "$GOALS_FILE" ]] && goals_file_arg=(--goals-file "$GOALS_FILE")
     python3 "$RUNNER" \
         --campaign "$campaign" \
         --condition "$condition" \
         --goals "$GOALS" \
         --trials "$TRIALS" \
         --stuck-timeout 200 \
+        "${goals_file_arg[@]}" \
         $DRY_RUN \
         "$@"
 }

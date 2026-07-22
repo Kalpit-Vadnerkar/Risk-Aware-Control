@@ -1,6 +1,7 @@
 # Risk-Aware Control — Task List
 
-**Last Updated:** 2026-05-03
+**Last Updated:** 2026-07-21 — direction narrowed to a single max-velocity operating
+condition (see note below); per-speed calibration/campaigns are dropped.
 
 ---
 
@@ -18,8 +19,8 @@ the trivially safe but zero-progress corner.
    during obstacle encounters
 2. The residual pattern differs between solvable scenarios (adjacent lane exists) and
    unsolvable ones (single-lane, no escape)
-3. Conformal prediction over nominal residuals at each velocity level gives a
-   distribution-free coverage guarantee on prediction error
+3. Conformal prediction over nominal residuals at the (single) max-velocity operating
+   condition gives a distribution-free coverage guarantee on prediction error
 4. Constraint adjustment (velocity cap) enables forward progress in solvable cases
    without violating the conformal bound
 
@@ -31,15 +32,17 @@ distribution-free — not a fixed policy.
 
 ## Phase 0: Data Collection ← CURRENT
 
-### 0.1 Nominal Campaigns
+### 0.1 Nominal Campaign
 
-Nominal data is the calibration foundation for conformal prediction.
-Each velocity level needs its own calibration set (residuals depend on speed).
+Nominal data is the calibration foundation for conformal prediction. Direction changed
+2026-07-21: all experiments now run at max possible velocity (map limit, 11.11 m/s) —
+`nom_v5`/`nom_v7` are no longer needed (dropped from `NOMINAL_DATASETS`, no more
+per-speed calibration). `nom_v5`/`nom_v7` rosbags already collected on the P5000 are
+kept for reference but are not part of the current plan; the `collect.sh nom_v5/nom_v7`
+commands still work if ever needed again.
 
 | Campaign | Status | Command |
 |----------|--------|---------|
-| `nom_v5`  | ⏳ Needed | `./collect.sh nom_v5` |
-| `nom_v7`  | ✅ Done (20 runs) | `./collect.sh nom_v7` |
 | `nom_v11` | 🔄 In progress | `./collect.sh nom_v11` |
 
 ### 0.2 Obstacle Campaigns
@@ -72,24 +75,25 @@ LL 241 by checking rosbag `/tf` ego position when obstacle appears. `min_travel_
 
 Port and train the model from the T-ITS paper. Reference implementation is
 READ-ONLY at `../Graph-Scene-Representation-and-Prediction/` — code we need from it
-(`Point`, `GraphBuilder`, `MapProcessor`) is vendored into `st_gat/pipeline/vendor/`,
-not imported live.
+(`Point`, `GraphBuilder`, `MapProcessor`) is copied into `st_gat/pipeline/Data_Curator/`
+and `st_gat/pipeline/State_Estimator/` — same package/class names as the original
+(it's Kalpit's own prior codebase), just not imported live from that repo.
 
 Work goes in `st_gat/` within this repo.
 
 ### 1.1 Data Extraction
 
 - [ ] Write `st_gat/extract.py`: reads rosbag files from `experiments/data/baseline_all/`
-      and all `nom_v*/` campaigns, extracts per-timestep features:
+      and `nom_v11/`, extracts per-timestep features:
       position(2), velocity(2), steering(1), accel(1), obj_distance(1), traffic_light(1)
 - [ ] Output: `st_gat/data/nominal_features.pkl` — one row per timestep, labeled by
-      run_id and velocity_cap
+      run_id
 - [ ] Verify feature distributions look sane (no NaNs, velocity capped at expected values)
 
 ### 1.2 Model Training
 
 - [ ] Write `st_gat/config.py`: hyperparams matching T-ITS paper
-- [ ] Write `st_gat/train.py`: train ST-GAT on nominal data (baseline_all + nom_v5/v7/v10),
+- [ ] Write `st_gat/train.py`: train ST-GAT on nominal data (baseline_all + nom_v11),
       80/20 train/val split
 - [ ] Train and save model checkpoint to `st_gat/checkpoints/`
 - [ ] Verify residuals are low on held-out nominal runs (raw residual < 1σ in majority
@@ -127,30 +131,29 @@ unsolvable scenarios before building any control logic.
 **This is the empirical test that validates or invalidates the core hypothesis.**
 If residuals don't separate solvable from unsolvable, redesign before proceeding.
 
-### 2.2 Velocity-Dependent Residual Baseline
+### 2.2 Residual Baseline (single speed — dropped multi-speed comparison 2026-07-21)
 
-- [ ] For each velocity level (5, 7, 10 m/s), compute the 95th-percentile residual
-      during nominal driving → this is A₀(v), the "what's normal for this speed"
-- [ ] Check: does A₀ vary significantly across velocity levels? (Expected: yes, higher
-      speed = richer dynamics = higher variance)
-- [ ] These per-speed baselines will anchor conformal calibration in Phase 3
+- [ ] Compute the 95th-percentile residual during nominal (max-velocity) driving →
+      this is A₀, the "what's normal at this speed"
+- [ ] This baseline anchors conformal calibration in Phase 3
+- ~~Per-velocity-level A₀(v) comparison~~ — moot now that only one velocity condition
+  is used; not needed for the single-speed Pareto claim.
 
 ---
 
 ## Phase 3: Conformal Prediction Calibration
 
-**Goal:** Get a distribution-free guarantee: at velocity cap v, P[prediction error ≤
-r(A)] ≥ 1-δ, where r(A) is the conformal bound at anomaly score A.
+**Goal:** Get a distribution-free guarantee: at the operating (max) velocity, P[prediction
+error ≤ r(A)] ≥ 1-δ, where r(A) is the conformal bound at anomaly score A.
 
-### 3.1 Per-Speed Calibration
+### 3.1 Calibration (single speed — dropped per-speed loop 2026-07-21)
 
-For each velocity level (v5, v7, v10):
 - [ ] Split nominal runs into D_train (fit residual→error mapping) / D_conf (calibrate)
 - [ ] Fit isotonic regression: anomaly score Aₜ → expected position error at t+H
 - [ ] Compute conformity scores on D_conf; find q̂_{1-δ} quantile
 - [ ] Verify empirical coverage ≥ 0.94 at δ=0.05
 
-**Success criterion:** Coverage check passes for all three velocity levels.
+**Success criterion:** Coverage check passes at the operating velocity.
 
 ### 3.2 Coverage Visualization
 
@@ -186,7 +189,7 @@ progress while satisfying the conformal bound.
 
 | Parameter | Value | Source |
 |-----------|-------|--------|
-| Velocity levels | 5, 7, 11.11 m/s | Nominal campaign caps (low / medium / map-limit) |
+| Velocity | 11.11 m/s (max/map-limit) | Single operating condition — all experiments now run at max velocity, no per-speed calibration |
 | Obstacle distance | 30m | obs_* scenarios |
 | Conformal δ | 0.05 | Standard 95% coverage |
 | Planning horizon H | 3s | Kinematic stopping distance |
@@ -198,6 +201,8 @@ progress while satisfying the conformal bound.
 
 ## Explicitly Out of Scope
 
+- Multiple velocity levels / per-speed calibration (nom_v5, nom_v7) — dropped 2026-07-21;
+  all experiments now run at max velocity (11.11 m/s) only
 - Perception faults (dropout30, position noise) — not needed for core Pareto claim
 - Obstacle removal / disappearing obstacle — artificial, doesn't reflect real recovery
 - Multi-fault type comparison matrix

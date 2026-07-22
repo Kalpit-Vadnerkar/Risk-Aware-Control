@@ -76,7 +76,7 @@ cd /home/kvadner/Desktop/Kalpit/Risk-Aware-Control
 ./Run_Autoware_Headless.sh
 
 # Terminal 3: Collect data
-./collect.sh nom_v7
+./collect.sh nom_v11
 ./collect.sh obs_recovery
 ./collect.sh obs_noescape
 ```
@@ -190,18 +190,60 @@ diagnostic chain watches for trajectory presence). Fixed in `experiments/lib/ros
 If Autoware is ever pulled to a newer commit again, re-check this topic name first if
 trials start failing with `engage_failed` despite a route being SET.
 
+### 7. EKF twist-queue overflow → intermittent MRM blips during nominal driving (found 2026-07-21)
+
+A successful nominal run still logged 73 brief (~0.1s) MRM_OPERATING blips with harsh
+braking artifacts (max_jerk ~1000, 53 hard-brake events), despite reaching the goal.
+Rosbag `/diagnostics` analysis traced it to `ekf_localizer`: repeated "twist topic is
+delay" / "mahalanobis distance of twist topic is large" warnings, matching a live
+"[EKF] Twist queue size (3) is exceeding max_queue_size (2)" log at boot — the Python
+IMU relay delivers twist updates burstier than EKF's default queue (size 2) tolerates.
+This cascades into `control_validator` deviation errors, which push
+`operation_mode_availability` down long enough (mrm_handler's default 0.5s timeout) to
+fire a brief MRM.
+
+**Fix:** `config/localization/ekf_localizer.param.yaml` — `twist_smoothing_steps` and
+`max_twist_queue_size` bumped 2 → 4. `config/system/mrm_handler/mrm_handler.param.yaml`
+— `timeout_operation_mode_availability` bumped 0.5s → 1.0s as a second layer of
+tolerance for brief transients (same philosophy as the item 3/4 fixes above).
+
+**Validated 2026-07-21** (Autoware restarted to pick up the new params — these are
+load-time, not hot-reloadable): the targeted `ekf_localizer` twist warnings dropped from
+261 to 5 in a fresh `nom_v11` trial. Confirmed via `ros2 param get` that both nodes
+picked up the new values after restart.
+
+**Residual findings, deferred (not blocking data collection):**
+- MRM trigger count dropped 73 → 31 despite the second trial running at a *higher*
+  speed (11.11 vs 7 m/s, which should make transients worse, not better) — real
+  improvement, not fully eliminated. All 31 still self-recovered (100% recovery rate,
+  ~0.096s avg duration).
+- A different, persistent issue is now the dominant diagnostic error:
+  `duplicated_node_checker` fired 1710 times on
+  `/perception/traffic_light_recognition/traffic_light/traffic_light_camera_info_relay`
+  — a node double-registering, continuously rather than as a brief transient. Already
+  excluded from the autonomous-mode gate (see item 3), so it isn't itself causing MRM,
+  but is a real hygiene issue worth investigating separately.
+- The likely actual remaining MRM cause is `control_validator` (`acceleration_error`,
+  `max_distance_deviation`) — plausibly just the natural consequence of more aggressive
+  tracking deviation at higher speed, not a quick config fix. Would need controller/
+  velocity-smoother tuning work to reduce further, treated as future work rather than
+  a blocker — data collection works fine as-is (goal reached, 100% MRM recovery).
+
 ---
 
 ## Data Collection Campaigns
 
 Goals: **007, 011, 021** — verified feasible on this machine (live route test 2026-06-27).
-All data collected fresh on the P5000 workstation.
+
+**Direction change (2026-07-21):** all experiments now run at max possible velocity
+(map limit, 11.11 m/s) — no more per-speed calibration set. `nom_v5`/`nom_v7`/`nom_v10`
+are kept as working `collect.sh` commands (harmless to run) but are no longer part of
+the data collection plan; `NOMINAL_DATASETS` in `st_gat/pipeline/config.py` only
+includes `baseline_all` + `nom_v11`.
 
 | Campaign | Command | What it tests |
 |----------|---------|---------------|
-| `nom_v5` | `./collect.sh nom_v5` | Nominal driving at 5 m/s — v5 calibration set |
-| `nom_v7` | `./collect.sh nom_v7` | Nominal driving at 7 m/s — v7 calibration set |
-| `nom_v10` | `./collect.sh nom_v10` | Nominal driving at 10 m/s — v10 calibration set |
+| `nom_v11` | `./collect.sh nom_v11` | Nominal driving at max velocity (11.11 m/s) — the only calibration set needed |
 | `obs_stuck` | `./collect.sh obs_stuck` | Obstacle — Autoware stops (avoidance=manual) |
 | `obs_recovery` | `./collect.sh obs_recovery` | Obstacle — Autoware swerves (avoidance=auto) |
 | `obs_noescape` | `./collect.sh obs_noescape` | 30m obstacle in single-lane (LL 241) — unsolvable baseline |
@@ -237,8 +279,9 @@ Default: 6 trials × 3 goals. Override with `--trials N --goals GOALS`.
 - **IEEE T-ITS 2025 Paper:** "Digital Twins as Predictive Models for Real-Time Probabilistic
   Risk Assessment of Autonomous Vehicles"
 - **Reference codebase:** `../Graph-Scene-Representation-and-Prediction/` (READ-ONLY — not a runtime
-  dependency; `Point`, `GraphBuilder`, and a trimmed `MapProcessor` are vendored into
-  `st_gat/pipeline/vendor/` instead of importing from it directly)
+  dependency; `Point`, `GraphBuilder`, and a trimmed `MapProcessor` are copied into
+  `st_gat/pipeline/Data_Curator/` and `st_gat/pipeline/State_Estimator/` — same
+  package/class names as the original, just not imported live from that repo)
 
 ## Contact
 

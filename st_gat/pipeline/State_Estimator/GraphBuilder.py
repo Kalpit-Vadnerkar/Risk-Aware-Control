@@ -1,10 +1,5 @@
-"""Vendored from Graph-Scene-Representation-and-Prediction/State_Estimator/GraphBuilder.py
-
-Only the import path changed (relative import of the vendored Point).
-"""
-
 import networkx as nx
-from .point import Point
+from ..Data_Curator.Point import Point
 
 
 class GraphBuilder:

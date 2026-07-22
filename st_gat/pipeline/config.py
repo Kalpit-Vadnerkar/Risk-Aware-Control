@@ -5,9 +5,10 @@ Design decisions documented here:
 
 TRAINING DATA
 ─────────────
-  Train  (80%): baseline_all + nom_v5 + nom_v7 + nom_v10
-  Cal    (20%): held-out split from each speed-level dataset
-                (used for conformal prediction calibration at each constraint level)
+  Train  (80%): baseline_all + nom_v11
+  Cal    (20%): held-out split from nom_v11 (single max-velocity operating condition —
+                per-speed calibration dropped 2026-07-21, all experiments run at max
+                velocity now)
   Test      : obs_recovery, obs_noescape  — NEVER in training.
                 Avoidance maneuvers must produce anomalous residuals;
                 training on them would teach the model that lane changes are nominal.
@@ -78,8 +79,10 @@ CAL_DIR        = os.path.join(SEQUENCES_DIR, 'calibration')
 
 # ── Data split ─────────────────────────────────────────────────────────────
 
-# Datasets to use for training + calibration (nominal behavior only)
-NOMINAL_DATASETS = ['baseline_all', 'nom_v5', 'nom_v7', 'nom_v11']
+# Datasets to use for training + calibration (nominal behavior only).
+# nom_v5/nom_v7 dropped 2026-07-21: all experiments now run at max velocity only,
+# so there's a single operating condition instead of per-speed calibration sets.
+NOMINAL_DATASETS = ['baseline_all', 'nom_v11']
 
 # Datasets reserved for inference/evaluation only
 TEST_DATASETS = ['obs_recovery', 'obs_noescape', 'obs_stuck']
@@ -87,11 +90,9 @@ TEST_DATASETS = ['obs_recovery', 'obs_noescape', 'obs_stuck']
 # Train/calibration split (per dataset, stratified by goal)
 CAL_FRACTION = 0.20
 
-# Speed labels for calibration stratification
+# Speed labels (currently unused — kept for the single remaining operating condition)
 SPEED_LABELS = {
     'baseline_all': 'default',
-    'nom_v5': '5ms',
-    'nom_v7': '7ms',
     'nom_v11': '11ms',
 }
 

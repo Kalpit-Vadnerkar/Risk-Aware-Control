@@ -1,5 +1,3 @@
-"""Vendored verbatim from Graph-Scene-Representation-and-Prediction/Data_Curator/Point.py"""
-
 from math import sqrt
 
 

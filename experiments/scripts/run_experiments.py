@@ -674,6 +674,9 @@ def main():
     parser = argparse.ArgumentParser(description='Run RISE validation experiments')
     parser.add_argument('--goals', type=str, default=None,
                         help='Comma-separated goal IDs (default: all)')
+    parser.add_argument('--goals-file', type=str, default=None,
+                        help='Path to goals JSON, filename resolved against '
+                             'experiments/configs/ if not absolute (default: captured_goals.json)')
     parser.add_argument('--condition', type=str, default='baseline',
                         help='Experiment condition (default: baseline)')
     parser.add_argument('--stuck-timeout', type=float, default=150.0,
@@ -730,8 +733,11 @@ def main():
         return 0
 
     # Load goals
+    goals_file = args.goals_file
+    if goals_file and not os.path.isabs(goals_file):
+        goals_file = os.path.join(CONFIG_DIR, goals_file)
     try:
-        all_goals = load_goals()
+        all_goals = load_goals(goals_file)
     except FileNotFoundError as e:
         print(f"ERROR: {e}")
         print("Run capture_goals_session.py first to capture goals.")
@@ -980,5 +986,12 @@ if __name__ == '__main__':
     # rclpy C++ destructors throw during Python's normal exit path, producing
     # "terminate called without an active exception" + core dump. os._exit()
     # bypasses Python garbage collection and atexit handlers, exiting cleanly.
+    # It also skips the normal stdio flush — without this, every print() since
+    # the last buffer flush (stdout is block-buffered when not a TTY) is
+    # silently lost, including error messages. Cost real debugging time
+    # (2026-07-21) tracking down a silent exit-1 that was actually a clear
+    # "ERROR: Goals file not found" message nobody ever saw.
+    sys.stdout.flush()
+    sys.stderr.flush()
     import os as _os
     _os._exit(exit_code)

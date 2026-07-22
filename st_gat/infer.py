@@ -431,7 +431,7 @@ def main():
 
     # ── Pre-load map and build routing graph (once, shared across all runs) ──
     print("[infer] Loading map (one-time, ~10-20s)...")
-    from st_gat.pipeline.vendor.map_processor import MapProcessor
+    from st_gat.pipeline.State_Estimator.MapProcessor import MapProcessor
     _map_processor = MapProcessor(cfg.MAP_FILE)
     _map_data      = _map_processor.map_data
 
