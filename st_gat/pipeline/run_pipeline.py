@@ -25,6 +25,7 @@ Notes:
 
 import argparse
 import json
+import math
 import os
 import pickle
 import random
@@ -117,7 +118,12 @@ def _train_cal_split(
     for goal, dirs in sorted(run_dirs_by_goal.items()):
         shuffled = dirs[:]
         rng.shuffle(shuffled)
-        n_cal = round(len(shuffled) * cal_fraction)   # 0 is fine for single-run goals
+        # ceil so that 2-run goals (round(2*0.20)=0) still contribute 1 cal run.
+        # Single-run goals stay in train (ceil(1*0.20)=1 would sacrifice the only run).
+        if len(shuffled) >= 2:
+            n_cal = math.ceil(len(shuffled) * cal_fraction)
+        else:
+            n_cal = 0
         cal_dirs.extend(shuffled[:n_cal])
         train_dirs.extend(shuffled[n_cal:])
 
