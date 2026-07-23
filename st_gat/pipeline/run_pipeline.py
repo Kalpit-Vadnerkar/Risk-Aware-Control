@@ -40,7 +40,13 @@ from .sequence_builder import SequenceBuilder
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _find_run_dirs(dataset: str) -> List[str]:
-    """Return sorted list of run directories for a dataset."""
+    """Return sorted list of trial run directories for a dataset.
+
+    Handles the nested layout used since 2026-07-22:
+        <dataset>/<goal_NNN>/<tN_timestamp>/rosbag/
+    Also handles the old flat layout (pre-2026-07-22):
+        <dataset>/<goal_NNN_campaign_tN_timestamp>/rosbag/
+    """
     dataset_dir = os.path.join(cfg.DATA_ROOT, dataset)
     if not os.path.isdir(dataset_dir):
         print(f"  [pipeline] WARNING: dataset dir not found: {dataset_dir}")
@@ -48,13 +54,18 @@ def _find_run_dirs(dataset: str) -> List[str]:
 
     runs = []
     for entry in sorted(os.listdir(dataset_dir)):
-        run_dir = os.path.join(dataset_dir, entry)
-        if not os.path.isdir(run_dir):
+        top_dir = os.path.join(dataset_dir, entry)
+        if not os.path.isdir(top_dir):
             continue
-        bag_dir = os.path.join(run_dir, 'rosbag')
-        if not os.path.isdir(bag_dir):
+        # Old flat layout: rosbag/ is directly inside this dir
+        if os.path.isdir(os.path.join(top_dir, 'rosbag')):
+            runs.append(top_dir)
             continue
-        runs.append(run_dir)
+        # New nested layout: goal_NNN/tN_timestamp/rosbag/
+        for trial_entry in sorted(os.listdir(top_dir)):
+            trial_dir = os.path.join(top_dir, trial_entry)
+            if os.path.isdir(trial_dir) and os.path.isdir(os.path.join(trial_dir, 'rosbag')):
+                runs.append(trial_dir)
     return runs
 
 
@@ -67,12 +78,22 @@ def _load_result(run_dir: str) -> dict:
 
 
 def _goal_from_run_dir(run_dir: str) -> str:
-    """Extract goal_id from the directory name (e.g., 'goal_007_...' → 'goal_007')."""
+    """Extract goal_id from a trial run directory.
+
+    New nested layout:  .../goal_007/t1_20260722_134547  → 'goal_007'
+    Old flat layout:    .../goal_007_nom_v11_t1_<ts>     → 'goal_007'
+    """
     basename = os.path.basename(run_dir)
     parts = basename.split('_')
     if len(parts) >= 2 and parts[0] == 'goal':
+        # Old flat layout: basename starts with 'goal_NNN'
         return f"{parts[0]}_{parts[1]}"
-    return basename
+    # New nested layout: trial dir is tN_<timestamp>; goal is the parent dirname
+    parent = os.path.basename(os.path.dirname(run_dir))
+    parent_parts = parent.split('_')
+    if len(parent_parts) >= 2 and parent_parts[0] == 'goal':
+        return f"{parent_parts[0]}_{parent_parts[1]}"
+    return parent
 
 
 def _train_cal_split(
@@ -126,7 +147,15 @@ def process_dataset(
     processed = 0
 
     for run_dir in run_dirs:
-        run_name = os.path.basename(run_dir)
+        # Build a unique name: for nested layout goal_007/t1_..., use goal_007_t1_...
+        # For old flat layout goal_007_nom_v11_t1_..., basename is already unique.
+        basename = os.path.basename(run_dir)
+        parent   = os.path.basename(os.path.dirname(run_dir))
+        if parent.startswith('goal_'):
+            run_name = f"{parent}_{basename}"
+        else:
+            run_name = basename
+
         bag_dir  = os.path.join(run_dir, 'rosbag')
         out_pkl  = os.path.join(out_dir, f"{run_name}.pkl")
 
@@ -208,10 +237,15 @@ def assemble_splits(
     os.makedirs(cfg.TRAIN_DIR, exist_ok=True)
     os.makedirs(cfg.CAL_DIR, exist_ok=True)
 
+    def _run_name_for(run_dir: str) -> str:
+        basename = os.path.basename(run_dir)
+        parent   = os.path.basename(os.path.dirname(run_dir))
+        return f"{parent}_{basename}" if parent.startswith('goal_') else basename
+
     def _link(run_dirs: List[str], dest_dir: str, tag: str):
         count = 0
         for run_dir in run_dirs:
-            run_name = os.path.basename(run_dir)
+            run_name = _run_name_for(run_dir)
             # Find which dataset this run belongs to
             for dataset in cfg.NOMINAL_DATASETS:
                 src = os.path.join(cfg.EXTRACTED_DIR, dataset, f"{run_name}.pkl")
