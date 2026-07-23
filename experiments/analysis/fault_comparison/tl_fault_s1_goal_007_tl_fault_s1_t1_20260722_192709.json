@@ -1,0 +1,50 @@
+{
+  "campaign": "tl_fault_s1",
+  "goal": "goal_007",
+  "trial": "goal_007_tl_fault_s1_t1_20260722_192709",
+  "fault_windows": [],
+  "discriminability": [
+    {
+      "feature": "velocity_mps",
+      "mean_abs_z_in_fault": NaN,
+      "mean_abs_z_out_of_fault": 0.933280255906749,
+      "delta": NaN,
+      "detectable": false
+    },
+    {
+      "feature": "acceleration_mps2",
+      "mean_abs_z_in_fault": NaN,
+      "mean_abs_z_out_of_fault": 0.3286963413925616,
+      "delta": NaN,
+      "detectable": false
+    },
+    {
+      "feature": "steering_rad",
+      "mean_abs_z_in_fault": NaN,
+      "mean_abs_z_out_of_fault": 0.5454962335565503,
+      "delta": NaN,
+      "detectable": false
+    },
+    {
+      "feature": "obj_distance_m",
+      "mean_abs_z_in_fault": NaN,
+      "mean_abs_z_out_of_fault": 1.3890817551652448,
+      "delta": NaN,
+      "detectable": false
+    },
+    {
+      "feature": "ekf_gt_divergence_m",
+      "mean_abs_z_in_fault": NaN,
+      "mean_abs_z_out_of_fault": 0.5277636050320156,
+      "delta": NaN,
+      "detectable": false
+    },
+    {
+      "feature": "tl_confidence",
+      "mean_abs_z_in_fault": NaN,
+      "mean_abs_z_out_of_fault": 0.5642650561218738,
+      "delta": NaN,
+      "detectable": false
+    }
+  ]
+}

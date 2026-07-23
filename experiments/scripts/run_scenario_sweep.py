@@ -39,7 +39,7 @@ from typing import Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 from config import (
-    ExperimentConfig, load_goals, DATA_DIR, SCRIPTS_DIR, CONFIG_DIR,
+    ExperimentConfig, load_goals, DATA_DIR, SCRIPTS_DIR, CONFIG_DIR, campaign_meta_dir,
 )
 from scenarios import load_scenario
 
@@ -150,6 +150,8 @@ def run_single_experiment(exp: dict, goals_map: dict, stuck_timeout: float,
     config = ExperimentConfig(
         experiment_id=exp_id,
         goal=goal_config,
+        trial_num=exp['trial'],
+        timestamp=timestamp,
         stuck_timeout=stuck_timeout,
         condition=exp['condition'],
         scenario_type=exp['scenario_type'],
@@ -375,10 +377,10 @@ def main():
     print(summary)
 
     # Save results
-    campaign_dir = os.path.join(DATA_DIR, campaign)
-    os.makedirs(campaign_dir, exist_ok=True)
+    meta_dir = campaign_meta_dir(campaign)
+    os.makedirs(meta_dir, exist_ok=True)
     sweep_file = os.path.join(
-        campaign_dir,
+        meta_dir,
         f'sweep_{scenario_name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
     )
     with open(sweep_file, 'w') as f:

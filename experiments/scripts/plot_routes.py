@@ -134,7 +134,7 @@ def read_trajectory(bag_dir):
 
 
 def find_experiments(data_dir, goal_id):
-    return sorted(glob.glob(os.path.join(data_dir, f'{goal_id}_*')))
+    return sorted(glob.glob(os.path.join(data_dir, goal_id, 't*')))
 
 
 def plot_goal(map_data, goal, data_dir, output_dir, margin):

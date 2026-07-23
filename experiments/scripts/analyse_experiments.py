@@ -60,19 +60,28 @@ def load_experiment(exp_dir: str) -> Optional[dict]:
 
 
 def load_campaign(campaign_name: str) -> List[dict]:
+    """data/<campaign>/<goal_id>/<trial_dirname>/ — nested by goal (not the old
+    flat data/<campaign>/<goal_id>_<campaign>_t<N>_<timestamp>/). `_meta/` (batch
+    summaries, fault logs) is skipped since it's not a goal directory."""
     campaign_dir = os.path.join(DATA_DIR, campaign_name)
     if not os.path.isdir(campaign_dir):
         print(f'[WARN] Campaign directory not found: {campaign_dir}')
         return []
     exps = []
-    for name in sorted(os.listdir(campaign_dir)):
-        if not name.startswith('goal_'):
+    for goal_id in sorted(os.listdir(campaign_dir)):
+        if not goal_id.startswith('goal_'):
             continue
-        e = load_experiment(os.path.join(campaign_dir, name))
-        if e:
-            e['name'] = name
-            e['campaign'] = campaign_name
-            exps.append(e)
+        goal_dir = os.path.join(campaign_dir, goal_id)
+        if not os.path.isdir(goal_dir):
+            continue
+        for trial_dirname in sorted(os.listdir(goal_dir)):
+            e = load_experiment(os.path.join(goal_dir, trial_dirname))
+            if e:
+                e['name'] = f'{goal_id}_{trial_dirname}'  # reconstructs the old
+                # "goal_XXX_tN_timestamp"-style label so _goal_id()/trial parsing
+                # below keep working unchanged.
+                e['campaign'] = campaign_name
+                exps.append(e)
     return exps
 
 

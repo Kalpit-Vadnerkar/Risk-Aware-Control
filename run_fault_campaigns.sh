@@ -8,7 +8,11 @@
 #
 # Usage:
 #   ./run_fault_campaigns.sh [--goals GOALS] [--goals-file FILE] [--trials N]
-#                            [--campaigns "c1 c2 ..."] [--dry-run]
+#                            [--campaigns "c1 c2 ..."] [--confirm-each] [--dry-run]
+#
+# Runs unattended by default (no "Press Enter" prompt between campaigns) since
+# the whole point of this script is chaining several campaigns in one command.
+# Pass --confirm-each to restore the per-campaign confirmation pause.
 #
 # Examples:
 #   # Smoke test: goal_007 only, 1 trial, all 8 fault campaigns
@@ -34,14 +38,16 @@ GOALS_FILE="$SCRIPT_DIR/experiments/configs/captured_goals.json"
 TRIALS=3
 CAMPAIGNS="tl_fault_s1 tl_fault_s2 tl_fault_s3 tl_fault_s4 imu_fault_s1 imu_fault_s2 imu_fault_s3 imu_fault_s4"
 DRY_RUN=""
+YES="--yes"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --goals)      GOALS="$2";      shift 2 ;;
-        --goals-file) GOALS_FILE="$2"; shift 2 ;;
-        --trials)     TRIALS="$2";     shift 2 ;;
-        --campaigns)  CAMPAIGNS="$2";  shift 2 ;;
-        --dry-run)    DRY_RUN="--dry-run"; shift ;;
+        --goals)         GOALS="$2";      shift 2 ;;
+        --goals-file)    GOALS_FILE="$2"; shift 2 ;;
+        --trials)        TRIALS="$2";     shift 2 ;;
+        --campaigns)     CAMPAIGNS="$2";  shift 2 ;;
+        --confirm-each)  YES="";          shift ;;
+        --dry-run)       DRY_RUN="--dry-run"; shift ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -59,7 +65,7 @@ echo ""
 
 for c in $CAMPAIGNS; do
     echo -e "${GREEN}── ${c} ──${NC}"
-    ./collect.sh "$c" --goals "$GOALS" --goals-file "$GOALS_FILE" --trials "$TRIALS" $DRY_RUN
+    ./collect.sh "$c" --goals "$GOALS" --goals-file "$GOALS_FILE" --trials "$TRIALS" $YES $DRY_RUN
     echo ""
 done
 

@@ -18,6 +18,13 @@ DATA_DIR = os.path.join(EXPERIMENTS_DIR, 'data')
 SCRIPTS_DIR = os.path.join(EXPERIMENTS_DIR, 'scripts')
 
 
+def campaign_meta_dir(campaign: str) -> str:
+    """Campaign-level (not per-goal) files — batch summaries, the running
+    fault_log.jsonl — live here instead of loose at the campaign root, so
+    `data/<campaign>/` only ever contains goal subdirectories."""
+    return os.path.join(DATA_DIR, campaign, '_meta')
+
+
 # Topics to record during experiments
 RECORDING_TOPICS = [
     # Core state & transforms
@@ -30,6 +37,7 @@ RECORDING_TOPICS = [
 
     # IMU - raw sensor data (acceleration feature source; needed for IMU fault injection)
     '/sensing/imu/imu_data',
+    '/sensing/imu/imu_data_faulted',         # what gyro_odometer actually consumes (may be biased)
 
     # Vehicle status
     '/vehicle/status/velocity_status',
@@ -48,10 +56,10 @@ RECORDING_TOPICS = [
     '/perception/object_recognition/tracking/objects',
 
     # Perception - traffic lights
-    # traffic_signals_raw: raw recognition output (pre-fault-injection)
-    # traffic_signals: what planning sees (may be faulted by fault_injector)
-    '/perception/traffic_light_recognition/traffic_signals_raw',
+    # traffic_signals: Autoware's real, unmodified recognition output
+    # traffic_signals_faulted: what behavior_planning actually consumes (may be faulted)
     '/perception/traffic_light_recognition/traffic_signals',
+    '/perception/traffic_light_recognition/traffic_signals_faulted',
     '/perception/traffic_light_recognition/traffic_light_states',
 
     # Planning - trajectories & paths
@@ -114,6 +122,8 @@ class ExperimentConfig:
     """Configuration for a single experiment run."""
     experiment_id: str
     goal: GoalConfig
+    trial_num: int = 1
+    timestamp: str = ''  # if empty, generated at construction time
     stuck_timeout: float = 90.0
     stabilization_delay: float = 5.0  # Wait after DRIVING state before recording
     condition: str = 'baseline'  # baseline, fault_xxx, rise_xxx
@@ -131,7 +141,12 @@ class ExperimentConfig:
     metrics_file: str = field(init=False)
 
     def __post_init__(self):
-        self.data_dir = os.path.join(DATA_DIR, self.campaign, self.experiment_id)
+        ts = self.timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')
+        trial_dirname = f't{self.trial_num}_{ts}'
+        # data/<campaign>/<goal_id>/t<N>_<timestamp>/ — groups all trials of one
+        # goal together instead of a flat listing with goal/campaign repeated in
+        # every trial name (see README.md / CLAUDE.md directory conventions).
+        self.data_dir = os.path.join(DATA_DIR, self.campaign, self.goal.id, trial_dirname)
         self.rosbag_dir = os.path.join(self.data_dir, 'rosbag')
         self.metadata_file = os.path.join(self.data_dir, 'metadata.json')
         self.result_file = os.path.join(self.data_dir, 'result.json')

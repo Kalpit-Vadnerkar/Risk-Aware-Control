@@ -55,10 +55,11 @@ TRIALS=6
 GOALS="goal_007,goal_011,goal_021"
 GOALS_FILE=""
 DRY_RUN=""
+YES=""
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
-    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--dry-run]${NC}"
+    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--yes] [--dry-run]${NC}"
     echo ""
     echo "Campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
     echo "           tl_fault_s1..s4  imu_fault_s1..s4"
@@ -72,6 +73,7 @@ while [[ $# -gt 0 ]]; do
         --trials)      TRIALS="$2";     shift 2 ;;
         --goals)       GOALS="$2";      shift 2 ;;
         --goals-file)  GOALS_FILE="$2"; shift 2 ;;
+        --yes|-y)      YES="--yes";     shift ;;
         --dry-run)     DRY_RUN="--dry-run"; shift ;;
         *) echo -e "${RED}Unknown argument: $1${NC}"; exit 1 ;;
     esac
@@ -111,6 +113,7 @@ run() {
         --stuck-timeout 200 \
         "${goals_file_arg[@]}" \
         $DRY_RUN \
+        $YES \
         "$@"
 }
 

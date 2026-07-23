@@ -207,6 +207,46 @@ fire a brief MRM.
 — `timeout_operation_mode_availability` bumped 0.5s → 1.0s as a second layer of
 tolerance for brief transients (same philosophy as the item 3/4 fixes above).
 
+### 8. Fault-injector topic wiring (found 2026-07-22)
+
+The TL and IMU fault campaigns (`experiments/lib/fault_injector.py`) silently had
+zero effect on the vehicle — confirmed via `fault_log.jsonl` showing
+`msg_count_tl: 0` across all 4 `tl_fault_s1..s4` campaigns' first real trials,
+and zero behavioral difference from nominal via
+`experiments/scripts/compare_fault_vs_nominal.py`. Root cause was topic wiring,
+not injection logic — two different bugs, same category:
+
+- **TL:** the injector subscribed to `.../traffic_signals_raw`, a topic that
+  doesn't exist anywhere in this Autoware install (there is no raw/final split
+  in the TL pipeline — grepped the full source tree, zero hits). It never
+  received a single message. Fixed by subscribing to Autoware's real final
+  output (`traffic_signals`, left unmodified) and publishing to a new
+  `traffic_signals_faulted` topic instead — mirroring the objects pattern below.
+- **IMU:** the injector's wiring was already correct (subscribes real
+  `imu_data`, publishes `imu_data_faulted`) — but nothing consumed the faulted
+  topic. `gyro_odometer` still defaulted to reading the original `imu_data`, so
+  the bias was computed and logged but never reached the EKF.
+
+**Fix (mirrors item 2's `objects` → `objects_filtered` pattern exactly — leave
+Autoware's own perception output alone, repoint the *consumer*):**
+
+| File | Change |
+|------|--------|
+| `launch/scenario_planning/lane_driving/behavior_planning/behavior_planning.launch.xml` line 9 | `input_traffic_light_topic_name` → `/perception/traffic_light_recognition/traffic_signals_faulted` |
+| `autoware_gyro_odometer`'s `launch/gyro_odometer.launch.xml` line 4 | `input_imu_topic` → `/sensing/imu/imu_data_faulted` |
+
+Both topics only carry real (possibly-faulted) data once `fault_injector.py` is
+running — but that's already unconditional for every campaign including
+nominal (`run_experiments.py`: "always-running relay; passthrough when no
+fault specified"), same as the `objects` interceptor, so nominal collection is
+unaffected. `experiments/lib/config.py`'s `RECORDING_TOPICS` updated to record
+both the faulted and unmodified topics for each sensor (was recording the
+nonexistent `traffic_signals_raw` and missing `imu_data_faulted` entirely).
+**Requires an Autoware restart to take effect** (launch-file args are
+load-time only) — any `tl_fault_*`/`imu_fault_*` trials collected before this
+fix should be treated as invalid (the fault never reached the vehicle) and
+rerun.
+
 **Validated 2026-07-21** (Autoware restarted to pick up the new params — these are
 load-time, not hot-reloadable): the targeted `ekf_localizer` twist warnings dropped from
 261 to 5 in a fresh `nom_v11` trial. Confirmed via `ros2 param get` that both nodes

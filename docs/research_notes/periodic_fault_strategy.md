@@ -273,6 +273,43 @@ change needed there.
 
 ---
 
+## 6. Critical bugs found via the goal_007 smoke test (2026-07-22)
+
+The smoke test did exactly what it was for: all 4 `tl_fault_s1..s4` trials
+showed zero behavioral effect, and IMU was suspected of the same before its
+run even finished. Two independent bugs, confirmed via
+`compare_fault_vs_nominal.py` plus direct log inspection:
+
+1. **TL fault never fired at all.** `fault_injector.py` subscribed to
+   `.../traffic_signals_raw`, a topic that doesn't exist anywhere in this
+   Autoware install (no raw/final split in the TL pipeline) — confirmed
+   `msg_count_tl: 0` in all 4 campaigns' logs. Fixed by subscribing to
+   Autoware's real output and publishing a new `_faulted` topic, plus the
+   matching Autoware-side consumer patch (`behavior_planning.launch.xml`) —
+   see README.md item 8 for full detail.
+2. **IMU fault fired but was orphaned.** The injector correctly computed and
+   logged bias cycles, but `gyro_odometer` still defaulted to reading the
+   original `imu_data`, never `imu_data_faulted` — confirmed via
+   `compare_fault_vs_nominal.py` showing `ekf_gt_divergence_m` barely
+   different in-fault vs. out (0.069m vs 0.058m) despite 4 real bias cycles
+   firing. Fixed via `gyro_odometer.launch.xml`'s `input_imu_topic` default.
+3. **A third, self-inflicted bug in the comparison script itself**, found
+   while verifying fix #2: `extract_fault_windows` originally aligned
+   `fault_log.jsonl` events to the bag using `sim_time_sec` — but that's
+   AWSIM's own simulation clock (small numbers counting up from Autoware
+   boot), while rosbag2's recorded message timestamps are real wall-clock
+   time. The two clocks are unrelated, so this silently produced 0 matched
+   windows every time — indistinguishable from "the fault never fired" at a
+   glance. Caught because the IMU trial's own fault_log *proved* (via its
+   event stream) that bias cycles genuinely ran, contradicting the "0
+   windows" result. Fixed by using each event's `wall_time` field instead.
+
+**All `tl_fault_s1..s4` and `imu_fault_s1..s4` goal_007 data collected before
+these fixes is invalid** — rerun after restarting Autoware (the launch-file
+changes are load-time only).
+
+---
+
 ## Papers downloaded (`docs/papers/`, gitignored)
 
 | File | Contributes |

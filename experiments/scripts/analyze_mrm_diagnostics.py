@@ -116,8 +116,8 @@ def print_whole_trial_summary(summary: dict):
 
 
 def run_batch(data_dir: str):
-    """Scan every goal_*/rosbag under data_dir, flag anomalies."""
-    exp_dirs = sorted(glob.glob(os.path.join(data_dir, 'goal_*')))
+    """Scan every goal_*/t*/rosbag under data_dir, flag anomalies."""
+    exp_dirs = sorted(glob.glob(os.path.join(data_dir, 'goal_*', 't*')))
     print(f"Scanning {len(exp_dirs)} experiments under {data_dir}\n")
     for exp_dir in exp_dirs:
         bag_dir = os.path.join(exp_dir, 'rosbag')
@@ -417,15 +417,14 @@ def main():
 
     bag_path = args.bag_path
     if bag_path is None:
-        # Default to most recent experiment
+        # Default to most recent experiment. Layout is
+        # data/<campaign>/<goal_id>/<trial_dirname>/rosbag — search two levels
+        # down from data/ for the first match.
         script_dir = os.path.dirname(os.path.abspath(__file__))
         data_dir = os.path.join(script_dir, '..', 'data')
-
-        # Find first goal directory with rosbag
-        for item in sorted(os.listdir(data_dir)):
-            bag_path = os.path.join(data_dir, item, 'rosbag')
-            if os.path.isdir(bag_path):
-                break
+        candidates = sorted(glob.glob(os.path.join(data_dir, '*', 'goal_*', 't*', 'rosbag')))
+        if candidates:
+            bag_path = candidates[-1]
         else:
             print("ERROR: No rosbag found in data directory")
             print("Usage: python3 analyze_mrm_diagnostics.py <rosbag_path>")

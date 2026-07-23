@@ -137,6 +137,19 @@ and 2 respectively; see `periodic_fault_strategy.md` §4). `--fault-duration`
 recorded TL-zone dwell times (shortest observed: ~21s, on `goal_012`) — see §4.1.
 Still not yet run — see the run commands at the end of that doc.
 
+**Critical bug found and fixed (2026-07-22): fault campaigns had zero effect.**
+goal_007 smoke-test trials for `tl_fault_s1..s4` (all 4) confirmed dead —
+`msg_count_tl: 0` in every campaign's `fault_log.jsonl`, and
+`compare_fault_vs_nominal.py` showed zero behavioral difference from nominal.
+IMU trials were stopped mid-run on the same suspicion and confirmed dead by
+static analysis (not runtime) before finishing. Root cause was Autoware topic
+wiring, not the injection logic — see README.md item 8 for the full
+before/after. Fixed: `fault_injector.py`'s TL topic names, two Autoware launch
+XML defaults (`behavior_planning.launch.xml`, `gyro_odometer.launch.xml`), and
+`config.py`'s `RECORDING_TOPICS`. **All `tl_fault_s1..s4`/`imu_fault_s1..s2`
+goal_007 data collected before this fix is invalid (the fault never reached
+the vehicle) — rerun after restarting Autoware.**
+
 ---
 
 ## Phase 1: ST-GAT Training

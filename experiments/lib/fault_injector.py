@@ -4,8 +4,21 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. TRAFFIC LIGHT CAMERA FAULT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  IN:  /perception/traffic_light_recognition/traffic_signals_raw
-  OUT: /perception/traffic_light_recognition/traffic_signals
+  IN:  /perception/traffic_light_recognition/traffic_signals          (Autoware's real final output)
+  OUT: /perception/traffic_light_recognition/traffic_signals_faulted  (requires an Autoware-side
+                                                                        patch — see README.md — to
+                                                                        repoint behavior_planning's
+                                                                        input_traffic_light_topic_name
+                                                                        here; mirrors the
+                                                                        objects → objects_filtered
+                                                                        pattern)
+
+  BUG FIXED 2026-07-22: this previously subscribed to a "_raw" topic that
+  Autoware never publishes (there is no raw/final split in this Autoware
+  install's TL pipeline) — the relay received zero messages and every TL
+  fault silently never fired. Confirmed via msg_count_tl=0 in fault_log.jsonl
+  across all 4 tl_fault_s1..s4 campaigns' first real trials, and zero
+  behavioral difference from nominal via compare_fault_vs_nominal.py.
 
   Timing model (zone-triggered periodic, revised 2026-07-22):
     1. Vehicle drives nominally for --fault-delay seconds.
@@ -226,14 +239,18 @@ class FaultInjector(Node):
         self._imu_bias_on_cycles  = 0
 
         # ── Traffic light relay ───────────────────────────────────────────────
+        # Subscribes to Autoware's REAL final TL output (unchanged on the
+        # Autoware side) and publishes a new "_faulted" topic — behavior_planning
+        # must be repointed to consume it (Autoware-side patch, see README.md),
+        # mirroring the objects → objects_filtered pattern.
         self._tl_pub = self.create_publisher(
             TrafficLightGroupArray,
-            '/perception/traffic_light_recognition/traffic_signals',
+            '/perception/traffic_light_recognition/traffic_signals_faulted',
             _PERCEPTION_QOS,
         )
         self._tl_sub = self.create_subscription(
             TrafficLightGroupArray,
-            '/perception/traffic_light_recognition/traffic_signals_raw',
+            '/perception/traffic_light_recognition/traffic_signals',
             self._on_tl,
             _PERCEPTION_QOS,
         )

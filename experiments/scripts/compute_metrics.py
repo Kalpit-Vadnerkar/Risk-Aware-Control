@@ -55,15 +55,13 @@ def main():
     print(f"Recompute: {args.recompute}")
     print()
 
-    # If recompute, delete existing metrics files
+    # If recompute, delete existing metrics files.
+    # data/<campaign>/<goal_id>/<trial_dirname>/ — nested by goal.
     if args.recompute:
-        exp_dirs = [d for d in os.listdir(data_dir)
-                   if os.path.isdir(os.path.join(data_dir, d)) and d.startswith('goal_')]
-        for exp_dir in exp_dirs:
-            metrics_file = os.path.join(data_dir, exp_dir, 'metrics.json')
-            if os.path.exists(metrics_file):
-                os.remove(metrics_file)
-                print(f"Removed: {metrics_file}")
+        import glob
+        for metrics_file in glob.glob(os.path.join(data_dir, 'goal_*', '*', 'metrics.json')):
+            os.remove(metrics_file)
+            print(f"Removed: {metrics_file}")
         print()
 
     # Compute metrics

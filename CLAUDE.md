@@ -69,8 +69,13 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
   repo root — keep it that way when adding new scripts).
 - `experiments/analysis/` — output artifacts from analysis scripts (route maps,
   feasibility reports). Not raw experiment data.
-- `experiments/data/<campaign>/goal_XXX_<campaign>_t<N>_<timestamp>/` — one dir per
-  trial: `result.json`, `metadata.json`, `metrics.json`, `fault_log.jsonl`, `rosbag/`.
+- `experiments/data/<campaign>/<goal_id>/t<N>_<timestamp>/` — one dir per trial:
+  `result.json`, `metadata.json`, `metrics.json`, `fault_log.jsonl`, `rosbag/`.
+  Nested by goal (revised 2026-07-22, was flat with the campaign name repeated
+  in every trial dirname — `goal_XXX_<campaign>_t<N>_<timestamp>/`). Campaign-level
+  files (batch summaries, the running fault log) live in `<campaign>/_meta/`,
+  not loose at the campaign root — so `experiments/data/<campaign>/` only ever
+  contains goal subdirectories plus `_meta/`.
 - `experiments/configs/captured_goals.json` — the **operative** goal set (currently
   26 goals; edited in place when a goal gets replaced/added — see its neighbor
   `captured_goals_original.json`, a frozen historical snapshot, kept for comparison,
@@ -92,6 +97,15 @@ hide real problems (or hide nothing at all). Run, in order:
 3. `experiments/scripts/plot_routes.py --goal <ids> --goals-file captured_goals.json`
    — needs ROS sourced; visual sanity check, trims the map to the route, colors by
    outcome, shows traffic light locations.
+
+For fault campaigns specifically (`tl_fault_s1..s4`, `imu_fault_s1..s4`), also run
+`experiments/scripts/compare_fault_vs_nominal.py --campaign <name> --goal <goal_id>`
+— needs ROS sourced; verifies the fault actually changed the signal it targets
+(TL confidence/color, or EKF-vs-ground-truth divergence for IMU) rather than just
+trusting that `fault_log.jsonl` logged a cycle, and ranks candidate ST-GAT state
+features by how strongly each responds to the fault. See
+`docs/research_notes/periodic_fault_strategy.md` for the fault-injection design
+this checks against.
 
 A trial with `mrm_trigger_count: 0` is not automatically clean — that count only
 reflects Autoware's own MRM state machine, not whether the vehicle actually moved.

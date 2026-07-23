@@ -833,32 +833,31 @@ def compute_all_metrics(data_dir: str, output_file: Optional[str] = None) -> Tup
     Returns:
         Tuple of (metrics_list, summary_table_string)
     """
+    import glob
     import os
 
     metrics_list = []
     goal_ids = []
 
-    # Find all experiment directories
-    exp_dirs = sorted([d for d in os.listdir(data_dir)
-                      if os.path.isdir(os.path.join(data_dir, d)) and d.startswith('goal_')])
+    # data/<campaign>/<goal_id>/<trial_dirname>/ — nested by goal (not the old
+    # flat data/<campaign>/<goal_id>_<campaign>_t<N>_<timestamp>/).
+    exp_paths = sorted(glob.glob(os.path.join(data_dir, 'goal_*', '*')))
+    exp_paths = [p for p in exp_paths if os.path.isdir(p)]
 
-    print(f"Found {len(exp_dirs)} experiments in {data_dir}")
+    print(f"Found {len(exp_paths)} experiments in {data_dir}")
 
-    for exp_dir in exp_dirs:
-        exp_path = os.path.join(data_dir, exp_dir)
+    for exp_path in exp_paths:
         rosbag_path = os.path.join(exp_path, 'rosbag')
         metrics_file = os.path.join(exp_path, 'metrics.json')
-
-        # Extract goal ID
-        parts = exp_dir.split('_')
-        goal_id = f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else exp_dir
+        goal_id = os.path.basename(os.path.dirname(exp_path))
+        label = f'{goal_id}/{os.path.basename(exp_path)}'
 
         # Check if metrics already computed
         if os.path.exists(metrics_file):
-            print(f"  Loading existing metrics for {goal_id}")
+            print(f"  Loading existing metrics for {label}")
             metrics = load_metrics(metrics_file)
         elif os.path.exists(rosbag_path):
-            print(f"  Computing metrics for {goal_id}...")
+            print(f"  Computing metrics for {label}...")
             try:
                 exp_metrics = compute_metrics_from_bag(rosbag_path)
                 metrics = exp_metrics.to_dict()
@@ -867,7 +866,7 @@ def compute_all_metrics(data_dir: str, output_file: Optional[str] = None) -> Tup
                 print(f"    ERROR: {e}")
                 continue
         else:
-            print(f"  Skipping {goal_id} - no rosbag found")
+            print(f"  Skipping {label} - no rosbag found")
             continue
 
         metrics_list.append(metrics)

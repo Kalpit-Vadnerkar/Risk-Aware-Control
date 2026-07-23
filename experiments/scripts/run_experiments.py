@@ -58,7 +58,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 from config import (
     ExperimentConfig, GoalConfig, load_goals,
-    get_recording_topics, DATA_DIR, SCRIPTS_DIR, CONFIG_DIR
+    get_recording_topics, DATA_DIR, SCRIPTS_DIR, CONFIG_DIR, campaign_meta_dir
 )
 from ros_utils import (
     wait_for_topic, get_autoware_state, get_mrm_state, get_velocity,
@@ -653,20 +653,21 @@ def reset_vehicle(max_retries: int = 2):
     return False
 
 
-def check_experiment_exists(goal_id: str, condition: str, data_dir: str) -> bool:
+def check_experiment_exists(goal_id: str, campaign_dir: str) -> bool:
     """Check if a successful experiment already exists for this goal."""
-    # Look for existing experiment directories
-    for entry in os.listdir(data_dir):
-        if entry.startswith(f"{goal_id}_{condition}_"):
-            result_file = os.path.join(data_dir, entry, 'result.json')
-            if os.path.exists(result_file):
-                try:
-                    with open(result_file) as f:
-                        result = json.load(f)
-                    if result.get('goal_reached') or result.get('status') == 'goal_reached':
-                        return True
-                except:
-                    pass
+    goal_dir = os.path.join(campaign_dir, goal_id)
+    if not os.path.isdir(goal_dir):
+        return False
+    for entry in os.listdir(goal_dir):
+        result_file = os.path.join(goal_dir, entry, 'result.json')
+        if os.path.exists(result_file):
+            try:
+                with open(result_file) as f:
+                    result = json.load(f)
+                if result.get('goal_reached') or result.get('status') == 'goal_reached':
+                    return True
+            except Exception:
+                pass
     return False
 
 
@@ -689,6 +690,8 @@ def main():
                         help='Skip goals that already have successful results')
     parser.add_argument('--dry-run', action='store_true',
                         help='Show what would run without executing')
+    parser.add_argument('--yes', '-y', action='store_true',
+                        help='Skip the "Press Enter to start" confirmation (for unattended/scripted runs)')
     parser.add_argument('--compute-metrics-only', type=str, default=None,
                         help='Only compute metrics for existing experiment')
     parser.add_argument('--scenario', type=str, default=None,
@@ -799,7 +802,7 @@ def main():
         return 0
 
     print()
-    if sys.stdin.isatty():
+    if sys.stdin.isatty() and not args.yes:
         input("Press Enter to start experiments (Ctrl+C to cancel)...")
 
     # Apply velocity limit if specified
@@ -828,8 +831,9 @@ def main():
     fault_injector_proc = None
     tl_params_parsed  = json.loads(args.tl_params) if isinstance(args.tl_params, str) else args.tl_params
     imu_params_parsed = json.loads(args.imu_params) if isinstance(args.imu_params, str) else args.imu_params
-    batch_fault_log   = os.path.join(DATA_DIR, args.campaign, 'fault_log.jsonl')
-    os.makedirs(os.path.join(DATA_DIR, args.campaign), exist_ok=True)
+    meta_dir          = campaign_meta_dir(args.campaign)
+    batch_fault_log   = os.path.join(meta_dir, 'fault_log.jsonl')
+    os.makedirs(meta_dir, exist_ok=True)
     try:
         print(f"\nStarting fault injector: tl={args.tl_fault or 'passthrough'}, imu={args.imu_fault or 'passthrough'}")
         fault_injector_proc = start_fault_injector(
@@ -863,7 +867,7 @@ def main():
                 # Check if we should skip this goal
                 campaign_dir = os.path.join(DATA_DIR, args.campaign)
                 if args.skip_existing and os.path.isdir(campaign_dir):
-                    if check_experiment_exists(goal.id, args.condition, campaign_dir):
+                    if check_experiment_exists(goal.id, campaign_dir):
                         print(f"SKIPPING: {goal.id} already has successful result")
                         skipped_count += 1
                         continue
@@ -883,6 +887,8 @@ def main():
                 config = ExperimentConfig(
                     experiment_id=exp_id,
                     goal=goal,
+                    trial_num=trial + 1,
+                    timestamp=timestamp,
                     stuck_timeout=args.stuck_timeout,
                     condition=args.condition,
                     scenario_type=scenario_type,
@@ -958,9 +964,9 @@ def main():
         print(f"  {r['experiment_id']}: {status} (MRM: {mrm}, Time: {time_str})")
 
     # Save summary
-    campaign_dir = os.path.join(DATA_DIR, args.campaign)
-    os.makedirs(campaign_dir, exist_ok=True)
-    summary_file = os.path.join(campaign_dir, f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    meta_dir = campaign_meta_dir(args.campaign)
+    os.makedirs(meta_dir, exist_ok=True)
+    summary_file = os.path.join(meta_dir, f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
     with open(summary_file, 'w') as f:
         json.dump({
             'timestamp': datetime.now().isoformat(),
