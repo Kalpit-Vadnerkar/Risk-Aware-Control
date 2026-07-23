@@ -1,0 +1,75 @@
+{
+  "campaign": "imu_fault_s1",
+  "goal": "goal_007",
+  "trial": "t1_20260722_205806",
+  "fault_windows": [
+    {
+      "start": 27.924126148223877,
+      "end": 57.955368757247925,
+      "reason": "bias_on",
+      "cycle": null
+    },
+    {
+      "start": 87.98537135124207,
+      "end": 118.0153636932373,
+      "reason": "bias_on",
+      "cycle": null
+    },
+    {
+      "start": 148.04608917236328,
+      "end": 178.07635951042175,
+      "reason": "bias_on",
+      "cycle": null
+    },
+    {
+      "start": 208.1063678264618,
+      "end": 238.13638424873352,
+      "reason": "bias_on",
+      "cycle": null
+    }
+  ],
+  "discriminability": [
+    {
+      "feature": "ekf_gt_divergence_m",
+      "mean_abs_z_in_fault": 1.0442016213382201,
+      "mean_abs_z_out_of_fault": 0.5741903845393772,
+      "delta": 0.47001123679884294,
+      "detectable": false
+    },
+    {
+      "feature": "acceleration_mps2",
+      "mean_abs_z_in_fault": 0.6139914071487471,
+      "mean_abs_z_out_of_fault": 0.3114889831657067,
+      "delta": 0.3025024239830404,
+      "detectable": false
+    },
+    {
+      "feature": "obj_distance_m",
+      "mean_abs_z_in_fault": 1.3297774379335527,
+      "mean_abs_z_out_of_fault": 1.3389113513642308,
+      "delta": -0.009133913430678042,
+      "detectable": false
+    },
+    {
+      "feature": "steering_rad",
+      "mean_abs_z_in_fault": 0.4396515660834425,
+      "mean_abs_z_out_of_fault": 0.5124799448914268,
+      "delta": -0.07282837880798426,
+      "detectable": false
+    },
+    {
+      "feature": "velocity_mps",
+      "mean_abs_z_in_fault": 1.1323161100647166,
+      "mean_abs_z_out_of_fault": 1.2325842248462986,
+      "delta": -0.10026811478158204,
+      "detectable": false
+    },
+    {
+      "feature": "tl_confidence",
+      "mean_abs_z_in_fault": 0.4824396923993711,
+      "mean_abs_z_out_of_fault": 0.7240245766881291,
+      "delta": -0.24158488428875802,
+      "detectable": false
+    }
+  ]
+}

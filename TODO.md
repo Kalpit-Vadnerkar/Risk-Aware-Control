@@ -150,6 +150,54 @@ XML defaults (`behavior_planning.launch.xml`, `gyro_odometer.launch.xml`), and
 goal_007 data collected before this fix is invalid (the fault never reached
 the vehicle) — rerun after restarting Autoware.**
 
+**Rerun confirmed the fix works — plus a real IMU severity problem (2026-07-23).**
+Reran goal_007 (`tl_fault_s1..s4`, `imu_fault_s1..s2` — `s3/s4` not run, stopped
+after `s2`'s outcome below). TL: message-level fault now clearly confirmed
+across all 4 tiers (`tl_confidence` z-scores 4.29-8.61 vs ~1.5-2.1 nominal,
+0% detection rate under blackout, 100% UNKNOWN under S3) — but no tier produced
+a detectable velocity/steering response on this route/trial; open question for
+more goals/trials, not a wiring problem. IMU: **S2 (old: gyro=0.15 rad/s, 30s
+on) caused a hard-brake + permanent stuck within the first fault cycle**
+(`status: stuck`, 1 MRM trigger, EKF-vs-ground-truth divergence jumped
+0→14.5m and plateaued since the vehicle stopped moving) — only a 3x bias
+increase from S1 (which was safe with a real, measurable effect) crossed from
+mild to catastrophic, implying a stability cliff well before the old S2's
+~4.5 rad accumulated heading error (gyro_bias_rads × on_seconds — integrates
+into heading error that does NOT reset when the bias turns off, unlike TL
+faults). **Redesigned all 4 IMU tiers in `collect.sh`** to bound accumulated
+heading error ≤1.2 rad (S1=0.03/20s, S2=0.05/20s, S3=0.08/15s, S4=0.12/10s,
+all with a uniform 30s recovery gap) — a hypothesis pending validation on the
+next run, not a guarantee, given the cliff-edge (not smooth) sensitivity
+observed. `run_fault_campaigns.sh` results/plots for this rerun are in
+`experiments/analysis/fault_comparison/`.
+
+**ST-GAT feature vector changed 2026-07-23 — retrain required.** Auditing the
+fault-vs-nominal analysis against `st_gat/pipeline/` (per Kalpit's "make sure
+the signal exists in the pipeline, otherwise the anomaly is unobservable"
+principle) found two real gaps, now fixed:
+1. `config.py`'s `TOPICS['traffic_lights']` read the real, unmodified
+   `traffic_signals` topic — same class of bug as `fault_injector.py`'s
+   original wiring, meaning ST-GAT would have been structurally blind to every
+   TL fault regardless of severity. Fixed to read `traffic_signals_faulted`
+   (what `behavior_planning` actually consumes), with a fallback to the
+   unmodified topic for bags collected before the fix (all of `nom_v11`,
+   i.e. the actual training set — `bag_reader.py`'s frame-sync logic drops a
+   frame entirely if any required topic never appears at all, so without this
+   fallback the fix would have silently zeroed out the whole training set).
+2. `traffic_light_state` was color-only (ignored `confidence` entirely) — a
+   confidence-degradation fault like `tl_confidence` would leave color
+   untouched and be completely invisible to this feature. Also, UNKNOWN
+   color, complete blackout, and genuinely no TL nearby all collapsed to the
+   same 0.0 value, with no way to tell them apart.
+Fixed by folding confidence into `traffic_light_state` (color × confidence),
+and adding a new explicit `traffic_light_discrepancy` feature (map expects a
+TL here but perception found nothing usable) — the literal
+detect-a-map-expected-TL-that-wasn't-observed feature Kalpit described.
+**Feature count changed 13→14 — this invalidates `st_gat/checkpoints/best_model.pth`
+and `st_gat/models/st_gat_rise.pth` (different input dimensionality).
+Retrain before trusting either checkpoint again.** Full detail in
+`st_gat/pipeline/config.py`'s FEATURE VECTOR docstring.
+
 ---
 
 ## Phase 1: ST-GAT Training

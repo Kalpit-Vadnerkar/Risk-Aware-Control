@@ -24,10 +24,12 @@
 #   All TL faults: delay 30s (vehicle gets moving), then re-fires at EVERY TL zone
 #   entered for the rest of the trial (15s cap/cycle, 8s recovery gap between
 #   cycles) — one (reaction, recovery) sample per intersection on the route.
-#   imu_fault_s1        IMU gyro bias 0.05 rad/s (~2.9°/s), 30s on / 30s off
-#   imu_fault_s2        IMU gyro bias 0.15 rad/s (~8.6°/s), 30s on / 20s off
-#   imu_fault_s3        IMU gyro bias 0.30 rad/s (~17.2°/s), 20s on / 10s off
-#   imu_fault_s4        IMU gyro bias 0.60 rad/s (~34.4°/s), sustained
+#   imu_fault_s1        IMU gyro bias 0.03 rad/s (~1.7°/s), 20s on / 30s off
+#   imu_fault_s2        IMU gyro bias 0.05 rad/s (~2.9°/s), 20s on / 30s off
+#   imu_fault_s3        IMU gyro bias 0.08 rad/s (~4.6°/s), 15s on / 30s off
+#   imu_fault_s4        IMU gyro bias 0.12 rad/s (~6.9°/s), 10s on / 30s off
+#   Tiers bounded to keep accumulated heading error (bias×on_seconds) ≤1.2 rad —
+#   old S2 (0.15 rad/s, 30s on ≈ 4.5 rad) caused a permanent stuck (see TODO.md).
 #
 # Examples:
 #   ./collect.sh nom_v7
@@ -275,40 +277,56 @@ case "$CAMPAIGN" in
     # accel_bias_ms2 has no effect (gyro_odometer ignores linear_acceleration).
     # Fault delay = 30s gives EKF time to converge on nominal trajectory first.
     #
-    #   S1: gyro=0.05 rad/s, 30s/30s — low-grade MEMS drift (~2.9°/s)
-    #   S2: gyro=0.15 rad/s, 30s/20s — moderate drift (~8.6°/s), more fault dwell
-    #   S3: gyro=0.30 rad/s, 20s/10s — significant drift (~17.2°/s), fast cycle
-    #   S4: gyro=0.60 rad/s, sustained — severe sustained drift (~34.4°/s)
+    # Tiers redesigned 2026-07-23 after goal_007 confirmed the old ladder isn't
+    # gradual: old S1 (0.05 rad/s, 30s on) was safe with a real, measurable
+    # effect (EKF-vs-ground-truth divergence ~2.25x nominal); old S2 (0.15 rad/s,
+    # 30s on — only a 3x bias increase) caused a hard-brake + PERMANENT stuck
+    # within the first cycle (EKF/NDT divergence apparently crosses some
+    # stability cliff well before 0.15 rad/s × 30s ≈ 4.5 rad of accumulated
+    # heading error — a gyro bias integrates into heading error that does NOT
+    # reset when the bias turns off, unlike TL faults which recover the instant
+    # the true signal resumes). New tiers keep peak accumulated heading error
+    # (gyro_bias_rads × on_seconds) ≤ 1.2 rad — comfortably under old S1's
+    # proven-safe 1.5 rad — so every tier should stay recoverable; treat this as
+    # a hypothesis to validate on the next run, not a guarantee, given the
+    # apparent cliff-edge (not smooth) sensitivity observed. Recovery gap
+    # lengthened to 30s uniformly (was 20-30s) to give NDT/EKF more time to
+    # reconverge between cycles.
+    #
+    #   S1: gyro=0.03 rad/s, 20s on / 30s off — accumulated 0.6 rad
+    #   S2: gyro=0.05 rad/s, 20s on / 30s off — accumulated 1.0 rad (old S1's rate, shorter dwell)
+    #   S3: gyro=0.08 rad/s, 15s on / 30s off — accumulated 1.2 rad
+    #   S4: gyro=0.12 rad/s, 10s on / 30s off — accumulated 1.2 rad (higher rate, shorter dwell)
 
     imu_fault_s1)
-        echo -e "${BLUE}IMU bias fault — S1: gyro=0.05 rad/s, 30s on / 30s off${NC}"
+        echo -e "${BLUE}IMU bias fault — S1: gyro=0.03 rad/s, 20s on / 30s off${NC}"
         run imu_fault_s1 imu_fault_s1 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.05,"on_seconds":30,"off_seconds":30}' \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.03,"on_seconds":20,"off_seconds":30}' \
             --fault-delay 30
         ;;
 
     imu_fault_s2)
-        echo -e "${BLUE}IMU bias fault — S2: gyro=0.15 rad/s, 30s on / 20s off${NC}"
+        echo -e "${BLUE}IMU bias fault — S2: gyro=0.05 rad/s, 20s on / 30s off${NC}"
         run imu_fault_s2 imu_fault_s2 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.15,"on_seconds":30,"off_seconds":20}' \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.05,"on_seconds":20,"off_seconds":30}' \
             --fault-delay 30
         ;;
 
     imu_fault_s3)
-        echo -e "${BLUE}IMU bias fault — S3: gyro=0.30 rad/s, 20s on / 10s off${NC}"
+        echo -e "${BLUE}IMU bias fault — S3: gyro=0.08 rad/s, 15s on / 30s off${NC}"
         run imu_fault_s3 imu_fault_s3 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.30,"on_seconds":20,"off_seconds":10}' \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.08,"on_seconds":15,"off_seconds":30}' \
             --fault-delay 30
         ;;
 
     imu_fault_s4)
-        echo -e "${BLUE}IMU bias fault — S4: gyro=0.60 rad/s, sustained${NC}"
+        echo -e "${BLUE}IMU bias fault — S4: gyro=0.12 rad/s, 10s on / 30s off${NC}"
         run imu_fault_s4 imu_fault_s4 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.60,"on_seconds":9999,"off_seconds":0}' \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.12,"on_seconds":10,"off_seconds":30}' \
             --fault-delay 30
         ;;
 

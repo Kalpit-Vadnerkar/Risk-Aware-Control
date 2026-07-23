@@ -1,0 +1,183 @@
+{
+  "campaign": "tl_fault_s3",
+  "goal": "goal_007",
+  "trial": "t1_20260722_204554",
+  "fault_windows": [
+    {
+      "start": 27.997570276260376,
+      "end": 27.9984130859375,
+      "reason": "duration_cap",
+      "cycle": 1
+    },
+    {
+      "start": 28.04707932472229,
+      "end": 43.10901689529419,
+      "reason": "duration_cap",
+      "cycle": 2
+    },
+    {
+      "start": 43.159263134002686,
+      "end": 43.15999794006348,
+      "reason": "duration_cap",
+      "cycle": 3
+    },
+    {
+      "start": 51.24782109260559,
+      "end": 66.25104212760925,
+      "reason": "duration_cap",
+      "cycle": 4
+    },
+    {
+      "start": 66.30050873756409,
+      "end": 66.30123209953308,
+      "reason": "duration_cap",
+      "cycle": 5
+    },
+    {
+      "start": 74.37110185623169,
+      "end": 89.39806318283081,
+      "reason": "duration_cap",
+      "cycle": 6
+    },
+    {
+      "start": 89.41659021377563,
+      "end": 89.4172990322113,
+      "reason": "duration_cap",
+      "cycle": 7
+    },
+    {
+      "start": 97.50652480125427,
+      "end": 112.59711265563965,
+      "reason": "duration_cap",
+      "cycle": 8
+    },
+    {
+      "start": 112.60271620750427,
+      "end": 112.6034083366394,
+      "reason": "duration_cap",
+      "cycle": 9
+    },
+    {
+      "start": 120.69572758674622,
+      "end": 135.69941544532776,
+      "reason": "duration_cap",
+      "cycle": 10
+    },
+    {
+      "start": 135.71704411506653,
+      "end": 135.71778202056885,
+      "reason": "duration_cap",
+      "cycle": 11
+    },
+    {
+      "start": 143.8166048526764,
+      "end": 158.90611743927002,
+      "reason": "duration_cap",
+      "cycle": 12
+    },
+    {
+      "start": 158.90951108932495,
+      "end": 158.9102885723114,
+      "reason": "duration_cap",
+      "cycle": 13
+    },
+    {
+      "start": 167.009756565094,
+      "end": 182.01026940345764,
+      "reason": "duration_cap",
+      "cycle": 14
+    },
+    {
+      "start": 182.10052800178528,
+      "end": 182.10157251358032,
+      "reason": "duration_cap",
+      "cycle": 15
+    },
+    {
+      "start": 190.1989827156067,
+      "end": 205.21415758132935,
+      "reason": "duration_cap",
+      "cycle": 16
+    },
+    {
+      "start": 205.29595184326172,
+      "end": 205.2970428466797,
+      "reason": "duration_cap",
+      "cycle": 17
+    },
+    {
+      "start": 213.3166642189026,
+      "end": 228.4002389907837,
+      "reason": "duration_cap",
+      "cycle": 18
+    },
+    {
+      "start": 228.408287525177,
+      "end": 228.40898823738098,
+      "reason": "duration_cap",
+      "cycle": 19
+    },
+    {
+      "start": 236.49446630477905,
+      "end": 251.50368976593018,
+      "reason": "duration_cap",
+      "cycle": 20
+    },
+    {
+      "start": 251.5098876953125,
+      "end": 251.51052498817444,
+      "reason": "duration_cap",
+      "cycle": 21
+    },
+    {
+      "start": 259.61652994155884,
+      "end": 268.7980914115906,
+      "reason": "zone_exited",
+      "cycle": 22
+    }
+  ],
+  "discriminability": [
+    {
+      "feature": "tl_confidence",
+      "mean_abs_z_in_fault": 8.60603899347062,
+      "mean_abs_z_out_of_fault": 2.0711249011430284,
+      "delta": 6.5349140923275915,
+      "detectable": true
+    },
+    {
+      "feature": "acceleration_mps2",
+      "mean_abs_z_in_fault": 0.9991675277549855,
+      "mean_abs_z_out_of_fault": 0.8009277380234163,
+      "delta": 0.1982397897315692,
+      "detectable": false
+    },
+    {
+      "feature": "steering_rad",
+      "mean_abs_z_in_fault": 0.4543679230924946,
+      "mean_abs_z_out_of_fault": 0.2629853841019484,
+      "delta": 0.1913825389905462,
+      "detectable": false
+    },
+    {
+      "feature": "obj_distance_m",
+      "mean_abs_z_in_fault": 1.115557720674745,
+      "mean_abs_z_out_of_fault": 1.1373675679581516,
+      "delta": -0.021809847283406736,
+      "detectable": false
+    },
+    {
+      "feature": "ekf_gt_divergence_m",
+      "mean_abs_z_in_fault": 0.5777765085012637,
+      "mean_abs_z_out_of_fault": 0.6264881651014244,
+      "delta": -0.048711656600160635,
+      "detectable": false
+    },
+    {
+      "feature": "velocity_mps",
+      "mean_abs_z_in_fault": 1.191314742301033,
+      "mean_abs_z_out_of_fault": 1.4578202752113187,
+      "delta": -0.26650553291028567,
+      "detectable": false
+    }
+  ]
+}

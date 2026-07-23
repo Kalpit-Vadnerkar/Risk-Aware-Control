@@ -37,10 +37,27 @@ FEATURE VECTOR (per timestep, 10 Hz)
     traffic_light_detected (1): 1 if upcoming lane node has traffic light
   New 5 features (RISE):
     position_uncertainty (2): x_var, y_var from EKF covariance
-    traffic_light_state (1): perceived color [0=none, 0.33=green, 0.67=amber, 1.0=red]
+    traffic_light_state (1): perceived color × confidence [0=none/UNKNOWN,
+      0.33=green, 0.67=amber, 1.0=red, scaled down toward 0 as confidence drops]
     closest_object_velocity (1): |velocity| of nearest tracked object, scaled
     has_adjacent_lane (1): 1 if lanelet2 routing graph has adjacent lane (HD map)
-  Total: 13 features per timestep
+  1 more feature (fault-analysis-driven, added 2026-07-23 — see
+  docs/research_notes/periodic_fault_strategy.md §6/7 and README.md item 8):
+    traffic_light_discrepancy (1): 1 if traffic_light_detected==1 (map expects
+      a TL here) but perception found nothing usable — blackout, all-UNKNOWN,
+      or any other detection failure, regardless of which. Added because the
+      goal_007 fault campaigns showed the perception-only traffic_light_state
+      feature can't distinguish "genuinely no TL nearby" from "TL nearby but
+      undetected due to a fault" — exactly the discrepancy this project needs
+      to detect, made an explicit first-class signal instead of something the
+      model must infer from two other features. Also fixed traffic_light_state
+      itself to fold in confidence (previously color-only, so a confidence-
+      degradation fault like tl_confidence was invisible to it entirely even
+      though color stayed correct).
+  Total: 14 features per timestep — CHANGED 2026-07-23 (was 13). This
+  invalidates `st_gat/checkpoints/best_model.pth` / `st_gat/models/st_gat_rise.pth`
+  (different input dimensionality) — retrain before trusting either checkpoint
+  against new extractions.
 
 SYNCHRONIZATION
 ───────────────
@@ -106,7 +123,14 @@ TOPICS = {
     'steering':          '/vehicle/status/steering_status',
     'control':           '/control/command/control_cmd',
     'objects':           '/perception/object_recognition/tracking/objects',
-    'traffic_lights':    '/perception/traffic_light_recognition/traffic_signals',
+    # NOT '/perception/traffic_light_recognition/traffic_signals' (Autoware's
+    # real, unmodified recognition output) — behavior_planning actually consumes
+    # traffic_signals_faulted (fault_injector.py's relay output, identical to the
+    # real signal in passthrough/nominal, but the ONLY place a TL fault is
+    # visible). Reading the unmodified topic would make every camera/TL fault
+    # invisible to this feature regardless of severity — see
+    # docs/research_notes/periodic_fault_strategy.md and README.md item 8.
+    'traffic_lights':    '/perception/traffic_light_recognition/traffic_signals_faulted',
 }
 
 # objects is the master clock at ~10 Hz; other topics forward-fill
@@ -172,8 +196,9 @@ FEATURE_SIZES = {
     'steering':                 1,
     'acceleration':             1,
     'object_distance':          1,
-    'traffic_light_detected':   1,   # graph node: upcoming lane has traffic light
-    'traffic_light_state':      1,   # perception: most restrictive visible color
+    'traffic_light_detected':   1,   # graph node: upcoming lane has traffic light (map)
+    'traffic_light_state':      1,   # perception: most restrictive color × confidence
+    'traffic_light_discrepancy': 1,  # map expects a TL, perception found none (added 2026-07-23)
     'closest_object_velocity':  1,   # |velocity| of nearest tracked object
     'has_adjacent_lane':        1,   # lanelet2 routing graph: adjacent lane exists
     'uncertainty':              2,   # EKF x_var, y_var

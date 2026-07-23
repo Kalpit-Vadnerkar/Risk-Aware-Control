@@ -41,17 +41,20 @@ class TrajectoryDataset(Dataset):
         position (list[2]), velocity (list[2]), steering (float),
         acceleration (float), object_distance (float),
         traffic_light_detected (int/float), traffic_light_state (float),
+        traffic_light_discrepancy (int/float),
         closest_object_velocity (float), has_adjacent_lane (float),
         uncertainty (list[2])
     """
 
     _SCALAR_KEYS = (
         'steering', 'acceleration', 'object_distance', 'traffic_light_detected',
-        'traffic_light_state', 'closest_object_velocity', 'has_adjacent_lane',
+        'traffic_light_state', 'traffic_light_discrepancy',
+        'closest_object_velocity', 'has_adjacent_lane',
     )
     _VECTOR_KEYS = ('position', 'velocity', 'uncertainty')
     # Keys added after initial pipeline release; default to 0 for old pkl files
-    _OPTIONAL_KEYS = ('uncertainty', 'traffic_light_state', 'closest_object_velocity', 'has_adjacent_lane')
+    _OPTIONAL_KEYS = ('uncertainty', 'traffic_light_state', 'traffic_light_discrepancy',
+                      'closest_object_velocity', 'has_adjacent_lane')
 
     def __init__(self, data_folder: str):
         self.sequences = []
@@ -84,6 +87,7 @@ class TrajectoryDataset(Dataset):
             'object_distance':          [],
             'traffic_light_detected':   [],
             'traffic_light_state':      [],
+            'traffic_light_discrepancy': [],
             'closest_object_velocity':  [],
             'has_adjacent_lane':        [],
             'uncertainty':              [],
@@ -97,6 +101,7 @@ class TrajectoryDataset(Dataset):
             buf['object_distance'].append([step['object_distance']])
             buf['traffic_light_detected'].append([float(step['traffic_light_detected'])])
             buf['traffic_light_state'].append([float(step.get('traffic_light_state', 0.0))])
+            buf['traffic_light_discrepancy'].append([float(step.get('traffic_light_discrepancy', 0.0))])
             buf['closest_object_velocity'].append([float(step.get('closest_object_velocity', 0.0))])
             buf['has_adjacent_lane'].append([float(step.get('has_adjacent_lane', 0.0))])
             buf['uncertainty'].append(step.get('uncertainty', [0.0, 0.0]))

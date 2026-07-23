@@ -109,7 +109,7 @@ class STGAT(nn.Module):
         nhead     = config.get('nhead', 4)
         node_fdim = config['graph_sizes']['node_features']
 
-        F_total = sum(config['feature_sizes'].values())   # 13 with RISE features
+        F_total = sum(config['feature_sizes'].values())   # 14 with RISE features + discrepancy
 
         self.feature_keys = list(config['feature_sizes'].keys())
 

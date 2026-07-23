@@ -16,15 +16,16 @@ The output sequence format is identical to the reference:
         'graph_bounds': [x_min, x_max, y_min, y_max],
     }
 
-Each processed_timestep (13 features + objects):
+Each processed_timestep (14 features + objects):
     {
         'position':                 [scaled_x, scaled_y],
         'velocity':                 [scaled_vx, scaled_vy],
         'steering':                 float,
         'acceleration':             float,
         'object_distance':          float,
-        'traffic_light_detected':   0 or 1,   # graph node: upcoming lane has TL
-        'traffic_light_state':      float,    # perception color [0, 0.33, 0.67, 1.0]
+        'traffic_light_detected':   0 or 1,   # graph node: upcoming lane has TL (map)
+        'traffic_light_state':      float,    # perceived color × confidence [0, 1]
+        'traffic_light_discrepancy': 0 or 1,  # map expects a TL, perception found none
         'closest_object_velocity':  float,    # |velocity| nearest object, scaled
         'has_adjacent_lane':        0.0/1.0,  # lanelet2 routing graph adjacency
         'uncertainty':              [scaled_x_var, scaled_y_var],
@@ -160,10 +161,26 @@ _LIGHT_COLOR_VALUE = {1: 1.0, 2: 0.67, 3: 0.33}
 
 
 def _traffic_light_state(traffic_lights: list) -> float:
-    """Most restrictive visible traffic light color, normalized to [0,1]."""
+    """Most restrictive visible traffic light color, normalized to [0,1] and
+    weighted by confidence. Confidence matters here (not just color): a fault
+    that degrades confidence but leaves color untouched (e.g. tl_confidence)
+    must not look identical to an undamaged reading of the same color — a
+    plain color lookup would be blind to that fault entirely."""
     if not traffic_lights:
         return 0.0
-    return max(_LIGHT_COLOR_VALUE.get(tl['color'], 0.0) for tl in traffic_lights)
+    return max(_LIGHT_COLOR_VALUE.get(tl['color'], 0.0) * tl['confidence'] for tl in traffic_lights)
+
+
+def _traffic_light_discrepancy(detected: int, traffic_lights: list) -> int:
+    """1 if the HD map says a traffic light should be in range right now but
+    perception reports nothing usable — complete signal loss (blackout),
+    all-UNKNOWN classification, or any other detection failure collapse to
+    the same empty `traffic_lights` list, so this doesn't distinguish which;
+    it's the explicit map-vs-perception mismatch signal. Without it, the
+    model has to infer the same relationship implicitly from
+    traffic_light_detected and traffic_light_state alone — this makes it a
+    first-class, directly observable feature instead."""
+    return int(detected == 1 and not traffic_lights)
 
 
 def _closest_object_velocity(ego_pos_raw: dict, objects_raw: list) -> float:
@@ -267,6 +284,8 @@ def _process_frame(
 
     objects_scaled = [_scale_object(o, x_min, x_max, y_min, y_max) for o in frame['objects']]
     unc = ego['position_uncertainty']
+    tl_list      = frame.get('traffic_lights', [])
+    tl_detected  = _traffic_light_detected(G, ego_pos_scaled)
 
     return {
         'position':                 ego_pos_scaled,
@@ -274,8 +293,9 @@ def _process_frame(
         'steering':                 _scale_steering(ego['steering']),
         'acceleration':             _scale_acceleration(ego['acceleration']),
         'object_distance':          _closest_object_distance(ego_pos_scaled, objects_scaled),
-        'traffic_light_detected':   _traffic_light_detected(G, ego_pos_scaled),
-        'traffic_light_state':      _traffic_light_state(frame.get('traffic_lights', [])),
+        'traffic_light_detected':   tl_detected,
+        'traffic_light_state':      _traffic_light_state(tl_list),
+        'traffic_light_discrepancy': _traffic_light_discrepancy(tl_detected, tl_list),
         'closest_object_velocity':  _closest_object_velocity(ego['position'], frame['objects']),
         'has_adjacent_lane':        adj_checker.query(ego_point.x, ego_point.y) if adj_checker else 0.0,
         'uncertainty':              _scale_uncertainty(unc['x_var'], unc['y_var']),

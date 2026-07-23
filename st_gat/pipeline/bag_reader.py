@@ -201,6 +201,24 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
 
     topic_type_map = {info.name: info.type for info in reader.get_all_topics_and_types()}
 
+    # Bags collected before the fault_injector topic-wiring fix (2026-07-22,
+    # see README.md item 8) never recorded traffic_signals_faulted at all —
+    # without this fallback, 'traffic_lights' would never appear in `cache`,
+    # `missing` below would never clear, and EVERY frame in those bags (i.e.
+    # all of nom_v11, the actual training set) would be silently dropped.
+    _tl_topic_unfaulted = '/perception/traffic_light_recognition/traffic_signals'
+    _tl_topic = (cfg.TOPICS['traffic_lights']
+                 if cfg.TOPICS['traffic_lights'] in topic_type_map
+                 else _tl_topic_unfaulted)
+    msg_types = dict(_MSG_TYPES)
+    topic_key = dict(_TOPIC_KEY)
+    if _tl_topic != cfg.TOPICS['traffic_lights']:
+        msg_types[_tl_topic] = TrafficLightGroupArray
+        topic_key[_tl_topic] = 'traffic_lights'
+        if verbose:
+            print(f"  [bag_reader] {cfg.TOPICS['traffic_lights']} not in this bag — "
+                  f"falling back to {_tl_topic} (pre-fix bag; never actually faulted)")
+
     # Latest extracted payload per topic key
     cache: Dict[str, object]  = {}
     # Timestamp of latest message per topic key (seconds)
@@ -224,17 +242,17 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
                 pass
             continue
 
-        if topic not in _MSG_TYPES:
+        if topic not in msg_types:
             continue
 
-        msg_cls = _MSG_TYPES[topic]
+        msg_cls = msg_types[topic]
         try:
             msg = deserialize_message(data, msg_cls)
         except Exception:
             continue
 
         t_sec   = _ns_to_sec(timestamp_ns)
-        key     = _TOPIC_KEY[topic]
+        key     = topic_key[topic]
 
         # Update cache with extracted payload
         if topic == cfg.TOPICS['kinematic_state']:
@@ -249,7 +267,7 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
             cache[key]    = _extract_control(msg)
         elif topic == cfg.TOPICS['objects']:
             cache[key]    = _extract_objects(msg)
-        elif topic == cfg.TOPICS['traffic_lights']:
+        elif topic == _tl_topic:
             cache[key]    = _extract_traffic_lights(msg)
 
         cache_ts[key] = t_sec
