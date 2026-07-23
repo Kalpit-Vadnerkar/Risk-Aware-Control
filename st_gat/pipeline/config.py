@@ -86,7 +86,15 @@ import torch
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DATA_ROOT    = os.path.join(REPO_ROOT, 'experiments', 'data')
-MAP_FILE     = os.path.normpath(os.path.join(REPO_ROOT, '..', 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm'))
+# Map lives in the Kalpit-2026 workspace on this machine; fall back to the
+# old expected path so configs on other machines with the original layout still work.
+_map_candidates = [
+    os.path.normpath(os.path.join(REPO_ROOT, '..', 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm')),
+    os.path.normpath(os.path.join(REPO_ROOT, '..', 'nishishinjuku_autoware_map', 'lanelet2_map.osm')),
+    '/home/df/Desktop/Kalpit-2026/Risk-Aware-Control/Shinjuku-Map/map/lanelet2_map.osm',
+    '/home/df/Desktop/Dissertation/Graph-Scene-Representation-and-Prediction/map/lanelet2_map.osm',
+]
+MAP_FILE = next((p for p in _map_candidates if os.path.exists(p)), _map_candidates[0])
 OUTPUT_ROOT  = os.path.join(REPO_ROOT, 'st_gat', 'data')
 
 EXTRACTED_DIR  = os.path.join(OUTPUT_ROOT, 'extracted')    # Stage 1: per-run 10Hz dicts
