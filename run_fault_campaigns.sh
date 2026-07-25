@@ -15,15 +15,15 @@
 # Pass --confirm-each to restore the per-campaign confirmation pause.
 #
 # Examples:
-#   # Smoke test: goal_007 only, 1 trial, all 8 fault campaigns
+#   # Smoke test: goal_007 only, 1 trial, all 7 fault campaigns
 #   ./run_fault_campaigns.sh --goals goal_007 --trials 1
 #
-#   # Finalized run: goals 7/12/26 (default), 3 trials each, all 8 campaigns
+#   # Finalized run: goals 7/12/26 (default), 3 trials each, all 7 campaigns
 #   ./run_fault_campaigns.sh
 #
 #   # Just the TL campaigns, 2 trials
 #   ./run_fault_campaigns.sh --trials 2 \
-#       --campaigns "tl_fault_s1 tl_fault_s2 tl_fault_s3 tl_fault_s4"
+#       --campaigns "tl_fault_s2 tl_fault_s3 tl_fault_s4"
 # =============================================================================
 
 set -eo pipefail
@@ -36,16 +36,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GOALS="goal_007,goal_012,goal_026"
 GOALS_FILE="$SCRIPT_DIR/experiments/configs/captured_goals.json"
 TRIALS=3
-CAMPAIGNS="tl_fault_s1 tl_fault_s2 tl_fault_s3 tl_fault_s4 imu_fault_s1 imu_fault_s2 imu_fault_s3 imu_fault_s4"
+CAMPAIGNS="tl_fault_s2 tl_fault_s3 tl_fault_s4 tl_fault_ramp imu_fault_ramp imu_fault_scale imu_fault_stuck"
 DRY_RUN=""
 YES="--yes"
+FAULT_MIN_RUNWAY=""   # empty = collect.sh/fault_injector.py default (150m, GT-gated)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --goals)         GOALS="$2";      shift 2 ;;
-        --goals-file)    GOALS_FILE="$2"; shift 2 ;;
-        --trials)        TRIALS="$2";     shift 2 ;;
-        --campaigns)     CAMPAIGNS="$2";  shift 2 ;;
+        --goals)              GOALS="$2";             shift 2 ;;
+        --goals-file)         GOALS_FILE="$2";         shift 2 ;;
+        --trials)             TRIALS="$2";             shift 2 ;;
+        --campaigns)          CAMPAIGNS="$2";          shift 2 ;;
+        --fault-min-runway-m) FAULT_MIN_RUNWAY="$2";   shift 2 ;;
         --confirm-each)  YES="";          shift ;;
         --dry-run)       DRY_RUN="--dry-run"; shift ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
@@ -63,9 +65,12 @@ echo -e "  Trials:     ${BLUE}${TRIALS}${NC}"
 echo -e "  Campaigns:  ${BLUE}${CAMPAIGNS}${NC}"
 echo ""
 
+runway_arg=()
+[[ -n "$FAULT_MIN_RUNWAY" ]] && runway_arg=(--fault-min-runway-m "$FAULT_MIN_RUNWAY")
+
 for c in $CAMPAIGNS; do
     echo -e "${GREEN}── ${c} ──${NC}"
-    ./collect.sh "$c" --goals "$GOALS" --goals-file "$GOALS_FILE" --trials "$TRIALS" $YES $DRY_RUN
+    ./collect.sh "$c" --goals "$GOALS" --goals-file "$GOALS_FILE" --trials "$TRIALS" $YES $DRY_RUN "${runway_arg[@]}"
     echo ""
 done
 

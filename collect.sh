@@ -17,19 +17,46 @@
 #   obs_noescape        30m obstacle in single-lane (LL 241), no path forward
 #   obs_singlelane      30m obstacle, no adjacent lane — Signal 1 validation
 #   obs_tooclosetoreact 6m obstacle, multi-lane — Signal 2 (TTC) validation
-#   tl_fault_s1         TL confidence degraded to 0.5 — repeats at every TL zone (15s cap/cycle)
 #   tl_fault_s2         TL oscillating GREEN/original (5s period) — repeats at every TL zone
 #   tl_fault_s3         TL classification → UNKNOWN — repeats at every TL zone
 #   tl_fault_s4         TL full blackout — repeats at every TL zone
-#   All TL faults: delay 30s (vehicle gets moving), then re-fires at EVERY TL zone
-#   entered for the rest of the trial (15s cap/cycle, 8s recovery gap between
-#   cycles) — one (reaction, recovery) sample per intersection on the route.
-#   imu_fault_s1        IMU gyro bias 0.03 rad/s (~1.7°/s), 20s on / 30s off
-#   imu_fault_s2        IMU gyro bias 0.05 rad/s (~2.9°/s), 20s on / 30s off
-#   imu_fault_s3        IMU gyro bias 0.08 rad/s (~4.6°/s), 15s on / 30s off
-#   imu_fault_s4        IMU gyro bias 0.12 rad/s (~6.9°/s), 10s on / 30s off
-#   Tiers bounded to keep accumulated heading error (bias×on_seconds) ≤1.2 rad —
-#   old S2 (0.15 rad/s, 30s on ≈ 4.5 rad) caused a permanent stuck (see TODO.md).
+#   tl_fault_ramp       TL confidence decays 1.0->0.0 over each 15s cap/cycle
+#                       (gradual, not a step) — repeats at every TL zone
+#   tl_fault_s1 (fixed confidence x0.5) REMOVED 2026-07-24 — tl_fault_ramp's
+#   decay passes through and beyond S1's exact severity level within a single
+#   trial, so it subsumes what S1 could show. Mirrors the imu_bias tiers'
+#   removal in favor of imu_fault_ramp. The underlying tl_confidence mode is
+#   still available for ad-hoc use (run_experiments.py --tl-fault
+#   tl_confidence --tl-params '{"confidence_scale":0.5}'), e.g. if a fixed-
+#   severity comparison point against the ramp is ever wanted again.
+#   All TL/IMU faults: must clear the first real TL zone (map-position-based,
+#   80m radius from a real Lanelet2 traffic light — comfortable braking
+#   distance at max_vel from Autoware's own config, not detection range;
+#   revised 2026-07-24 from an earlier 150m detection-range-based radius,
+#   which was too far out to be behaviorally meaningful — see
+#   fault_injector.py's _DEFAULT_TL_ZONE_RADIUS_M), goal-scoped to whatever
+#   --goals this run uses — see fault_injector.py's _on_gt_pose and
+#   _load_tl_zone_points; all goals share one start intersection, so this
+#   replaces an earlier flat-150m-distance runway) THEN a 30s delay floor
+#   before arming. TL then re-fires at EVERY such zone entered for the rest
+#   of the trial (15s cap/cycle, 8s recovery gap between cycles) — one
+#   (reaction, recovery) sample per real intersection on the route. REDESIGNED
+#   2026-07-24: the original zone detector used raw TL-message content
+#   (>=30% of last 30 msgs non-empty), which live data showed staying "in
+#   zone" continuously for 60-445m of real driving — not a location signal
+#   at all despite being designed as one. See fault_injector.py's module
+#   docstring for the full writeup.
+#   Constant-bias IMU tiers (old imu_fault_s1..s4) REMOVED 2026-07-24 — Autoware's
+#   ekf_localizer explicitly estimates and cancels a constant gyro bias
+#   (enable_yaw_bias_estimation: true), so sub-gate constant-bias tiers mostly
+#   just demonstrate Autoware's own mitigation working, not our detector's
+#   reach. See docs/design_decisions.md item 7.
+#   imu_fault_ramp      One-shot linear ramp 0 -> 0.4 rad/s (0.003 rad/s/s) —
+#                       sweeps through absorbed -> gate-rejection cliff in one
+#                       trial, for lead-time measurement.
+#   imu_fault_scale     Multiplicative gain error (gyro x1.8) — structurally
+#                       unabsorbable by yaw_bias's additive-constant model.
+#   imu_fault_stuck     Gyro frozen at its activation-time value — same.
 #
 # Examples:
 #   ./collect.sh nom_v7
@@ -58,13 +85,19 @@ GOALS="goal_007,goal_011,goal_021"
 GOALS_FILE=""
 DRY_RUN=""
 YES=""
+FAULT_MIN_RUNWAY=""   # empty = use fault_injector.py's own default (150m, GT-gated)
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
-    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--yes] [--dry-run]${NC}"
+    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--fault-min-runway-m M] [--yes] [--dry-run]${NC}"
     echo ""
     echo "Campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
-    echo "           tl_fault_s1..s4  imu_fault_s1..s4"
+    echo "           tl_fault_s2..s4  tl_fault_ramp  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
+    echo ""
+    echo "--fault-min-runway-m 0 disables the ground-truth-gated runway entirely"
+    echo "and falls back to delay-from-process-start arming (pre-2026-07-24"
+    echo "behavior) — use this if fault_log.jsonl shows gt_pose_never_received"
+    echo "and faults aren't arming; see TODO.md for the open GT-subscription bug."
     exit 1
 fi
 
@@ -72,9 +105,10 @@ CAMPAIGN="$1"; shift
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --trials)      TRIALS="$2";     shift 2 ;;
-        --goals)       GOALS="$2";      shift 2 ;;
-        --goals-file)  GOALS_FILE="$2"; shift 2 ;;
+        --trials)             TRIALS="$2";           shift 2 ;;
+        --goals)              GOALS="$2";             shift 2 ;;
+        --goals-file)         GOALS_FILE="$2";        shift 2 ;;
+        --fault-min-runway-m) FAULT_MIN_RUNWAY="$2";  shift 2 ;;
         --yes|-y)      YES="--yes";     shift ;;
         --dry-run)     DRY_RUN="--dry-run"; shift ;;
         *) echo -e "${RED}Unknown argument: $1${NC}"; exit 1 ;;
@@ -107,6 +141,10 @@ run() {
     shift 2  # remaining args passed through (scenario, velocity-limit, etc.)
     local goals_file_arg=()
     [[ -n "$GOALS_FILE" ]] && goals_file_arg=(--goals-file "$GOALS_FILE")
+    local runway_arg=()
+    # Placed last so it overrides any --fault-min-runway-m a case block might
+    # hardcode (none currently do — this is the only source today).
+    [[ -n "$FAULT_MIN_RUNWAY" ]] && runway_arg=(--fault-min-runway-m "$FAULT_MIN_RUNWAY")
     python3 "$RUNNER" \
         --campaign "$campaign" \
         --condition "$condition" \
@@ -116,7 +154,8 @@ run() {
         "${goals_file_arg[@]}" \
         $DRY_RUN \
         $YES \
-        "$@"
+        "$@" \
+        "${runway_arg[@]}"
 }
 
 # ── Helper: verify/edit avoidance policy ─────────────────────────────────────
@@ -216,10 +255,20 @@ case "$CAMPAIGN" in
         ;;
 
     # ── Traffic light fault campaigns ─────────────────────────────────────────
-    # Fault delay = 30s so localization converges before the fault activates.
+    # Fault arming (revised 2026-07-24 — see fault_injector.py's module
+    # docstring and _on_gt_pose for the full mechanism):
+    #   0. Vehicle must first travel >= --fault-min-runway-m (default 150m,
+    #      ground-truth straight-line distance, all goals share one start
+    #      intersection) from trial start AND be moving. Without this, the
+    #      fault-delay below is a wall-clock timer with no relationship to
+    #      vehicle position, and reliably armed while still at/near the start
+    #      intersection (confirmed in the tl_fault_s1..s4 data collected
+    #      2026-07-22 — every trial's first TL zone entry was the START
+    #      intersection, not a downstream one).
+    #   1. THEN a 30s nominal warm-up (--fault-delay, EKF/localization settle).
     # TL fault design (revised 2026-07-22 — zone-triggered periodic):
-    #   Each fault activates at EVERY TL detection zone entered after a 30s
-    #   nominal warm-up, stays active for up to 15s (or until the zone is
+    #   Each fault activates at EVERY TL detection zone entered after the
+    #   runway+delay above, stays active for up to 15s (or until the zone is
     #   exited, whichever is first), then an 8s recovery gap before re-arming
     #   for the NEXT zone — repeating for every intersection on the route.
     #   tl_fault_start / tl_fault_end timestamps (one pair per cycle) are
@@ -234,15 +283,6 @@ case "$CAMPAIGN" in
     #       distinctive high-frequency velocity residuals that CUSUM accumulates.
     #   S3: UNKNOWN classification — over-caution, vehicle stops at intersections.
     #   S4: complete blackout — over-caution, no TL signal at all.
-
-    tl_fault_s1)
-        echo -e "${BLUE}TL fault S1: confidence ×0.5 (fog/mild) — 15s cap/cycle${NC}"
-        run tl_fault_s1 tl_fault_s1 \
-            --tl-fault tl_confidence \
-            --tl-params '{"confidence_scale":0.5}' \
-            --fault-delay 30 \
-            --fault-duration 15
-        ;;
 
     tl_fault_s2)
         echo -e "${BLUE}TL fault S2: oscillating GREEN/RED (5s period) — 15s cap/cycle${NC}"
@@ -269,71 +309,95 @@ case "$CAMPAIGN" in
             --fault-duration 15
         ;;
 
-    # ── IMU bias fault campaigns ───────────────────────────────────────────────
-    # Periodic gyroscope bias injected via fault_injector → imu_data_faulted →
-    # gyro_odometer → EKF twist uncertainty → x_var/y_var in ST-GAT inputs.
-    # AEB reads imu_data directly and is NOT affected (intentional).
-    # gyro_bias_rads is the ONLY parameter that propagates to the EKF;
-    # accel_bias_ms2 has no effect (gyro_odometer ignores linear_acceleration).
-    # Fault delay = 30s gives EKF time to converge on nominal trajectory first.
+    # Gradual-degradation counterpart to tl_confidence (added 2026-07-24) —
+    # confidence_scale decays linearly from 1.0 to 0.0 over each 15s
+    # fault-active window instead of stepping straight to 0.5, mirroring
+    # imu_bias_ramp's "richer representation of the stack's behavior" idea
+    # for the TL channel. Re-arms fresh at every TL zone like the S1-S4
+    # tiers, not once for the whole trial.
+    tl_fault_ramp)
+        echo -e "${BLUE}TL fault RAMP: confidence 1.0 -> 0.0 over each 15s cap/cycle${NC}"
+        run tl_fault_ramp tl_fault_ramp \
+            --tl-fault tl_confidence_ramp \
+            --tl-params '{"confidence_ramp_rate_per_s":0.1,"min_confidence_scale":0.0}' \
+            --fault-delay 30 \
+            --fault-duration 15
+        ;;
+
+    # ── IMU fault campaigns ────────────────────────────────────────────────────
+    # Constant-bias tiers (old imu_fault_s1..s4) REMOVED 2026-07-24. Root cause
+    # traced (docs/design_decisions.md item 7 / TODO.md): autoware_ekf_localizer
+    # runs enable_yaw_bias_estimation: true — a constant gyro bias is exactly
+    # the error shape that state is designed to learn and subtract via periodic
+    # pose/NDT corrections. Below the Mahalanobis twist gate (twist_gate_dist
+    # 46.1), a constant bias gets absorbed with little observable effect —
+    # that's not our fault injector failing to reach the stack, it's Autoware's
+    # own mitigation doing its job. Since this system exists to detect faults
+    # that matter to safety, not ones Autoware already neutralizes, discrete
+    # tiers sitting entirely in the "gets absorbed" regime aren't useful data —
+    # ramp (below) supersedes them: it sweeps continuously through both the
+    # absorbed regime AND the gate-rejection cliff in a single trial. See
+    # imu_scale_factor / imu_stuck_at below for fault shapes that don't share
+    # yaw_bias's blind spot (both are additive-bias-shaped mitigations;
+    # scale-factor and stuck-at are structurally different error shapes,
+    # not just different magnitudes).
     #
-    # Tiers redesigned 2026-07-23 after goal_007 confirmed the old ladder isn't
-    # gradual: old S1 (0.05 rad/s, 30s on) was safe with a real, measurable
-    # effect (EKF-vs-ground-truth divergence ~2.25x nominal); old S2 (0.15 rad/s,
-    # 30s on — only a 3x bias increase) caused a hard-brake + PERMANENT stuck
-    # within the first cycle (EKF/NDT divergence apparently crosses some
-    # stability cliff well before 0.15 rad/s × 30s ≈ 4.5 rad of accumulated
-    # heading error — a gyro bias integrates into heading error that does NOT
-    # reset when the bias turns off, unlike TL faults which recover the instant
-    # the true signal resumes). New tiers keep peak accumulated heading error
-    # (gyro_bias_rads × on_seconds) ≤ 1.2 rad — comfortably under old S1's
-    # proven-safe 1.5 rad — so every tier should stay recoverable; treat this as
-    # a hypothesis to validate on the next run, not a guarantee, given the
-    # apparent cliff-edge (not smooth) sensitivity observed. Recovery gap
-    # lengthened to 30s uniformly (was 20-30s) to give NDT/EKF more time to
-    # reconverge between cycles.
-    #
-    #   S1: gyro=0.03 rad/s, 20s on / 30s off — accumulated 0.6 rad
-    #   S2: gyro=0.05 rad/s, 20s on / 30s off — accumulated 1.0 rad (old S1's rate, shorter dwell)
-    #   S3: gyro=0.08 rad/s, 15s on / 30s off — accumulated 1.2 rad
-    #   S4: gyro=0.12 rad/s, 10s on / 30s off — accumulated 1.2 rad (higher rate, shorter dwell)
-
-    imu_fault_s1)
-        echo -e "${BLUE}IMU bias fault — S1: gyro=0.03 rad/s, 20s on / 30s off${NC}"
-        run imu_fault_s1 imu_fault_s1 \
-            --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.03,"on_seconds":20,"off_seconds":30}' \
+    # One-shot linear ramp: gyro bias grows 0 -> max_gyro_bias_rads at
+    # gyro_bias_rate_rads_per_s per second, starting once the runway+delay gate
+    # clears. Gives a single trial that walks through absorbed -> cliff ->
+    # gate-rejected, with a well-defined "when did this become unsafe"
+    # timestamp for lead-time measurement against Autoware's own MRM trigger
+    # (Arm B in the two-arm design — docs/theoretical_framework.md §4).
+    # Default rate/max are a first guess, not validated: reaches 0.4 rad/s
+    # (>2.5x old S2's instant-catastrophic 0.15) at ~133s of ramp time if the
+    # gate is never crossed first. Runway (150m default) + --fault-delay (30s)
+    # happen BEFORE the ramp clock starts, so total trial time before max is
+    # reached can approach the 200s --stuck-timeout in run() — if a run times
+    # out without a clear crossing (check imu_ramp_level / imu_ramp_reached_max
+    # in fault_log.jsonl against the MRM trigger time), widen
+    # max_gyro_bias_rads or slow the rate rather than assuming the gate wasn't
+    # found.
+    imu_fault_ramp)
+        echo -e "${BLUE}IMU ramp fault: 0 -> 0.4 rad/s at 0.003 rad/s per second${NC}"
+        run imu_fault_ramp imu_fault_ramp \
+            --imu-fault imu_bias_ramp \
+            --imu-params '{"gyro_bias_rate_rads_per_s":0.003,"max_gyro_bias_rads":0.4,"ramp_log_interval_s":5.0}' \
             --fault-delay 30
         ;;
 
-    imu_fault_s2)
-        echo -e "${BLUE}IMU bias fault — S2: gyro=0.05 rad/s, 20s on / 30s off${NC}"
-        run imu_fault_s2 imu_fault_s2 \
-            --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.05,"on_seconds":20,"off_seconds":30}' \
+    # Multiplicative gain error: angular_velocity.z *= gyro_scale_factor,
+    # instead of an additive offset. Structurally unabsorbable by yaw_bias
+    # (an additive-constant state can't represent a multiplicative error), and
+    # naturally state-dependent — near-zero error on straight roads (true rate
+    # ~0), scaling up specifically during turns/intersections. Periodic on/off
+    # like the old bias tiers, for clean reaction/recovery segments.
+    imu_fault_scale)
+        echo -e "${BLUE}IMU scale-factor fault: gyro x1.8, 20s on / 30s off${NC}"
+        run imu_fault_scale imu_fault_scale \
+            --imu-fault imu_scale_factor \
+            --imu-params '{"gyro_scale_factor":1.8,"on_seconds":20,"off_seconds":30}' \
             --fault-delay 30
         ;;
 
-    imu_fault_s3)
-        echo -e "${BLUE}IMU bias fault — S3: gyro=0.08 rad/s, 15s on / 30s off${NC}"
-        run imu_fault_s3 imu_fault_s3 \
-            --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.08,"on_seconds":15,"off_seconds":30}' \
-            --fault-delay 30
-        ;;
-
-    imu_fault_s4)
-        echo -e "${BLUE}IMU bias fault — S4: gyro=0.12 rad/s, 10s on / 30s off${NC}"
-        run imu_fault_s4 imu_fault_s4 \
-            --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.12,"on_seconds":10,"off_seconds":30}' \
+    # Frozen sensor: angular_velocity.z held at whatever it read the instant
+    # the fault activated, ignoring true motion for the rest of the "on"
+    # window. Also structurally unabsorbable by yaw_bias (the discrepancy
+    # tracks whatever the vehicle actually does, not a constant), and almost
+    # certain to blow through the Mahalanobis gate the moment the vehicle
+    # actually turns — same "definite, unambiguous ground-truth event" spirit
+    # as tl_blackout.
+    imu_fault_stuck)
+        echo -e "${BLUE}IMU stuck-at fault: gyro frozen at activation value, 20s on / 30s off${NC}"
+        run imu_fault_stuck imu_fault_stuck \
+            --imu-fault imu_stuck_at \
+            --imu-params '{"on_seconds":20,"off_seconds":30}' \
             --fault-delay 30
         ;;
 
     *)
         echo -e "${RED}Unknown campaign: ${CAMPAIGN}${NC}"
         echo "Valid campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
-        echo "                 tl_fault_s1..s4  imu_fault_s1..s4"
+        echo "                 tl_fault_s2..s4  tl_fault_ramp  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
         exit 1
         ;;
 esac

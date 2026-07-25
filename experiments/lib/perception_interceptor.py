@@ -69,6 +69,17 @@ PERCEPTION_QOS = QoSProfile(
     depth=5,
 )
 
+# A single-step ego position jump bigger than this is a reset_vehicle() AWSIM
+# teleport, not real driving — same convention/threshold used by
+# experiments/scripts/analyze_mrm_diagnostics.py and fault_injector.py's
+# _on_gt_pose. Needed because this node now starts before run_experiments.py's
+# initial reset_vehicle() call (2026-07-24 — see run_experiments.py's main()),
+# so its first-ever ego pose message may be captured pre-reset; without
+# re-anchoring on the reset's teleport, _start_pos would stay wrong (and
+# every min_travel_before_placement check downstream of it) for the entire
+# campaign, since it was previously only ever captured once.
+_TELEPORT_JUMP_THRESHOLD_M = 3.0
+
 
 OBJ_TYPE_MAP = {
     'CAR': ObjectClassification.CAR,
@@ -192,15 +203,27 @@ class PerceptionInterceptor(Node):
     def _on_ego_pose(self, msg: Odometry):
         """Update ego state from localization."""
         with self._lock:
-            self._ego_x = msg.pose.pose.position.x
-            self._ego_y = msg.pose.pose.position.y
+            new_x = msg.pose.pose.position.x
+            new_y = msg.pose.pose.position.y
+
+            if not self._ego_ready:
+                self._start_pos = (new_x, new_y)
+            else:
+                jump = math.hypot(new_x - self._ego_x, new_y - self._ego_y)
+                if jump > _TELEPORT_JUMP_THRESHOLD_M:
+                    self._start_pos = (new_x, new_y)
+                    self.get_logger().info(
+                        f'Ego position jump ({jump:.1f}m) — re-anchoring spawn '
+                        f'position for min_travel_before_placement'
+                    )
+
+            self._ego_x = new_x
+            self._ego_y = new_y
             self._ego_z = msg.pose.pose.position.z
             qz = msg.pose.pose.orientation.z
             qw = msg.pose.pose.orientation.w
             self._ego_heading = 2.0 * math.atan2(qz, qw)
             self._ego_vx = msg.twist.twist.linear.x
-            if not self._ego_ready:
-                self._start_pos = (self._ego_x, self._ego_y)
             self._ego_ready = True
 
     def _on_trajectory(self, msg: Trajectory):

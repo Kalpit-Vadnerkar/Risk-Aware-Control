@@ -187,7 +187,36 @@ def extract_fault_windows(events, bag_start_abs_sec, bag_duration, kind):
                     if lo <= srel <= hi or lo <= erel <= hi:
                         windows.append({'start': srel, 'end': erel,
                                         'reason': e.get('reason'), 'cycle': cyc})
-    else:  # imu
+    elif any(e.get('event') == 'imu_ramp_started' for e in events):
+        # imu_bias_ramp (added 2026-07-24): no on/off event pairs — bias grows
+        # continuously from a single imu_ramp_started until imu_ramp_reached_max
+        # (or trial end, if the gate/cap is never reached). Unlike imu_bias's
+        # binary on/off, "in fault" here just means "ramp is active at all" —
+        # the in/out z-score split still works, it just can't distinguish
+        # early (near-zero bias, effectively nominal) from late (near-cap)
+        # ramp — see imu_ramp_checkpoints below for the actual bias(t) curve
+        # if that distinction matters for a specific analysis.
+        start_t = None
+        checkpoints = []
+        for e in events:
+            if 'wall_time' not in e:
+                continue
+            rel = e['wall_time'] - bag_start_abs_sec
+            if e['event'] == 'imu_ramp_started':
+                start_t = rel
+            elif e['event'] == 'imu_ramp_level':
+                checkpoints.append({'t': rel, 'gyro_bias_rads': e.get('gyro_bias_rads')})
+            elif e['event'] == 'imu_ramp_reached_max' and start_t is not None:
+                if lo <= start_t <= hi or lo <= rel <= hi:
+                    windows.append({'start': start_t, 'end': rel, 'reason': 'ramp_reached_max',
+                                     'cycle': None, 'imu_ramp_checkpoints': checkpoints})
+                start_t = None
+        if start_t is not None and (lo <= start_t <= hi):
+            # cap never reached (or MRM/stuck ended the trial first) — ramp
+            # was active through the rest of the bag.
+            windows.append({'start': start_t, 'end': bag_duration, 'reason': 'ramp_sustained',
+                             'cycle': None, 'imu_ramp_checkpoints': checkpoints})
+    else:  # imu_bias (periodic on/off)
         on_t = None
         for e in events:
             if 'wall_time' not in e:

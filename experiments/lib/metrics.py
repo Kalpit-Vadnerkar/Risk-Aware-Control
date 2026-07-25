@@ -125,12 +125,72 @@ class ComfortMetrics:
 
 
 @dataclass
+class StaticCollisionMetrics:
+    """Heuristic proxy for a static-geometry collision (curb, divider,
+    guardrail, building) — invisible to SafetyMetrics above, which only
+    tracks distance to dynamic PredictedObjects, not map geometry a vehicle
+    can physically run into. AWSIM does have a native collision publisher
+    (OnCollisionRos2Publisher.cs — Unity OnCollisionEnter -> a
+    awsim/ground_truth/on_collision std_msgs/Bool topic) but it is not
+    currently attached to the ego vehicle prefab in this AWSIM Labs 1.6.1
+    install (no .prefab/.unity file references the component) — wiring it up
+    needs Unity Editor work and an AWSIM rebuild, out of reach from this
+    codebase alone. This is a from-recorded-data proxy instead: the vehicle
+    comes to a stop and NEVER moves again for the rest of the trial, without
+    having reached the goal. That combination is what a real collision or a
+    severe stuck-against-something incapacitation looks like in ground-truth
+    kinematics; a normal MRM stop that self-recovers, or a stop because the
+    goal was reached, does not match it. Flags a LIKELY event, not a
+    certain one — spot-check the rosbag/replay for anything this flags
+    before treating it as ground truth (confirmed against the 2026-07-24
+    imu_fault_ramp divider collision: this heuristic would have caught it).
+    """
+    permanently_stopped: bool = False
+    permanent_stop_time_s: Optional[float] = None
+    trailing_stopped_duration_s: float = 0.0
+    max_deceleration_near_stop_mps2: float = 0.0
+    max_jerk_near_stop: float = 0.0
+    likely_static_collision: bool = False
+
+
+@dataclass
+class FaultValidationMetrics:
+    """Lightweight, fault_log.jsonl-only health check — deliberately does NOT
+    read the rosbag, so it's cheap enough to run after every single trial
+    (not just as a slower end-of-batch analysis pass). Answers one narrow
+    question: did the fault this trial was FOR actually have a chance to
+    affect anything? A trial can be reported 'successful' (goal_reached) and
+    still be worthless for fault analysis if this comes back invalid — the
+    two are orthogonal. Added 2026-07-24 after an entire 9-campaign goal_012
+    smoke test completed goal_reached=True on every trial while a ground-truth
+    subscription bug silently meant zero faults ever armed — that would have
+    been caught after trial 1 instead of discovered by hand after the batch.
+    """
+    tl_fault_configured: bool = False
+    imu_fault_configured: bool = False
+    gt_pose_ever_received: bool = True    # vacuously true if not applicable
+    gt_health_warning_count: int = 0
+    tl_fault_armed: bool = True           # vacuously true if not configured
+    tl_fault_cycles_started: int = 0
+    tl_fault_cycles_completed: int = 0
+    tl_fault_messages_applied: int = 0
+    imu_fault_armed: bool = True          # vacuously true if not configured
+    imu_bias_cycles: int = 0
+    imu_ramp_started: bool = False
+    imu_ramp_reached_max: bool = False
+    valid: bool = True
+    issues: List[str] = field(default_factory=list)
+
+
+@dataclass
 class ExperimentMetrics:
     """Complete metrics for an experiment."""
     safety: SafetyMetrics = field(default_factory=SafetyMetrics)
     reliability: ReliabilityMetrics = field(default_factory=ReliabilityMetrics)
     fail_operational: FailOperationalMetrics = field(default_factory=FailOperationalMetrics)
     comfort: ComfortMetrics = field(default_factory=ComfortMetrics)
+    fault_validation: FaultValidationMetrics = field(default_factory=FaultValidationMetrics)
+    static_collision: StaticCollisionMetrics = field(default_factory=StaticCollisionMetrics)
 
     def to_dict(self) -> dict:
         return {
@@ -138,7 +198,94 @@ class ExperimentMetrics:
             'reliability': asdict(self.reliability),
             'fail_operational': asdict(self.fail_operational),
             'comfort': asdict(self.comfort),
+            'fault_validation': asdict(self.fault_validation),
+            'static_collision': asdict(self.static_collision),
         }
+
+
+def compute_fault_validation(
+    fault_log_path: Optional[str],
+    tl_fault: Optional[str],
+    imu_fault: Optional[str],
+    trial_start_wall_time: float = 0.0,
+) -> FaultValidationMetrics:
+    """Parse fault_log.jsonl and flag whether a configured fault ever actually
+    armed. `fault_log_path` should be the CUMULATIVE batch log (fault_injector.py
+    writes one shared log for the whole campaign) — events are filtered to
+    `wall_time >= trial_start_wall_time` so a multi-trial batch's later trials
+    aren't credited with an earlier trial's fault activity.
+    """
+    m = FaultValidationMetrics(
+        tl_fault_configured=bool(tl_fault),
+        imu_fault_configured=bool(imu_fault),
+    )
+    if not tl_fault and not imu_fault:
+        return m  # nominal / scenario-only campaign — nothing to validate
+
+    if not fault_log_path or not os.path.exists(fault_log_path):
+        m.valid = False
+        m.gt_pose_ever_received = False
+        m.tl_fault_armed = not tl_fault
+        m.imu_fault_armed = not imu_fault
+        m.issues.append('fault_log.jsonl missing — cannot validate fault injection at all')
+        return m
+
+    events = []
+    with open(fault_log_path) as f:
+        for line in f:
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if e.get('wall_time', 0.0) >= trial_start_wall_time:
+                events.append(e)
+
+    m.gt_health_warning_count = sum(
+        1 for e in events if e.get('event') in ('gt_pose_never_received', 'gt_pose_stale')
+    )
+    # runway_cleared is direct proof GT was received; absence of any
+    # gt_pose_never_received warning is weaker (the watchdog only fires every
+    # 15s and could miss a very short trial) but still informative.
+    m.gt_pose_ever_received = (
+        any(e.get('event') == 'runway_cleared' for e in events)
+        or not any(e.get('event') == 'gt_pose_never_received' for e in events)
+    )
+
+    if tl_fault:
+        m.tl_fault_cycles_started = sum(1 for e in events if e.get('event') == 'tl_fault_start')
+        m.tl_fault_cycles_completed = sum(1 for e in events if e.get('event') == 'tl_fault_end')
+        applied = [e for e in events if e.get('event') == 'tl_fault_applied']
+        m.tl_fault_messages_applied = applied[-1].get('count', 0) if applied else 0
+        m.tl_fault_armed = m.tl_fault_cycles_started > 0
+        if not m.tl_fault_armed:
+            m.valid = False
+            m.issues.append(
+                f'tl_fault={tl_fault!r} configured but never armed (zero tl_fault_start '
+                f'events) — data is effectively an unfaulted nominal drive'
+            )
+
+    if imu_fault == 'imu_bias':
+        m.imu_bias_cycles = sum(1 for e in events if e.get('event') == 'imu_bias_on')
+        m.imu_fault_armed = m.imu_bias_cycles > 0
+        if not m.imu_fault_armed:
+            m.valid = False
+            m.issues.append('imu_fault=imu_bias configured but never armed (zero imu_bias_on events)')
+    elif imu_fault == 'imu_bias_ramp':
+        m.imu_ramp_started = any(e.get('event') == 'imu_ramp_started' for e in events)
+        m.imu_ramp_reached_max = any(e.get('event') == 'imu_ramp_reached_max' for e in events)
+        m.imu_fault_armed = m.imu_ramp_started
+        if not m.imu_fault_armed:
+            m.valid = False
+            m.issues.append('imu_fault=imu_bias_ramp configured but never armed (no imu_ramp_started event)')
+
+    if not m.gt_pose_ever_received:
+        m.issues.append(
+            'ground-truth pose never received by fault_injector.py — the runway gate could '
+            'never clear (see docs/design_decisions.md open GT-subscription bug); rerun with '
+            '--fault-min-runway-m 0 to bypass it while that is unresolved'
+        )
+
+    return m
 
 
 class MetricsCollector:
@@ -468,7 +615,70 @@ class MetricsCollector:
         # Comfort metrics
         self._compute_comfort_metrics(metrics.comfort)
 
+        # Static-collision proxy (needs goal_reached from reliability, above)
+        self._compute_static_collision_metrics(metrics.static_collision, metrics.reliability.goal_reached)
+
         return metrics
+
+    # Minimum trailing time at near-zero velocity before "stopped" is called
+    # "permanent" rather than just a normal transient stop (red light, MRM
+    # blip that recovers, etc).
+    _STATIC_COLLISION_MIN_STOPPED_S = 20.0
+    _STATIC_COLLISION_SPEED_THRESHOLD_MPS = 0.3
+
+    def _compute_static_collision_metrics(self, m: StaticCollisionMetrics, goal_reached: bool):
+        """See StaticCollisionMetrics' docstring for the full rationale —
+        short version: vehicle stops and never moves again for a substantial
+        trailing duration, without having reached the goal.
+        """
+        if goal_reached or not self.velocities:
+            return
+
+        # Find the earliest index from which velocity stays below threshold
+        # for the rest of the recording, walking backward from the end.
+        n = len(self.velocities)
+        stop_idx = None
+        for i in range(n - 1, -1, -1):
+            if abs(self.velocities[i][1]) >= self._STATIC_COLLISION_SPEED_THRESHOLD_MPS:
+                stop_idx = i + 1
+                break
+        else:
+            stop_idx = 0  # never moving at all this whole recording
+
+        if stop_idx >= n:
+            return  # last sample was still moving
+
+        stop_time = self.velocities[stop_idx][0]
+        trailing_duration = self.velocities[-1][0] - stop_time
+        if trailing_duration < self._STATIC_COLLISION_MIN_STOPPED_S:
+            return
+
+        m.permanently_stopped = True
+        m.permanent_stop_time_s = round(stop_time, 2)
+        m.trailing_stopped_duration_s = round(trailing_duration, 2)
+
+        # Deceleration/jerk in the window leading up to the stop, as
+        # supporting evidence (not a gate — a wedged-but-not-hard-braked stop
+        # is still worth flagging).
+        window_start = max(0.0, stop_time - 5.0)
+        near_stop_accels = [a for t, a in self.accelerations if window_start <= t <= stop_time]
+        negative = [a for a in near_stop_accels if a < 0]
+        if negative:
+            m.max_deceleration_near_stop_mps2 = round(abs(min(negative)), 2)
+
+        prev = None
+        max_jerk = 0.0
+        for t, a in self.accelerations:
+            if window_start <= t <= stop_time and prev is not None:
+                pt, pa = prev
+                dt = t - pt
+                if dt > 0.001:
+                    max_jerk = max(max_jerk, abs(a - pa) / dt)
+            if window_start <= t <= stop_time:
+                prev = (t, a)
+        m.max_jerk_near_stop = round(max_jerk, 2)
+
+        m.likely_static_collision = True
 
     def _compute_safety_metrics(self, m: SafetyMetrics, distance_km: float = 0.0):
         """Compute safety metrics."""
@@ -685,11 +895,27 @@ class MetricsCollector:
 
 
 def compute_metrics_from_bag(bag_path: str, goal_position: Optional[Dict[str, float]] = None,
-                             injected_uuid_bytes: Optional[bytes] = None) -> ExperimentMetrics:
-    """Convenience function to compute metrics from a rosbag."""
+                             injected_uuid_bytes: Optional[bytes] = None,
+                             fault_log_path: Optional[str] = None,
+                             tl_fault: Optional[str] = None,
+                             imu_fault: Optional[str] = None,
+                             trial_start_wall_time: float = 0.0) -> ExperimentMetrics:
+    """Convenience function to compute metrics from a rosbag.
+
+    fault_log_path/tl_fault/imu_fault/trial_start_wall_time are optional —
+    pass them (from a fault campaign trial) to also populate
+    metrics.fault_validation; omitted, it stays at its vacuous default
+    (valid=True, nothing configured), correct for nominal/scenario campaigns
+    and for the standalone --compute-metrics-only CLI path.
+    """
     collector = MetricsCollector(bag_path, goal_position, injected_uuid_bytes)
     collector.read_bag()
-    return collector.compute_metrics()
+    metrics = collector.compute_metrics()
+    if tl_fault or imu_fault:
+        metrics.fault_validation = compute_fault_validation(
+            fault_log_path, tl_fault, imu_fault, trial_start_wall_time
+        )
+    return metrics
 
 
 def save_metrics(metrics: ExperimentMetrics, output_file: str):

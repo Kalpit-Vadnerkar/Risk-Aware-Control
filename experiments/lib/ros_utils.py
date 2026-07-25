@@ -115,6 +115,25 @@ class StateMonitorNode(Node):
             depth=1
         )
 
+        # AWSIM's raw ground-truth publisher is BEST_EFFORT (confirmed live
+        # via `ros2 topic info /awsim/ground_truth/localization/kinematic_state
+        # --verbose`, 2026-07-24) — unlike Autoware's own state/diagnostic
+        # topics above, which are RELIABLE. A RELIABLE subscriber never
+        # connects to a BEST_EFFORT publisher (ROS2/DDS QoS compatibility
+        # rule), silently. This subscription was requesting volatile_qos
+        # (RELIABLE) and had likely never received a single message —
+        # get_vehicle_position() always returned None, silently forcing
+        # reset_vehicle()'s near-start optimization to always fall through to
+        # the slower full-teleport path. Give it its own QoS rather than
+        # changing volatile_qos, which the RELIABLE Autoware topics above
+        # still need.
+        gt_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+
         # Subscriptions with appropriate QoS
         self.create_subscription(
             AutowareStateMsg,
@@ -148,7 +167,7 @@ class StateMonitorNode(Node):
             Odometry,
             '/awsim/ground_truth/localization/kinematic_state',
             self._position_callback,
-            volatile_qos
+            gt_qos
         )
 
         self._trajectory_ready = False

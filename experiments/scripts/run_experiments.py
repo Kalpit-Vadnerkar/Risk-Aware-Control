@@ -424,11 +424,17 @@ class ExperimentRunner:
                 print(f"System in {mrm_state.name} state, attempting recovery...")
                 recover_from_emergency(max_attempts=2)
 
-    def compute_and_save_metrics(self):
-        """Compute metrics from recorded data."""
+    def compute_and_save_metrics(self, fault_log_path=None, tl_fault=None,
+                                  imu_fault=None, trial_start_wall_time=0.0):
+        """Compute metrics from recorded data.
+
+        Returns the trial's FaultValidationMetrics (None if metrics couldn't
+        be computed at all) so the caller can decide whether to abort the
+        rest of the campaign — see compute_fault_validation in metrics.py.
+        """
         if not os.path.exists(self.config.rosbag_dir):
             print("No rosbag data to analyze")
-            return
+            return None
 
         # Try to load injected obstacle UUID written by the interceptor
         injected_uuid_bytes = None
@@ -456,6 +462,10 @@ class ExperimentRunner:
                 self.config.rosbag_dir,
                 goal_position=self.config.goal.position,
                 injected_uuid_bytes=injected_uuid_bytes,
+                fault_log_path=fault_log_path,
+                tl_fault=tl_fault,
+                imu_fault=imu_fault,
+                trial_start_wall_time=trial_start_wall_time,
             )
             save_metrics(metrics, self.config.metrics_file)
             print(f"Metrics saved to: {self.config.metrics_file}")
@@ -470,8 +480,19 @@ class ExperimentRunner:
             if metrics.safety.min_injected_obstacle_distance < float('inf'):
                 print(f"  Min injected obstacle distance: {metrics.safety.min_injected_obstacle_distance:.2f}m")
 
+            fv = metrics.fault_validation
+            if fv.tl_fault_configured or fv.imu_fault_configured:
+                status = "OK" if fv.valid else "INVALID"
+                print(f"  Fault validation: {status} "
+                      f"(tl_armed={fv.tl_fault_armed}, imu_armed={fv.imu_fault_armed}, "
+                      f"gt_received={fv.gt_pose_ever_received})")
+                for issue in fv.issues:
+                    print(f"    - {issue}")
+            return fv
+
         except Exception as e:
             print(f"ERROR computing metrics: {e}")
+            return None
 
 
 def start_fault_injector(
@@ -482,6 +503,9 @@ def start_fault_injector(
     fault_delay: float,
     fault_duration: float,
     log_file: str,
+    fault_min_runway_m: float = 150.0,
+    tl_zone_radius_m: float = 0.0,
+    zone_goals: str | None = None,
 ) -> subprocess.Popen:
     """Launch the fault injector as a subprocess."""
     injector_script = os.path.join(
@@ -497,6 +521,16 @@ def start_fault_injector(
         cmd += ['--fault-delay', str(fault_delay)]
     if fault_duration > 0:
         cmd += ['--fault-duration', str(fault_duration)]
+    if fault_min_runway_m > 0:
+        cmd += ['--fault-min-runway-m', str(fault_min_runway_m)]
+    if tl_zone_radius_m > 0:
+        cmd += ['--tl-zone-radius-m', str(tl_zone_radius_m)]
+    # zone_goals defaults to fault_injector.py's own built-in production goal
+    # set (goal_007/012/026) if not given — only pass through when this
+    # campaign's own --goals is known, so map TL points are scoped to
+    # whatever routes are ACTUALLY being driven (see main()'s call site).
+    if zone_goals:
+        cmd += ['--zone-goals', zone_goals]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(2.0)
@@ -703,19 +737,48 @@ def main():
     parser.add_argument('--velocity-limit', type=float, default=0.0,
                         help='Max velocity cap in m/s (0 = Autoware default ~20 m/s)')
     parser.add_argument('--tl-fault', type=str, default=None,
-                        choices=['tl_confidence', 'tl_oscillate', 'tl_unknown', 'tl_blackout'],
-                        help='Traffic light fault mode')
+                        choices=['tl_confidence', 'tl_confidence_ramp', 'tl_oscillate', 'tl_unknown', 'tl_blackout'],
+                        help='Traffic light fault mode (tl_confidence_ramp: gradual '
+                             'decay per window instead of a fixed step — see '
+                             'fault_injector.py --tl-fault help)')
     parser.add_argument('--tl-params', type=str, default='{}',
                         help='JSON params for TL fault, e.g. {"dropout_rate":0.5}')
     parser.add_argument('--imu-fault', type=str, default=None,
-                        choices=['imu_bias'],
-                        help='IMU fault mode')
+                        choices=['imu_bias', 'imu_bias_ramp', 'imu_scale_factor', 'imu_stuck_at'],
+                        help='IMU fault mode: imu_bias (periodic on/off, not part of the '
+                             'standard suite as of 2026-07-24 — see fault_injector.py), '
+                             'imu_bias_ramp (one-shot linear ramp to a cap), '
+                             'imu_scale_factor (periodic on/off multiplicative gain error), '
+                             'imu_stuck_at (periodic on/off frozen gyro output)')
     parser.add_argument('--imu-params', type=str, default='{}',
-                        help='JSON params for IMU fault, e.g. {"accel_bias_ms2":0.5,"gyro_bias_rads":0.1}')
+                        help='JSON params — see fault_injector.py --imu-params help for the '
+                             'full per-mode reference (imu_bias, imu_bias_ramp, '
+                             'imu_scale_factor, imu_stuck_at all take different keys)')
     parser.add_argument('--fault-delay', type=float, default=30.0,
-                        help='Seconds after engage before faults activate (default: 30)')
+                        help='Seconds after the post-spawn runway clears (see '
+                             '--fault-min-runway-m) before faults may arm (default: 30)')
     parser.add_argument('--fault-duration', type=float, default=45.0,
                         help='Seconds the fault stays active before auto-deactivating (default: 45)')
+    parser.add_argument('--fault-min-runway-m', type=float, default=150.0,
+                        help='Fallback only (used if map TL points fail to load): metres '
+                             'the vehicle must travel from trial start (ground truth) '
+                             'before any fault may arm (default: 150). Normally the runway '
+                             'instead requires clearing the first real TL zone — see '
+                             '--tl-zone-radius-m.')
+    parser.add_argument('--tl-zone-radius-m', type=float, default=0.0,
+                        help='Metres from a real map TL position within which ego counts as '
+                             '"in a TL zone" (0 = use fault_injector.py\'s own default, '
+                             'currently 80m — comfortable braking distance at max_vel from '
+                             'Autoware\'s own common.param.yaml, not detection range — see '
+                             'fault_injector.py).')
+    parser.add_argument('--fault-validation-mode', type=str, default='abort',
+                        choices=['abort', 'warn', 'off'],
+                        help="What to do when a configured tl_fault/imu_fault never actually "
+                             "armed this trial (see metrics.py's compute_fault_validation): "
+                             "'abort' (default) stops the rest of this campaign immediately and "
+                             "exits nonzero, so a chained run_fault_campaigns.sh batch (set -e) "
+                             "stops too instead of burning the remaining campaigns on the same "
+                             "broken data. 'warn' logs and continues. 'off' disables the check.")
     args = parser.parse_args()
 
     # Handle metrics-only mode
@@ -811,14 +874,26 @@ def main():
         set_velocity_limit(args.velocity_limit)
         time.sleep(0.5)
 
-    # Initial reset to ensure clean state
-    if not args.skip_reset:
-        print("\nPerforming initial vehicle reset...")
-        if not reset_vehicle():
-            print("WARNING: Initial reset failed, continuing anyway...")
-        time.sleep(3)
-
     # Start interceptor (runs for the entire batch)
+    #
+    # REORDERED 2026-07-24 (was after the initial reset below): gyro_odometer
+    # and behavior_planning are permanently repointed to this campaign's
+    # fault-relay topics (traffic_signals_faulted / imu_data_faulted — see
+    # README.md items 2/8), so with the relay processes started AFTER the
+    # initial reset, that reset (and everything downstream of it —
+    # get_mrm_state, wait_for_clean_diagnostics, engage) ran with ZERO IMU
+    # twist data and ZERO TL data reaching Autoware — ekf_localizer never got
+    # updated, diagnostics never cleared, and the reset/engage sequence could
+    # hang or silently fail. This was invisible for a single, standalone
+    # campaign run because the vehicle was usually already near enough to
+    # start to skip reset_vehicle()'s teleport path — but chaining campaigns
+    # back-to-back (run_fault_campaigns.sh) means every campaign but the
+    # first starts with the vehicle far from start, forcing the full
+    # teleport+diagnostics-wait path in exactly the window where nothing was
+    # relaying IMU/TL data yet. Starting the relays first closes that gap.
+    # perception_interceptor.py's _on_ego_pose now re-anchors _start_pos on
+    # a detected teleport (see its _TELEPORT_JUMP_THRESHOLD_M), since its
+    # first-ever message here can land before the reset below completes.
     interceptor_proc = None
     try:
         print(f"\nStarting interceptor: {scenario_type}")
@@ -844,19 +919,39 @@ def main():
             fault_delay=args.fault_delay,
             fault_duration=args.fault_duration,
             log_file=batch_fault_log,
+            fault_min_runway_m=args.fault_min_runway_m,
+            tl_zone_radius_m=args.tl_zone_radius_m,
+            # Reuse this campaign's own --goals as the map TL zone search
+            # scope — these are exactly the routes actually being driven, no
+            # separate --zone-goals flag needed (falls back to
+            # fault_injector.py's own default goal_007/012/026 if --goals
+            # wasn't given, e.g. an "all goals" run).
+            zone_goals=args.goals,
         )
     except RuntimeError as e:
         print(f"ERROR: Failed to start fault injector: {e}")
         stop_interceptor(interceptor_proc)
         return 1
 
+    # Initial reset to ensure clean state — now runs AFTER the relays above
+    # are confirmed alive, so gyro_odometer/behavior_planning have real
+    # IMU/TL data flowing throughout the reset and diagnostics-clear wait.
+    if not args.skip_reset:
+        print("\nPerforming initial vehicle reset...")
+        if not reset_vehicle():
+            print("WARNING: Initial reset failed, continuing anyway...")
+        time.sleep(3)
+
     # Run experiments
     results = []
     skipped_count = 0
     total_experiments = len(goals) * args.trials
+    fault_validation_failed = False
 
     try:
         for trial in range(args.trials):
+            if fault_validation_failed:
+                break
             for i, goal in enumerate(goals):
                 exp_num = trial * len(goals) + i + 1
                 print(f"\n{'#'*60}")
@@ -873,6 +968,7 @@ def main():
                         continue
 
                 # Create experiment ID
+                trial_start_wall_time = time.time()
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 exp_id = f"{goal.id}_{args.condition}_t{trial+1}_{timestamp}"
 
@@ -902,8 +998,14 @@ def main():
                 runner = ExperimentRunner(config)
                 success = runner.run()
 
-                # Compute metrics
-                runner.compute_and_save_metrics()
+                # Compute metrics (includes the fault_validation health check —
+                # see metrics.py's compute_fault_validation)
+                fault_validation = runner.compute_and_save_metrics(
+                    fault_log_path=batch_fault_log,
+                    tl_fault=args.tl_fault,
+                    imu_fault=args.imu_fault,
+                    trial_start_wall_time=trial_start_wall_time,
+                )
 
                 # Copy fault log snapshot into this run's directory
                 if os.path.exists(batch_fault_log):
@@ -914,6 +1016,23 @@ def main():
                     except Exception as exc:
                         print(f"WARNING: Could not copy fault log: {exc}")
 
+                if (fault_validation is not None and not fault_validation.valid
+                        and args.fault_validation_mode != 'off'):
+                    print("\n" + "!"*70)
+                    print("! FAULT VALIDATION FAILED — this trial's fault never actually armed")
+                    print("!"*70)
+                    for issue in fault_validation.issues:
+                        print(f"!   - {issue}")
+                    if args.fault_validation_mode == 'abort':
+                        print("! Aborting remaining trials in this campaign (--fault-validation-mode "
+                              "abort) — continuing would just burn more time reproducing the same")
+                        print("! broken data. Fix the root cause above, then re-run.")
+                        print("!"*70)
+                        fault_validation_failed = True
+                    else:
+                        print("! Continuing anyway (--fault-validation-mode warn).")
+                        print("!"*70)
+
                 results.append({
                     'experiment_id': exp_id,
                     'goal_id': goal.id,
@@ -921,6 +1040,9 @@ def main():
                     'success': success,
                     'result': runner.result,
                 })
+
+                if fault_validation_failed:
+                    break  # skip the reset below too — about to stop the whole campaign
 
                 # Reset vehicle before next experiment
                 if not args.skip_reset and (i < len(goals) - 1 or trial < args.trials - 1):
@@ -955,6 +1077,8 @@ def main():
     print(f"Total run: {len(results)}, Successful: {success_count}, Failed: {failed_count}")
     if skipped_count > 0:
         print(f"Skipped (already completed): {skipped_count}")
+    if fault_validation_failed:
+        print("FAULT VALIDATION FAILED — remaining trials/goals for this campaign were skipped.")
 
     print("\nResults:")
     for r in results:
@@ -973,11 +1097,27 @@ def main():
             'condition': args.condition,
             'total_experiments': len(results),
             'successful': success_count,
+            'fault_validation_aborted': fault_validation_failed,
             'results': results,
         }, f, indent=2)
     print(f"\nSummary saved to: {summary_file}")
 
-    return 0 if success_count == len(results) else 1
+    # NOTE (fixed 2026-07-24): exit code intentionally does NOT depend on
+    # success_count/goal_reached. "Didn't reach the goal" is a valid,
+    # sometimes-expected experimental OUTCOME (obs_noescape is designed to
+    # never reach goal; a fault campaign colliding/getting stuck is often the
+    # actual result being measured, e.g. the 2026-07-24 imu_fault_ramp
+    # divider collision), not a sign the SCRIPT malfunctioned. Conflating the
+    # two here previously meant run_fault_campaigns.sh's `set -e` stopped an
+    # entire chained batch the moment any one trial failed to reach its
+    # goal — imu_fault_scale/imu_fault_stuck never got a chance to run after
+    # imu_fault_ramp's (correct, intended) collision. Only genuine data-
+    # validity problems (fault_validation_failed) should abort the batch;
+    # success_count/failed_count above are still reported for visibility,
+    # just not used to decide the exit code.
+    if fault_validation_failed:
+        return 1
+    return 0
 
 
 if __name__ == '__main__':
