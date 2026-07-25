@@ -1,8 +1,15 @@
 # Risk-Aware Control for Autonomous Vehicles
 
-Extension of the Digital Twin framework from passive fault detection to active risk-aware
-control using conformal prediction over ST-GAT residuals (RISE — Residual-Informed Safety
-Envelopes).
+**Repo name is a legacy artifact — see `CLAUDE.md` and `TODO.md` for the current framing.**
+As of the 2026-07-24 reframe, the dissertation's core contribution is a digital-twin
+fault-detection framework that detects **belief divergence under a map-grounded prior**
+(the strong form: negative-evidence detection — the map licenses a hard expectation, and
+the fault signature is perception failing to report what must be there), reports it with
+**calibrated confidence**, and measures **lead time** before the divergence degrades
+vehicle safety. Active risk-aware control (RISE — Residual-Informed Safety Envelopes,
+relaxing a velocity constraint using the residual signal) is now a deprioritized
+future-work chapter, not the claim under defense — see `docs/design_decisions.md` item 10
+for why scenario-based avoidance work is scoped out of the current priority queue.
 
 **Principal Investigator:** Kalpit Vadnerkar  
 **Institution:** Clemson University, Department of Electrical and Computer Engineering  
@@ -109,6 +116,8 @@ The Autoware install at `/home/kvadner/Desktop/Dissertation/autoware/` has been 
 ### 3. MRM deadlock fixes — diagnostic gate for autonomous mode
 
 This is the largest change. The default Autoware diagnostic chain triggers MRM (Minimum Risk Maneuver) on many conditions that are normal during AWSIM experiments — routing resets between trials, TF briefly dropping during teleports, rosbag2_recorder momentarily registering twice, EKF twist updates lagging through the Python IMU relay. Each of these caused MRM_SUCCEEDED deadlocks that permanently wedged the vehicle.
+
+**This configuration is "Arm A" (safety features disabled) in the current two-arm fault-injection design — see `TODO.md` and `docs/theoretical_framework.md` §4.** There is no "Arm B" (stock/full diagnostic gate, used as a ground-truth oracle for lead-time measurement) configuration yet; that's an open gap, not just a documentation one.
 
 **All paths below are relative to** `config/system/diagnostics/` (inside `autoware_launch`).
 
@@ -272,6 +281,12 @@ picked up the new values after restart.
 ---
 
 ## Data Collection Campaigns
+
+**`obs_*` campaigns below are deprioritized as of 2026-07-24** — they support the
+scenario-based avoidance / control-track future work, not the current
+belief-divergence detection / calibration / lead-time claim. `nom_v11` and the
+fault campaigns (`tl_fault_*`, `imu_fault_*`) are the active priority — see
+`TODO.md`.
 
 Goals: **007, 011, 021** — verified feasible on this machine (live route test 2026-06-27).
 

@@ -5,22 +5,64 @@ Guidance for Claude Code (or any agent) working in this repo.
 ## What this is
 
 Kalpit Vadnerkar's PhD dissertation project (Clemson ECE, advisor Pierluigi Pisu).
+
+**Core contribution (reframed 2026-07-24 — see TODO.md "Research Direction" and
+`docs/theoretical_framework.md` for the full argument):** the digital twin detects
+faults through **belief divergence under a map-grounded prior**, not generic
+residual anomaly detection. It maintains an independent expectation of what the
+perception layer should be reporting — from HD map (Lanelet2) categorical
+assertions, learned nominal temporal patterns, and vehicle dynamics context — and
+flags a fault when the autonomy stack's perceptual belief diverges from that
+expectation. The strong form is **negative-evidence detection**: the map licenses a
+hard categorical expectation ("a signalized intersection exists here"), and the
+fault signature is perception failing to report what must be there.
+
+**Claim to defend:** this framework detects when the autonomy stack's perceptual
+belief has diverged from a map-grounded, independently derived expectation of the
+world; it reports that divergence with **calibrated confidence**, a bounded number
+of seconds of **lead time** before the divergence degrades vehicle safety. Three
+load-bearing pieces: belief divergence/negative evidence (mechanism — not yet
+proven, see Priority 0 in TODO.md), calibrated confidence (conformal prediction /
+UQ — a calibration curve, not an accuracy number), lead time (prediction-horizon
+study reframed as a safety result, measured against Autoware's own MRM trigger as
+ground truth). Detection ("fault: yes/no") is already banked from the published
+paper; the dissertation's job is *verification*.
+
 Extends the published prior work — `Digital_Twins_as_Predictive_Models_for_Real-Time_Probabilistic_Risk_Assessment_of_Autonomous_Vehicles.pdf`
-in the project root (IEEE T-ITS, April 2026) — from passive ST-GAT-residual fault
-*detection* toward active risk-aware *control*: using the residual/uncertainty signal
-to relax an AV's velocity constraint so it makes progress instead of defaulting to a
-full stop. Runs on Autoware + AWSIM in a simulated Nishishinjuku (Tokyo) map.
+in the project root (IEEE T-ITS vol. 27 no. 4, April 2026, 93.7% fault detection
+accuracy across Camera/IMU/LiDAR, Traffic Light Status Flag 29.7% feature
+importance, TL Status Flag × CUSUM 22% top feature-residual combination) — not by
+restating it but by explaining *why* those numbers came out that way (negative
+evidence needs a hard prior; traffic lights have one via the map, object
+detections don't) and building the calibration/lead-time evidence the paper
+doesn't have. Runs on Autoware + AWSIM in a simulated Nishishinjuku (Tokyo) map.
+
+**Repo name is a legacy artifact.** This repo was originally scoped as an
+extension from passive detection to *active risk-aware control* ("RISE" —
+Residual-Informed Safety Envelopes; relaxing a velocity constraint under
+uncertainty so the AV makes progress instead of stopping). **That control work is
+not the core dissertation contribution as of this reframe.** Scenario-based
+avoidance demonstrations (staged obstacles, cut-ins — the `obs_*` campaigns below)
+are a contribution to control/handling, not to safety verification, and are
+deliberately scoped out of the claim being defended (see TODO.md's "Scoping
+corollary"). RISE content stays in `docs/` as clearly-marked future-work, not
+deleted — don't treat it as the thing under defense.
 
 **Don't duplicate context that's already written down and moves fast:**
-- `TODO.md` — current research direction, phase status, what's next. **Read this
-  fresh every session** — direction changes are common (e.g. 2026-07-22 pivoted from
-  calibration/conformal-prediction work to an exploratory IMU/Camera fault-reaction
-  study; conformal prediction is a candidate mechanism, not a commitment).
+- `TODO.md` — current research direction, phase status, what's next, and the two
+  **blocking** experiments (per-fault-class importance recompute; HD map detection
+  ablation) that either establish or kill the mechanistic claim. **Read this
+  fresh every session** — direction changes are common.
 - `README.md` — environment setup, the Autoware source patches that must be reapplied
   after any Autoware reinstall/rebuild, data collection campaign commands.
+- `docs/theoretical_framework.md` — the belief-divergence mechanism, the claim,
+  and the two-arm fault-injection design (Arm A: Autoware safety disabled, the
+  science condition; Arm B: Autoware safety enabled, the ground-truth oracle for
+  lead-time measurement).
 - `docs/research_notes/` — dated findings docs (MRM analysis, EKF fixes, fault
   literature review, etc.) — check these for the *why* behind non-obvious decisions
-  before re-deriving them.
+  before re-deriving them. These predate the 2026-07-24 reframe and are kept as
+  historical record, not rewritten to match it.
 
 ## Environment — sourcing order matters
 
@@ -62,6 +104,14 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
 - Params under `config/**/*.param.yaml` are **load-time, not hot-reloadable** —
   Autoware needs a restart after editing, verify with `ros2 param get` that the new
   value actually loaded.
+- **MRM diagnostic gate is currently one configuration, not two.** README.md item 3
+  strips perception/planning/localization out of Autoware's autonomous-mode gate so
+  injected faults propagate instead of being amputated by MRM — that's Arm A
+  (safety disabled, the science condition) territory. There is no Arm B config
+  (stock/full diagnostic gate, so Autoware's own MRM trigger can serve as the
+  ground-truth "unsafe" timestamp for lead-time measurement) yet. See TODO.md's
+  two-arm fault injection section — this is a real gap, not just a documentation
+  one, before lead-time-vs-Arm-B experiments can run.
 
 ## Directory conventions
 
