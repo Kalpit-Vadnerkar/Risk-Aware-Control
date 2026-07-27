@@ -11,7 +11,7 @@ Usage:
 Options:
   --goals "GOAL1,GOAL2,..."  Run specific goals (default: all) - USE QUOTES!
   --condition CONDITION      Experiment condition: baseline, fault_xxx (default: baseline)
-  --stuck-timeout SECONDS    Timeout for stuck detection (default: 150)
+  --stuck-timeout SECONDS    Timeout for stuck detection (default: 100)
   --trials N                 Number of trials per goal (default: 1)
   --skip-reset               Don't reset vehicle between experiments
   --skip-existing            Skip goals that already have successful results
@@ -70,7 +70,7 @@ from ros_utils import (
     set_velocity_limit,
     AutowareState, MrmState, MrmBehavior, shutdown_ros
 )
-from metrics import compute_metrics_from_bag, save_metrics
+from metrics import compute_metrics_from_bag, save_metrics, FaultValidationMetrics
 
 
 class ExperimentRunner:
@@ -428,13 +428,33 @@ class ExperimentRunner:
                                   imu_fault=None, trial_start_wall_time=0.0):
         """Compute metrics from recorded data.
 
-        Returns the trial's FaultValidationMetrics (None if metrics couldn't
-        be computed at all) so the caller can decide whether to abort the
-        rest of the campaign — see compute_fault_validation in metrics.py.
+        Returns a FaultValidationMetrics the caller uses to decide whether to
+        abort the rest of the campaign (see compute_fault_validation in
+        metrics.py) — but as of 2026-07-26, this is no longer ONLY about
+        whether the fault armed. It never returns None anymore: a trial that
+        never recorded a rosbag at all (engage_failed, or any other pre-
+        recording crash) is itself an infrastructure-health signal, not just
+        "nothing to validate" — added after an overnight run where 4
+        engage_failed trials in a row in imu_fault_scale burned through the
+        rest of that campaign's budget with no abort, because this used to
+        return None here and the caller had nothing to check. A trial that DID
+        record but the vehicle never actually moved (same overnight run — 4
+        TL trials sat at ~9m for a full stuck-timeout while the fault fired
+        thousands of times into a stationary vehicle) is checked further down,
+        once distance is available from the computed metrics.
         """
         if not os.path.exists(self.config.rosbag_dir):
             print("No rosbag data to analyze")
-            return None
+            fv = FaultValidationMetrics(
+                tl_fault_configured=bool(tl_fault), imu_fault_configured=bool(imu_fault),
+                valid=False,
+            )
+            fv.issues.append(
+                f"No rosbag recorded for this trial (status={self.result.get('status')!r}) — "
+                f"trial failed before/during recording, e.g. engage_failed. This is an "
+                f"infrastructure problem, not fault-related data."
+            )
+            return fv
 
         # Try to load injected obstacle UUID written by the interceptor
         injected_uuid_bytes = None
@@ -488,6 +508,29 @@ class ExperimentRunner:
                       f"gt_received={fv.gt_pose_ever_received})")
                 for issue in fv.issues:
                     print(f"    - {issue}")
+
+            # "Vehicle never really moved" — an infrastructure-health signal
+            # independent of whether the fault armed, added 2026-07-26 after
+            # the same overnight run: 4 TL trials sat at ~9m for a full
+            # stuck-timeout while the fault fired thousands of times into a
+            # stationary vehicle. Same threshold shape as
+            # analyse_experiments.py's own offline DRIFT check (50m / half
+            # the configured stuck-timeout), so "would this look wrong in the
+            # post-hoc checklist" and "does this abort the run live" agree.
+            dist_m = metrics.reliability.distance_km * 1000
+            driving_time = metrics.reliability.driving_time
+            if (not metrics.reliability.goal_reached
+                    and dist_m < 50 and driving_time > 0.5 * self.config.stuck_timeout):
+                fv.valid = False
+                fv.issues.append(
+                    f"Vehicle covered only {dist_m:.0f}m in {driving_time:.0f}s "
+                    f"(stuck_timeout={self.config.stuck_timeout:.0f}s) — looks like an "
+                    f"infrastructure failure (Autoware stuck/unresponsive), not a fault effect. "
+                    f"Compare against known real fault-induced stuck trials, which cover "
+                    f"hundreds of meters before failing."
+                )
+                print(f"  Infra health: INVALID — {fv.issues[-1]}")
+
             return fv
 
         except Exception as e:
@@ -500,25 +543,23 @@ def start_fault_injector(
     tl_params: dict,
     imu_fault: str | None,
     imu_params: dict,
-    fault_delay: float,
     fault_duration: float,
     log_file: str,
     fault_min_runway_m: float = 150.0,
     tl_zone_radius_m: float = 0.0,
     zone_goals: str | None = None,
+    arm: str = 'A',
 ) -> subprocess.Popen:
     """Launch the fault injector as a subprocess."""
     injector_script = os.path.join(
         os.path.dirname(__file__), '..', 'lib', 'fault_injector.py'
     )
 
-    cmd = ['python3', injector_script, '--log-file', log_file]
+    cmd = ['python3', injector_script, '--log-file', log_file, '--arm', arm]
     if tl_fault:
         cmd += ['--tl-fault', tl_fault, '--tl-params', json.dumps(tl_params)]
     if imu_fault:
         cmd += ['--imu-fault', imu_fault, '--imu-params', json.dumps(imu_params)]
-    if fault_delay > 0:
-        cmd += ['--fault-delay', str(fault_delay)]
     if fault_duration > 0:
         cmd += ['--fault-duration', str(fault_duration)]
     if fault_min_runway_m > 0:
@@ -539,7 +580,7 @@ def start_fault_injector(
         stderr = proc.stderr.read().decode() if proc.stderr else ''
         raise RuntimeError(f'FaultInjector failed to start: {stderr}')
 
-    print(f"FaultInjector started (PID {proc.pid}): tl={tl_fault}, imu={imu_fault}, delay={fault_delay:.0f}s, duration={fault_duration:.0f}s")
+    print(f"FaultInjector started (PID {proc.pid}): tl={tl_fault}, imu={imu_fault}, duration={fault_duration:.0f}s")
     return proc
 
 
@@ -687,6 +728,25 @@ def reset_vehicle(max_retries: int = 2):
     return False
 
 
+def count_existing_trials(campaign_dir: str, goal_id: str) -> int:
+    """Count completed trial directories (have a result.json) for this goal,
+    regardless of success/failure — added 2026-07-26 for auto-resume. Trial
+    *count* is the right resume unit for fault campaigns specifically because
+    their correct terminal outcome is often NOT goal_reached (e.g.
+    mrm_mrm_succeeded is a valid, expected result for an unabsorbable IMU
+    fault) — check_experiment_exists's success check below is right for its
+    own --skip-existing use case, but would treat a legitimately-completed
+    fault trial as something to keep retrying forever.
+    """
+    goal_dir = os.path.join(campaign_dir, goal_id)
+    if not os.path.isdir(goal_dir):
+        return 0
+    return sum(
+        1 for entry in os.listdir(goal_dir)
+        if os.path.exists(os.path.join(goal_dir, entry, 'result.json'))
+    )
+
+
 def check_experiment_exists(goal_id: str, campaign_dir: str) -> bool:
     """Check if a successful experiment already exists for this goal."""
     goal_dir = os.path.join(campaign_dir, goal_id)
@@ -714,7 +774,7 @@ def main():
                              'experiments/configs/ if not absolute (default: captured_goals.json)')
     parser.add_argument('--condition', type=str, default='baseline',
                         help='Experiment condition (default: baseline)')
-    parser.add_argument('--stuck-timeout', type=float, default=150.0,
+    parser.add_argument('--stuck-timeout', type=float, default=100.0,
                         help='Stuck detection timeout in seconds')
     parser.add_argument('--trials', type=int, default=1,
                         help='Number of trials per goal')
@@ -734,6 +794,13 @@ def main():
                         help='JSON string of scenario params (inline, no YAML needed)')
     parser.add_argument('--campaign', type=str, default='default',
                         help='Campaign name (subdirectory under data/)')
+    parser.add_argument('--arm', type=str, default='A', choices=['A', 'B'],
+                        help="Which MRM diagnostic-gate configuration Autoware is running "
+                             "under (added 2026-07-25): A = safety features disabled (science "
+                             "condition), B = stock/full gate (ground-truth oracle). Only "
+                             "labels metadata.json and gets passed through to fault_injector.py "
+                             "for fault_log.jsonl — does not itself change Autoware's config, "
+                             "see experiments/scripts/switch_diagnostic_arm.sh for that.")
     parser.add_argument('--velocity-limit', type=float, default=0.0,
                         help='Max velocity cap in m/s (0 = Autoware default ~20 m/s)')
     parser.add_argument('--tl-fault', type=str, default=None,
@@ -754,9 +821,6 @@ def main():
                         help='JSON params — see fault_injector.py --imu-params help for the '
                              'full per-mode reference (imu_bias, imu_bias_ramp, '
                              'imu_scale_factor, imu_stuck_at all take different keys)')
-    parser.add_argument('--fault-delay', type=float, default=30.0,
-                        help='Seconds after the post-spawn runway clears (see '
-                             '--fault-min-runway-m) before faults may arm (default: 30)')
     parser.add_argument('--fault-duration', type=float, default=45.0,
                         help='Seconds the fault stays active before auto-deactivating (default: 45)')
     parser.add_argument('--fault-min-runway-m', type=float, default=150.0,
@@ -768,17 +832,22 @@ def main():
     parser.add_argument('--tl-zone-radius-m', type=float, default=0.0,
                         help='Metres from a real map TL position within which ego counts as '
                              '"in a TL zone" (0 = use fault_injector.py\'s own default, '
-                             'currently 80m — comfortable braking distance at max_vel from '
-                             'Autoware\'s own common.param.yaml, not detection range — see '
-                             'fault_injector.py).')
+                             'currently 20m — empirically validated against real driven '
+                             'trajectories to resolve distinct intersections without merging '
+                             'or fragmenting them — see fault_injector.py).')
     parser.add_argument('--fault-validation-mode', type=str, default='abort',
                         choices=['abort', 'warn', 'off'],
-                        help="What to do when a configured tl_fault/imu_fault never actually "
-                             "armed this trial (see metrics.py's compute_fault_validation): "
-                             "'abort' (default) stops the rest of this campaign immediately and "
-                             "exits nonzero, so a chained run_fault_campaigns.sh batch (set -e) "
-                             "stops too instead of burning the remaining campaigns on the same "
-                             "broken data. 'warn' logs and continues. 'off' disables the check.")
+                        help="What to do when a trial's data is untrustworthy — either the "
+                             "configured tl_fault/imu_fault never armed (see metrics.py's "
+                             "compute_fault_validation), or an infrastructure failure made the "
+                             "trial meaningless regardless of fault config (no rosbag recorded, "
+                             "or the vehicle never actually moved — added 2026-07-26). 'abort' "
+                             "(default) stops the rest of THIS campaign immediately and exits "
+                             "nonzero, instead of burning the remaining trials riding the same "
+                             "broken state to the finish line — run_fault_campaigns.sh catches "
+                             "that, restarts Autoware, and moves to the next campaign; auto-resume "
+                             "means re-running later only fills in what's still missing. 'warn' "
+                             "logs and continues. 'off' disables the check.")
     args = parser.parse_args()
 
     # Handle metrics-only mode
@@ -916,7 +985,6 @@ def main():
             tl_params=tl_params_parsed,
             imu_fault=args.imu_fault,
             imu_params=imu_params_parsed,
-            fault_delay=args.fault_delay,
             fault_duration=args.fault_duration,
             log_file=batch_fault_log,
             fault_min_runway_m=args.fault_min_runway_m,
@@ -927,6 +995,7 @@ def main():
             # fault_injector.py's own default goal_007/012/026 if --goals
             # wasn't given, e.g. an "all goals" run).
             zone_goals=args.goals,
+            arm=args.arm,
         )
     except RuntimeError as e:
         print(f"ERROR: Failed to start fault injector: {e}")
@@ -945,123 +1014,156 @@ def main():
     # Run experiments
     results = []
     skipped_count = 0
-    total_experiments = len(goals) * args.trials
     fault_validation_failed = False
 
+    # Auto-resume (default, unconditional — 2026-07-26): --trials means "N
+    # trials total per goal", not "N more on top of whatever's already
+    # there". Safe no-op for a fresh campaign dir (existing count is 0
+    # everywhere, work_items is identical to the old full cross-product) —
+    # only changes anything when resuming a campaign that was interrupted
+    # partway (e.g. an overnight batch that hit README item 5's
+    # behavior_path_planner degradation after N experiments). See
+    # count_existing_trials — deliberately count-based, not
+    # check_experiment_exists's success-based check, since a fault
+    # campaign's correct terminal outcome is often not goal_reached.
+    campaign_dir = os.path.join(DATA_DIR, args.campaign)
+    existing_counts = {goal.id: count_existing_trials(campaign_dir, goal.id) for goal in goals}
+    work_items = [
+        (trial_num, goal)
+        for trial_num in range(1, args.trials + 1)
+        for goal in goals
+        if trial_num > existing_counts[goal.id]
+    ]
+    total_experiments = len(work_items)
+    already_done = len(goals) * args.trials - total_experiments
+    if already_done:
+        print(f"\nAuto-resume: {already_done}/{len(goals) * args.trials} trials for this "
+              f"campaign already exist on disk, running the remaining {total_experiments}.")
+        for goal in goals:
+            n = existing_counts[goal.id]
+            if n >= args.trials:
+                print(f"  {goal.id}: {n}/{args.trials} done, nothing to run")
+            elif n > 0:
+                print(f"  {goal.id}: {n}/{args.trials} done, running trial(s) {n + 1}-{args.trials}")
+
     try:
-        for trial in range(args.trials):
+        for exp_num, (trial_num, goal) in enumerate(work_items, start=1):
             if fault_validation_failed:
                 break
-            for i, goal in enumerate(goals):
-                exp_num = trial * len(goals) + i + 1
-                print(f"\n{'#'*60}")
-                print(f"# EXPERIMENT {exp_num}/{total_experiments}")
-                print(f"# Goal: {goal.id}, Trial: {trial+1}/{args.trials}")
-                print(f"{'#'*60}")
+            print(f"\n{'#'*60}")
+            print(f"# EXPERIMENT {exp_num}/{total_experiments}")
+            print(f"# Goal: {goal.id}, Trial: {trial_num}/{args.trials}")
+            print(f"{'#'*60}")
 
-                # Check if we should skip this goal
-                campaign_dir = os.path.join(DATA_DIR, args.campaign)
-                if args.skip_existing and os.path.isdir(campaign_dir):
-                    if check_experiment_exists(goal.id, campaign_dir):
-                        print(f"SKIPPING: {goal.id} already has successful result")
-                        skipped_count += 1
-                        continue
+            # Check if we should skip this goal (separate, success-based
+            # check for the --skip-existing use case — see its own flag help)
+            if args.skip_existing and os.path.isdir(campaign_dir):
+                if check_experiment_exists(goal.id, campaign_dir):
+                    print(f"SKIPPING: {goal.id} already has successful result")
+                    skipped_count += 1
+                    continue
 
-                # Create experiment ID
-                trial_start_wall_time = time.time()
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                exp_id = f"{goal.id}_{args.condition}_t{trial+1}_{timestamp}"
+            # Create experiment ID
+            trial_start_wall_time = time.time()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            exp_id = f"{goal.id}_{args.condition}_t{trial_num}_{timestamp}"
 
-                # Re-apply velocity limit before each trial (Autoware's velocity
-                # smoother can lose the external limit when the route is cleared
-                # between experiments).
-                if args.velocity_limit > 0:
-                    set_velocity_limit(args.velocity_limit)
-                    time.sleep(0.2)
+            # Re-apply velocity limit before each trial (Autoware's velocity
+            # smoother can lose the external limit when the route is cleared
+            # between experiments).
+            if args.velocity_limit > 0:
+                set_velocity_limit(args.velocity_limit)
+                time.sleep(0.2)
 
-                # Create config
-                config = ExperimentConfig(
-                    experiment_id=exp_id,
-                    goal=goal,
-                    trial_num=trial + 1,
-                    timestamp=timestamp,
-                    stuck_timeout=args.stuck_timeout,
-                    condition=args.condition,
-                    scenario_type=scenario_type,
-                    scenario_params={**scenario_params,
-                                     **({"velocity_limit_mps": args.velocity_limit}
-                                        if args.velocity_limit > 0 else {})},
-                    campaign=args.campaign,
-                )
+            # Create config
+            config = ExperimentConfig(
+                experiment_id=exp_id,
+                goal=goal,
+                trial_num=trial_num,
+                timestamp=timestamp,
+                stuck_timeout=args.stuck_timeout,
+                condition=args.condition,
+                scenario_type=scenario_type,
+                scenario_params={**scenario_params,
+                                 **({"velocity_limit_mps": args.velocity_limit}
+                                    if args.velocity_limit > 0 else {})},
+                campaign=args.campaign,
+                diagnostic_arm=args.arm,
+            )
 
-                # Run experiment
-                runner = ExperimentRunner(config)
-                success = runner.run()
+            # Run experiment
+            runner = ExperimentRunner(config)
+            success = runner.run()
 
-                # Compute metrics (includes the fault_validation health check —
-                # see metrics.py's compute_fault_validation)
-                fault_validation = runner.compute_and_save_metrics(
-                    fault_log_path=batch_fault_log,
-                    tl_fault=args.tl_fault,
-                    imu_fault=args.imu_fault,
-                    trial_start_wall_time=trial_start_wall_time,
-                )
+            # Compute metrics (includes the fault_validation health check —
+            # see metrics.py's compute_fault_validation)
+            fault_validation = runner.compute_and_save_metrics(
+                fault_log_path=batch_fault_log,
+                tl_fault=args.tl_fault,
+                imu_fault=args.imu_fault,
+                trial_start_wall_time=trial_start_wall_time,
+            )
 
-                # Copy fault log snapshot into this run's directory
-                if os.path.exists(batch_fault_log):
-                    import shutil
-                    run_fault_log = os.path.join(runner.config.data_dir, 'fault_log.jsonl')
-                    try:
-                        shutil.copy2(batch_fault_log, run_fault_log)
-                    except Exception as exc:
-                        print(f"WARNING: Could not copy fault log: {exc}")
+            # Copy fault log snapshot into this run's directory
+            if os.path.exists(batch_fault_log):
+                import shutil
+                run_fault_log = os.path.join(runner.config.data_dir, 'fault_log.jsonl')
+                try:
+                    shutil.copy2(batch_fault_log, run_fault_log)
+                except Exception as exc:
+                    print(f"WARNING: Could not copy fault log: {exc}")
 
-                if (fault_validation is not None and not fault_validation.valid
-                        and args.fault_validation_mode != 'off'):
-                    print("\n" + "!"*70)
-                    print("! FAULT VALIDATION FAILED — this trial's fault never actually armed")
+            # fault_validation is never None as of 2026-07-26 (see
+            # compute_and_save_metrics) — it now also flags infrastructure
+            # failures (no rosbag / vehicle never moved), not just "fault
+            # never armed", so this is the single fail-fast gate for both.
+            if not fault_validation.valid and args.fault_validation_mode != 'off':
+                print("\n" + "!"*70)
+                print("! TRIAL VALIDATION FAILED — fault never armed, or an infrastructure")
+                print("! problem made this trial's data meaningless (see issues below)")
+                print("!"*70)
+                for issue in fault_validation.issues:
+                    print(f"!   - {issue}")
+                if args.fault_validation_mode == 'abort':
+                    print("! Aborting remaining trials in this campaign (--fault-validation-mode "
+                          "abort) — continuing would just burn more time riding the same broken")
+                    print("! state to the finish line. Fix the root cause above, then re-run —")
+                    print("! auto-resume will pick up only what's still missing.")
                     print("!"*70)
-                    for issue in fault_validation.issues:
-                        print(f"!   - {issue}")
-                    if args.fault_validation_mode == 'abort':
-                        print("! Aborting remaining trials in this campaign (--fault-validation-mode "
-                              "abort) — continuing would just burn more time reproducing the same")
-                        print("! broken data. Fix the root cause above, then re-run.")
-                        print("!"*70)
-                        fault_validation_failed = True
-                    else:
-                        print("! Continuing anyway (--fault-validation-mode warn).")
-                        print("!"*70)
+                    fault_validation_failed = True
+                else:
+                    print("! Continuing anyway (--fault-validation-mode warn).")
+                    print("!"*70)
 
-                results.append({
-                    'experiment_id': exp_id,
-                    'goal_id': goal.id,
-                    'trial': trial + 1,
-                    'success': success,
-                    'result': runner.result,
-                })
+            results.append({
+                'experiment_id': exp_id,
+                'goal_id': goal.id,
+                'trial': trial_num,
+                'success': success,
+                'result': runner.result,
+            })
 
-                if fault_validation_failed:
-                    break  # skip the reset below too — about to stop the whole campaign
+            if fault_validation_failed:
+                break  # skip the reset below too — about to stop the whole campaign
 
-                # Reset vehicle before next experiment
-                if not args.skip_reset and (i < len(goals) - 1 or trial < args.trials - 1):
-                    print("\nResetting vehicle...")
+            # Reset vehicle before next experiment (skip after the last one overall)
+            if not args.skip_reset and exp_num < total_experiments:
+                print("\nResetting vehicle...")
+                if not reset_vehicle():
+                    # First reset failed — the system is likely in the contaminated
+                    # oscillation state. Wait for the diagnostic flood to decay, then
+                    # try once more before giving up and moving on.
+                    print("WARNING: Reset failed — waiting 20s for diagnostics to clear...")
+                    time.sleep(20)
+                    print("Attempting second reset...")
                     if not reset_vehicle():
-                        # First reset failed — the system is likely in the contaminated
-                        # oscillation state. Wait for the diagnostic flood to decay, then
-                        # try once more before giving up and moving on.
-                        print("WARNING: Reset failed — waiting 20s for diagnostics to clear...")
-                        time.sleep(20)
-                        print("Attempting second reset...")
-                        if not reset_vehicle():
-                            print("ERROR: Second reset also failed — system in bad state.")
-                            print("       Waiting 30s before next run (data may be contaminated).")
-                            time.sleep(30)
-                        else:
-                            time.sleep(5)
+                        print("ERROR: Second reset also failed — system in bad state.")
+                        print("       Waiting 30s before next run (data may be contaminated).")
+                        time.sleep(30)
                     else:
                         time.sleep(5)
+                else:
+                    time.sleep(5)
     finally:
         # Always stop interceptor and fault injector
         stop_interceptor(interceptor_proc)
@@ -1078,7 +1180,7 @@ def main():
     if skipped_count > 0:
         print(f"Skipped (already completed): {skipped_count}")
     if fault_validation_failed:
-        print("FAULT VALIDATION FAILED — remaining trials/goals for this campaign were skipped.")
+        print("TRIAL VALIDATION FAILED — remaining trials/goals for this campaign were skipped.")
 
     print("\nResults:")
     for r in results:

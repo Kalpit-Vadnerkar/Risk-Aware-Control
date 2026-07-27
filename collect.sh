@@ -30,15 +30,17 @@
 #   tl_confidence --tl-params '{"confidence_scale":0.5}'), e.g. if a fixed-
 #   severity comparison point against the ramp is ever wanted again.
 #   All TL/IMU faults: must clear the first real TL zone (map-position-based,
-#   80m radius from a real Lanelet2 traffic light — comfortable braking
-#   distance at max_vel from Autoware's own config, not detection range;
-#   revised 2026-07-24 from an earlier 150m detection-range-based radius,
-#   which was too far out to be behaviorally meaningful — see
-#   fault_injector.py's _DEFAULT_TL_ZONE_RADIUS_M), goal-scoped to whatever
+#   20m radius from a real Lanelet2 traffic light — revised 2026-07-25 from
+#   an earlier 80m reaction-range-based radius, which was still wide enough
+#   to merge several physically distinct real intersections into one
+#   continuous zone; 20m was validated empirically against real driven
+#   trajectories, not guessed — see fault_injector.py's
+#   _DEFAULT_TL_ZONE_RADIUS_M), goal-scoped to whatever
 #   --goals this run uses — see fault_injector.py's _on_gt_pose and
 #   _load_tl_zone_points; all goals share one start intersection, so this
-#   replaces an earlier flat-150m-distance runway) THEN a 30s delay floor
-#   before arming. TL then re-fires at EVERY such zone entered for the rest
+#   replaces an earlier flat-150m-distance runway), then arms IMMEDIATELY
+#   (no wall-clock delay — REMOVED 2026-07-25, see the TL campaign comments
+#   below). TL then re-fires at EVERY such zone entered for the rest
 #   of the trial (15s cap/cycle, 8s recovery gap between cycles) — one
 #   (reaction, recovery) sample per real intersection on the route. REDESIGNED
 #   2026-07-24: the original zone detector used raw TL-message content
@@ -51,9 +53,25 @@
 #   (enable_yaw_bias_estimation: true), so sub-gate constant-bias tiers mostly
 #   just demonstrate Autoware's own mitigation working, not our detector's
 #   reach. See docs/design_decisions.md item 7.
+#   imu_fault_s1        REINSTATED 2026-07-25 as a control condition, not a
+#                       reversal of the above: constant bias 0.03 rad/s, 20s
+#                       on/30s off (0.6 rad accumulated) — deliberately inside
+#                       the "gets absorbed" regime, to show the boundary
+#                       ramp/scale/stuck sit outside of, not just assume it.
+#   imu_fault_s3        ADDED 2026-07-26 as S1's above-threshold pair: fixed
+#                       0.08 rad/s, 15s on/30s off (1.2 rad accumulated) — a
+#                       step, not a sweep, so onset is unambiguous and lead
+#                       time isn't confounded with elapsed time the way
+#                       imu_fault_ramp's continuous growth is. Not yet
+#                       validated as cleanly above threshold vs. marginal —
+#                       that's this campaign's own open question.
 #   imu_fault_ramp      One-shot linear ramp 0 -> 0.4 rad/s (0.003 rad/s/s) —
 #                       sweeps through absorbed -> gate-rejection cliff in one
-#                       trial, for lead-time measurement.
+#                       trial. Demoted from the default production suite
+#                       (run_fault_campaigns.sh) 2026-07-26 in favor of the
+#                       s1/s3 fixed-tier pair above — kept available for
+#                       ad-hoc use (e.g. re-probing the boundary if s1/s3
+#                       data ever suggests 0.08 was mis-sized).
 #   imu_fault_scale     Multiplicative gain error (gyro x1.8) — structurally
 #                       unabsorbable by yaw_bias's additive-constant model.
 #   imu_fault_stuck     Gyro frozen at its activation-time value — same.
@@ -86,18 +104,29 @@ GOALS_FILE=""
 DRY_RUN=""
 YES=""
 FAULT_MIN_RUNWAY=""   # empty = use fault_injector.py's own default (150m, GT-gated)
+ARM="A"   # A = safety features disabled (science condition, this repo's long-standing
+          # default). B = stock/full diagnostic gate (ground-truth oracle) — requires
+          # switch_diagnostic_arm.sh B + an Autoware restart FIRST; this flag only
+          # labels the data, it does not itself change what Autoware is running.
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
-    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--fault-min-runway-m M] [--yes] [--dry-run]${NC}"
+    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--fault-min-runway-m M] [--arm A|B] [--yes] [--dry-run]${NC}"
     echo ""
     echo "Campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
-    echo "           tl_fault_s2..s4  tl_fault_ramp  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
+    echo "           tl_fault_s2..s4  tl_fault_ramp  imu_fault_s1  imu_fault_s3  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
     echo ""
-    echo "--fault-min-runway-m 0 disables the ground-truth-gated runway entirely"
-    echo "and falls back to delay-from-process-start arming (pre-2026-07-24"
-    echo "behavior) — use this if fault_log.jsonl shows gt_pose_never_received"
-    echo "and faults aren't arming; see TODO.md for the open GT-subscription bug."
+    echo "--fault-min-runway-m M: fallback-only straight-line runway distance,"
+    echo "used only if map TL zone points fail to load (normally they do, and"
+    echo "the zone-based runway is used instead). The old 'M<=0 disables all"
+    echo "gating' escape hatch was removed 2026-07-26 — see fault_injector.py's"
+    echo "__init__ comment for why (it had a real gap with IMU zone-gating)."
+    echo ""
+    echo "--arm A|B (default A): which diagnostic-gate configuration Autoware is"
+    echo "currently running under — see experiments/scripts/switch_diagnostic_arm.sh."
+    echo "Only labels the collected data (campaign dir gets an _armB suffix, plus"
+    echo "an 'arm' field in metadata.json/fault_log.jsonl) — switch the actual"
+    echo "config and restart Autoware yourself BEFORE running with --arm B."
     exit 1
 fi
 
@@ -109,11 +138,16 @@ while [[ $# -gt 0 ]]; do
         --goals)              GOALS="$2";             shift 2 ;;
         --goals-file)         GOALS_FILE="$2";        shift 2 ;;
         --fault-min-runway-m) FAULT_MIN_RUNWAY="$2";  shift 2 ;;
+        --arm)                ARM="$2";               shift 2 ;;
         --yes|-y)      YES="--yes";     shift ;;
         --dry-run)     DRY_RUN="--dry-run"; shift ;;
         *) echo -e "${RED}Unknown argument: $1${NC}"; exit 1 ;;
     esac
 done
+
+if [[ "$ARM" != "A" && "$ARM" != "B" ]]; then
+    echo -e "${RED}--arm must be A or B, got: ${ARM}${NC}"; exit 1
+fi
 
 # ── Source environment ────────────────────────────────────────────────────────
 echo -e "${GREEN}========================================${NC}"
@@ -133,12 +167,30 @@ if ! ros2 topic list 2>/dev/null | grep -q "/sensing/lidar/top/pointcloud_raw"; 
 fi
 echo -e "  AWSIM:     ${GREEN}OK${NC}"
 echo -e "  Autoware:  (readiness checked by the experiment runner)"
+ACTIVE_ARM_MARKER="$AUTOWARE_DIR/src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/.active_arm"
+if [[ -f "$ACTIVE_ARM_MARKER" ]]; then
+    ACTIVE_ARM="$(cat "$ACTIVE_ARM_MARKER")"
+    if [[ "$ACTIVE_ARM" != "$ARM" ]]; then
+        echo -e "${RED}ERROR: --arm ${ARM} requested, but the diagnostic gate config on disk is${NC}"
+        echo -e "${RED}       currently set to Arm ${ACTIVE_ARM} (per switch_diagnostic_arm.sh's marker).${NC}"
+        echo -e "${RED}       Run experiments/scripts/switch_diagnostic_arm.sh ${ARM} and restart${NC}"
+        echo -e "${RED}       Autoware first — otherwise the collected data will be mislabeled.${NC}"
+        exit 1
+    fi
+    echo -e "  Diagnostic arm: ${GREEN}${ACTIVE_ARM}${NC} (matches --arm ${ARM})"
+else
+    echo -e "  ${YELLOW}Diagnostic arm: unknown (no switch_diagnostic_arm.sh marker found — assuming this matches --arm ${ARM})${NC}"
+fi
 echo ""
 
 # ── Helper: run the Python experiment runner ──────────────────────────────────
 run() {
     local campaign="$1"; local condition="$2"
     shift 2  # remaining args passed through (scenario, velocity-limit, etc.)
+    if [[ "$ARM" == "B" ]]; then
+        campaign="${campaign}_armB"
+        condition="${condition}_armB"
+    fi
     local goals_file_arg=()
     [[ -n "$GOALS_FILE" ]] && goals_file_arg=(--goals-file "$GOALS_FILE")
     local runway_arg=()
@@ -150,7 +202,8 @@ run() {
         --condition "$condition" \
         --goals "$GOALS" \
         --trials "$TRIALS" \
-        --stuck-timeout 200 \
+        --stuck-timeout 100 \
+        --arm "$ARM" \
         "${goals_file_arg[@]}" \
         $DRY_RUN \
         $YES \
@@ -259,16 +312,25 @@ case "$CAMPAIGN" in
     # docstring and _on_gt_pose for the full mechanism):
     #   0. Vehicle must first travel >= --fault-min-runway-m (default 150m,
     #      ground-truth straight-line distance, all goals share one start
-    #      intersection) from trial start AND be moving. Without this, the
-    #      fault-delay below is a wall-clock timer with no relationship to
-    #      vehicle position, and reliably armed while still at/near the start
-    #      intersection (confirmed in the tl_fault_s1..s4 data collected
-    #      2026-07-22 — every trial's first TL zone entry was the START
-    #      intersection, not a downstream one).
-    #   1. THEN a 30s nominal warm-up (--fault-delay, EKF/localization settle).
+    #      intersection) from trial start AND be moving. Without this, a
+    #      wall-clock timer has no relationship to vehicle position, and
+    #      reliably armed while still at/near the start intersection
+    #      (confirmed in the tl_fault_s1..s4 data collected 2026-07-22 —
+    #      every trial's first TL zone entry was the START intersection, not
+    #      a downstream one).
+    #   1. TL then arms IMMEDIATELY (no --fault-delay wait — REMOVED from
+    #      this path 2026-07-25; it raced against how long the vehicle
+    #      happened to dwell in the next zone, which is traffic-light-phase-
+    #      dependent and varies trial to trial — a 30s fixed floor silently
+    #      skipped a ~6s zone crossing in 3 of 4 goal_012 trials that
+    #      session, only ever arming at whatever zone came after. See
+    #      fault_injector.py's TL state-machine comment for the full
+    #      writeup). --fault-delay itself was removed entirely 2026-07-26 —
+    #      the same reasoning turned out to apply to IMU faults too once
+    #      they gained their own zone-gating (see imu_fault_scale below).
     # TL fault design (revised 2026-07-22 — zone-triggered periodic):
     #   Each fault activates at EVERY TL detection zone entered after the
-    #   runway+delay above, stays active for up to 15s (or until the zone is
+    #   runway above, stays active for up to 15s (or until the zone is
     #   exited, whichever is first), then an 8s recovery gap before re-arming
     #   for the NEXT zone — repeating for every intersection on the route.
     #   tl_fault_start / tl_fault_end timestamps (one pair per cycle) are
@@ -289,7 +351,6 @@ case "$CAMPAIGN" in
         run tl_fault_s2 tl_fault_s2 \
             --tl-fault tl_oscillate \
             --tl-params '{"period_s":5.0}' \
-            --fault-delay 30 \
             --fault-duration 15
         ;;
 
@@ -297,7 +358,6 @@ case "$CAMPAIGN" in
         echo -e "${BLUE}TL fault S3: UNKNOWN classification (over-caution) — 15s cap/cycle${NC}"
         run tl_fault_s3 tl_fault_s3 \
             --tl-fault tl_unknown \
-            --fault-delay 30 \
             --fault-duration 15
         ;;
 
@@ -305,7 +365,6 @@ case "$CAMPAIGN" in
         echo -e "${BLUE}TL fault S4: full blackout (no signal) — 15s cap/cycle${NC}"
         run tl_fault_s4 tl_fault_s4 \
             --tl-fault tl_blackout \
-            --fault-delay 30 \
             --fault-duration 15
         ;;
 
@@ -320,7 +379,6 @@ case "$CAMPAIGN" in
         run tl_fault_ramp tl_fault_ramp \
             --tl-fault tl_confidence_ramp \
             --tl-params '{"confidence_ramp_rate_per_s":0.1,"min_confidence_scale":0.0}' \
-            --fault-delay 30 \
             --fault-duration 15
         ;;
 
@@ -342,17 +400,72 @@ case "$CAMPAIGN" in
     # scale-factor and stuck-at are structurally different error shapes,
     # not just different magnitudes).
     #
+    # Reinstated 2026-07-25 as a deliberate CONTROL condition, not a
+    # reversal of the 2026-07-24 removal above: ramp/scale/stuck all show
+    # real, large fault effects (EKF-GT divergence up to 18m on goal_012,
+    # see docs/research_notes/ — but with nothing in this repo's own data
+    # demonstrating the OTHER side of the boundary, i.e. that Autoware's
+    # yaw_bias estimation actually absorbs a bias below its capacity. S1
+    # is the smallest of the old four tiers (0.03 rad/s x 20s = 0.6 rad
+    # accumulated, comfortably inside the "gets absorbed" regime per the
+    # removal comment above) — expected result is near-nominal EKF-GT
+    # divergence and no stuck/collision outcome. If it ISN'T absorbed
+    # cleanly, that itself is worth knowing (the boundary moved). Gated on
+    # bias_leadin_zones like imu_fault_s3 (see that campaign's comment).
+    imu_fault_s1)
+        echo -e "${BLUE}IMU constant-bias fault (S1, control condition): gyro 0.03 rad/s, 20s on / 30s off${NC}"
+        run imu_fault_s1 imu_fault_s1 \
+            --imu-fault imu_bias \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.03,"on_seconds":20,"off_seconds":30}'
+        ;;
+
+    # Added 2026-07-26 as S1's paired "above threshold" probe, replacing
+    # imu_fault_ramp in the default production suite (run_fault_campaigns.sh):
+    # a ramp confounds elapsed time with magnitude (both grow together within
+    # one trial, so you can't tell which one drove a reaction) — a fixed step
+    # like this has an unambiguous onset the instant it activates, a cleaner
+    # lead-time measurement, and pairs with S1 as a proper two-point
+    # dose-response design instead of one continuous sweep. Reuses the old
+    # redesigned S3 magnitude (0.08 rad/s x 15s = 1.2 rad accumulated) —
+    # comfortably under the 0.15 rad/s that broke localization near-instantly
+    # (old S2, pre-2026-07-23 redesign; see the removal comment above), so
+    # there should be actual seconds of lead time to measure, not ~0.
+    # NOTE: not yet validated under Arm B/the precomputed turn-zone gating
+    # (fault_injector.py's _load_turn_zones, 2026-07-26 — gates this fault's
+    # on-transitions on bias_leadin_zones, points 10m of arc-length before a
+    # real turn, since accumulation over on-time is what matters for a
+    # constant bias, not turning itself) — S1 (0.03) is confirmed absorbed,
+    # but whether 0.08 is cleanly ABOVE the boundary (vs. still marginal) is
+    # this campaign's own open question, not a known fact going in.
+    imu_fault_s3)
+        echo -e "${BLUE}IMU constant-bias fault (S3, above-threshold probe): gyro 0.08 rad/s, 15s on / 30s off${NC}"
+        run imu_fault_s3 imu_fault_s3 \
+            --imu-fault imu_bias \
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.08,"on_seconds":15,"off_seconds":30}'
+        ;;
+
     # One-shot linear ramp: gyro bias grows 0 -> max_gyro_bias_rads at
-    # gyro_bias_rate_rads_per_s per second, starting once the runway+delay gate
-    # clears. Gives a single trial that walks through absorbed -> cliff ->
-    # gate-rejected, with a well-defined "when did this become unsafe"
-    # timestamp for lead-time measurement against Autoware's own MRM trigger
-    # (Arm B in the two-arm design — docs/theoretical_framework.md §4).
+    # gyro_bias_rate_rads_per_s per second, starting immediately once the
+    # runway gate clears (no --fault-delay — removed 2026-07-26, see the TL
+    # campaign comments above) and not zone-gated at all (deliberately —
+    # accumulates over elapsed time regardless of geometry, unlike
+    # imu_fault_scale/stuck below). Gives a single trial that walks through
+    # absorbed -> cliff -> gate-rejected, with a well-defined "when did this
+    # become unsafe" timestamp for lead-time measurement against Autoware's
+    # own MRM trigger (Arm B in the two-arm design —
+    # docs/theoretical_framework.md §4).
     # Default rate/max are a first guess, not validated: reaches 0.4 rad/s
     # (>2.5x old S2's instant-catastrophic 0.15) at ~133s of ramp time if the
-    # gate is never crossed first. Runway (150m default) + --fault-delay (30s)
-    # happen BEFORE the ramp clock starts, so total trial time before max is
-    # reached can approach the 200s --stuck-timeout in run() — if a run times
+    # gate is never crossed first. Runway clearing happens BEFORE the ramp
+    # clock starts, so total trial time before max is reached can approach
+    # --stuck-timeout in run() (100s as of 2026-07-28, down from 200 — this
+    # campaign's 133s-to-max figure now EXCEEDS it, meaning a run where the
+    # vehicle is still moving normally when the ramp maxes out is fine (stuck
+    # detection only counts consecutive non-movement), but any run that also
+    # stalls for other reasons before then will likely hit stuck_timeout
+    # before imu_ramp_reached_max ever fires — not currently a problem since
+    # this campaign isn't part of the active scenario table, but re-check
+    # this margin before ever routinely collecting it again) — if a run times
     # out without a clear crossing (check imu_ramp_level / imu_ramp_reached_max
     # in fault_log.jsonl against the MRM trigger time), widen
     # max_gyro_bias_rads or slow the rate rather than assuming the gate wasn't
@@ -361,8 +474,7 @@ case "$CAMPAIGN" in
         echo -e "${BLUE}IMU ramp fault: 0 -> 0.4 rad/s at 0.003 rad/s per second${NC}"
         run imu_fault_ramp imu_fault_ramp \
             --imu-fault imu_bias_ramp \
-            --imu-params '{"gyro_bias_rate_rads_per_s":0.003,"max_gyro_bias_rads":0.4,"ramp_log_interval_s":5.0}' \
-            --fault-delay 30
+            --imu-params '{"gyro_bias_rate_rads_per_s":0.003,"max_gyro_bias_rads":0.4,"ramp_log_interval_s":5.0}'
         ;;
 
     # Multiplicative gain error: angular_velocity.z *= gyro_scale_factor,
@@ -370,13 +482,14 @@ case "$CAMPAIGN" in
     # (an additive-constant state can't represent a multiplicative error), and
     # naturally state-dependent — near-zero error on straight roads (true rate
     # ~0), scaling up specifically during turns/intersections. Periodic on/off
-    # like the old bias tiers, for clean reaction/recovery segments.
+    # like the old bias tiers, for clean reaction/recovery segments. Gated on
+    # precomputed turn zones (fault_injector.py's _load_turn_zones,
+    # 2026-07-26) — real turn locations per goal, not a live threshold guess.
     imu_fault_scale)
         echo -e "${BLUE}IMU scale-factor fault: gyro x1.8, 20s on / 30s off${NC}"
         run imu_fault_scale imu_fault_scale \
             --imu-fault imu_scale_factor \
-            --imu-params '{"gyro_scale_factor":1.8,"on_seconds":20,"off_seconds":30}' \
-            --fault-delay 30
+            --imu-params '{"gyro_scale_factor":1.8,"on_seconds":20,"off_seconds":30}'
         ;;
 
     # Frozen sensor: angular_velocity.z held at whatever it read the instant
@@ -385,19 +498,18 @@ case "$CAMPAIGN" in
     # tracks whatever the vehicle actually does, not a constant), and almost
     # certain to blow through the Mahalanobis gate the moment the vehicle
     # actually turns — same "definite, unambiguous ground-truth event" spirit
-    # as tl_blackout.
+    # as tl_blackout. Same precomputed turn-zone gating as imu_fault_scale.
     imu_fault_stuck)
         echo -e "${BLUE}IMU stuck-at fault: gyro frozen at activation value, 20s on / 30s off${NC}"
         run imu_fault_stuck imu_fault_stuck \
             --imu-fault imu_stuck_at \
-            --imu-params '{"on_seconds":20,"off_seconds":30}' \
-            --fault-delay 30
+            --imu-params '{"on_seconds":20,"off_seconds":30}'
         ;;
 
     *)
         echo -e "${RED}Unknown campaign: ${CAMPAIGN}${NC}"
         echo "Valid campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
-        echo "                 tl_fault_s2..s4  tl_fault_ramp  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
+        echo "                 tl_fault_s2..s4  tl_fault_ramp  imu_fault_s1  imu_fault_s3  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
         exit 1
         ;;
 esac

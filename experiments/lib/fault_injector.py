@@ -55,8 +55,8 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
 
   TL zone gating (always active) — REDESIGNED 2026-07-24, map-position-based:
     Faults are only applied when ego ground-truth position is within
-    --tl-zone-radius-m (default 80m — see _DEFAULT_TL_ZONE_RADIUS_M's
-    comment for the braking-distance grounding) of a real
+    --tl-zone-radius-m (default 20m — see _DEFAULT_TL_ZONE_RADIUS_M's
+    comment for the empirical real-driven-path grounding) of a real
     traffic-light position, loaded once at startup from the Lanelet2 map,
     scoped to --zone-goals' routes (default goal_007/012/026 — the fixed
     production goal set; see _load_tl_zone_points).
@@ -184,7 +184,18 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
     and a caught regime without an artificial ramp.
     Params: {"gyro_scale_factor": 1.8, "on_seconds": 20, "off_seconds": 30}
     Reuses the same periodic on/off loop as imu_bias (see _imu_bias_loop) —
-    only the transform applied in _on_imu differs.
+    only the transform applied in _on_imu differs. Since 2026-07-26, that
+    loop's on-transitions for THIS fault (and imu_stuck_at) are gated on a
+    precomputed turn zone (see _load_turn_zones / experiments/scripts/
+    compute_turn_zones.py) — real turn locations on each goal's route,
+    derived from nominal driven trajectories, not a live sensor-threshold
+    guess. A 2026-07-25 live-gyro-threshold version of this gate existed
+    briefly and was replaced: it only caught a real turn ~28% of the time
+    (measured across ~550 cycles) because most of this route is straight
+    relative to the on/off cadence, and a wall-clock max-wait fallback (also
+    removed) meant most cycles fired blind anyway — the same "arbitrary
+    timing race" shape as the TL arming-delay bug. Precomputed geometry
+    removes the race entirely: the zone IS the turn, by construction.
 
   Fault mode: imu_stuck_at (added 2026-07-24)
     Periodic on/off frozen sensor: angular_velocity.z is held at whatever it
@@ -198,6 +209,9 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
     discrepancy) — same "unambiguous ground-truth event" spirit as
     tl_blackout.
     Params: {"on_seconds": 20, "off_seconds": 30, "stuck_value_rads": null}
+    Same on-transition turn-gating as imu_scale_factor above, for the same
+    reason: "frozen going straight" only becomes an unambiguous discrepancy
+    once the vehicle actually turns.
 
   Severity tiers (gyro_bias_rads is the active parameter) — REDESIGNED
   2026-07-23 after old S2 (0.15 rad/s, on=30s) broke localization within ~1s
@@ -238,17 +252,20 @@ Usage:
 
   # S1 — confidence degradation, repeats at every TL zone (45s cap/cycle):
   python3 fault_injector.py --tl-fault tl_confidence \\
-      --tl-params '{"confidence_scale":0.5}' --fault-delay 30 --fault-duration 45
+      --tl-params '{"confidence_scale":0.5}' --fault-duration 45
 
   # S2 — oscillating GREEN/original (intermittent), repeats at every TL zone:
   python3 fault_injector.py --tl-fault tl_oscillate \
-      --tl-params '{"period_s":5.0}' --fault-delay 30 --fault-duration 45
+      --tl-params '{"period_s":5.0}' --fault-duration 45
 
   # S3 — UNKNOWN classification, repeats at every TL zone:
-  python3 fault_injector.py --tl-fault tl_unknown --fault-delay 30 --fault-duration 45
+  python3 fault_injector.py --tl-fault tl_unknown --fault-duration 45
 
   # S4 — blackout, repeats at every TL zone:
-  python3 fault_injector.py --tl-fault tl_blackout --fault-delay 30 --fault-duration 45
+  python3 fault_injector.py --tl-fault tl_blackout --fault-duration 45
+
+  # (--fault-delay no longer applies to TL faults — REMOVED 2026-07-25, TL
+  # now arms immediately when the runway clears. Still used by IMU faults.)
 """
 
 import argparse
@@ -359,33 +376,95 @@ _RUNWAY_MIN_SPEED_MPS = 0.5
 # experiments/scripts/plot_routes.py already uses to draw TL markers
 # (traffic_light_points()) — ported here, not reimplemented from scratch.
 #
-# Radius grounded in Autoware's own config, REVISED 2026-07-24 (was 150.0):
-# the first version of this reasoning used DETECTION range (how far away
-# perception can technically see a light — Autoware's own
-# max_detection_range: 200.0, cross-checked against published TL-recognition
-# literature at ~120-170m reliable range) — but detection range and REACTION
-# range are different things. A fault is only behaviorally meaningful while
-# it's active over the span the vehicle would actually be DECIDING/EXECUTING
-# a stop, not just technically perceiving a light far ahead with nothing yet
-# committed. That's a braking-distance question, not a perception-range one.
+# Radius history:
+#   v1 (150.0): grounded in DETECTION range (how far away perception can
+#     technically see a light — Autoware's own max_detection_range: 200.0,
+#     cross-checked against literature's ~120-170m reliable range).
+#   v2 (80.0, 2026-07-24): detection range and REACTION range are different
+#     things — a fault is only behaviorally meaningful while active over the
+#     span the vehicle would actually be deciding/executing a stop, not just
+#     perceiving a light far ahead with nothing yet committed. Grounded in
+#     Autoware's own common.param.yaml (max_vel=11.11, normal.min_acc=-1.0 ->
+#     ~62m comfortable stopping distance, +30% margin -> 80m).
+#   v3 (20.0, 2026-07-25, CURRENT): v2 was still too coarse for a different
+#     reason — reaction range and INTERSECTION DISTINCTNESS are also
+#     different things. At 80m radius, several real, physically distinct
+#     intersections merge into one continuous zone (confirmed: ~5 real TL
+#     points cluster within 12-40m of the shared start), so one "zone" could
+#     span hundreds of meters of open road between real intersections,
+#     defeating the entire "one fault cycle per real intersection" design
+#     goal — and burning most of a route's few zones on one merged blob
+#     instead of resolving them individually.
 #
-# Autoware's own planning config (common.param.yaml): max_vel: 11.11 m/s,
-# normal.min_acc: -1.0 m/s^2 (the COMFORTABLE deceleration actually used for
-# routine stops, not limit.min_acc: -2.5, which is the emergency/urgent
-# bound). Comfortable full-speed stopping distance: v^2/(2*|a|) =
-# 11.11^2/(2*1.0) ~= 61.7m — the distance from a stop line at which
-# Autoware's planner would normally start committing to decelerate for a red
-# light. ~30% margin (so the fault is active for the FULL decision/braking
-# window, not just barely clipping its start) rounds to 80m. Comfortably
-# inside both the old 200m detection ceiling and the ~120-170m literature
-# range, so detection was never the bottleneck — reaction was.
-_DEFAULT_TL_ZONE_RADIUS_M = 80.0
+#   Validated empirically, not guessed: walked ACTUAL recorded ground-truth
+#   trajectories (4 real goal_012 trials, 2026-07-24) against the loaded map
+#   TL points, computing distance-to-nearest-point at every sample and
+#   scanning candidate radii for how many distinct close-approach events
+#   result. 15m over-fragments a single real intersection's approach into
+#   spurious sub-events (signal heads spread across a wide intersection each
+#   briefly counted separately); 40-80m re-merges genuinely distinct
+#   intersections. 20-30m is the stable range — consistently resolves to the
+#   SAME 3 real events across all 4 independently-driven trials (same start
+#   position + same map = same first/second/third intersection, every time
+#   — this radius is what makes "the first intersection" deterministic in
+#   practice, not a separate mechanism). Picked 20m, the sensitive edge of
+#   that stable range. Note: shrinking the radius does NOT shrink a real
+#   intersection's dwell time if the vehicle is genuinely stopped/slow there
+#   (observed 33-53s for the first real event across all 4 trials, consistent
+#   with periodic_fault_strategy.md's independently-measured real TL dwell
+#   range of 21-222s) — reaction-range exposure (v2's concern) is unaffected,
+#   only cross-intersection merging is fixed.
+#   v4 (40.0, 2026-07-27): v3's "20-30m stable range" analysis, in hindsight,
+#   was run against _traffic_light_points_in_bbox's pre-fix behavior — one
+#   point per signal-head LINESTRING, not per regulatory element (fixed
+#   2026-07-26; see that function's docstring) — so "~5 real TL points
+#   cluster within 12-40m of the shared start" was mostly multiple heads of
+#   the SAME intersection, not 5 distinct intersections. It was accidentally
+#   solving point-duplication, not measuring real intersection spacing.
+#   With that fixed, actually measuring real, distinct regulatory-element
+#   spacing along all 3 current production routes (compute_tl_zones.py's
+#   output) gives a minimum gap of 112m between consecutive real
+#   intersections. Separately, 20m turned out to leave too little
+#   approach distance for a TL fault to matter — visual review of
+#   plot_fault_plan.py showed the injection point sitting so close to the
+#   physical signal that the vehicle could already be committed to a
+#   stop/go decision (which Autoware's behavior planner typically locks in
+#   well before the stop line itself) before the fault ever had a chance
+#   to influence it. 40m roughly doubles the approach distance while still
+#   leaving a 32m margin against the measured 112m minimum real
+#   intersection spacing (2*40=80 < 112) — comfortably inside "genuinely
+#   distinct," now checked against real numbers instead of contaminated
+#   ones.
+_DEFAULT_TL_ZONE_RADIUS_M = 40.0
+
+# IMU zone-gating (REDESIGNED 2026-07-26 — precomputed geometry, not a live
+# threshold). imu_scale_factor/imu_stuck_at are only consequential when the
+# vehicle is actually turning (error is proportional to true yaw rate, or
+# only diverges once real motion departs from a frozen value); imu_bias is
+# different — it accumulates heading error over elapsed on-time regardless
+# of geometry, so what matters for IT is enough accumulation time before a
+# moment where heading accuracy is consequential (a turn), not turning
+# itself. A 2026-07-25 live-gyro-threshold gate (checking incoming rate
+# before fault mutation) only caught a real turn ~28% of the time across
+# ~550 on-cycles — most of this route is straight relative to the on/off
+# cadence, and its wall-clock max-wait fallback meant most cycles fired
+# blind anyway, same "arbitrary timing race" shape as the TL arming-delay
+# bug. Fix: precompute real turn locations per goal from nominal driven
+# trajectories (experiments/scripts/compute_turn_zones.py), same
+# map-position-zone pattern already proven for TL, instead of hoping a live
+# signal lines up. imu_scale_factor/imu_stuck_at gate on turn_zones directly;
+# imu_bias gates on bias_leadin_zones (points 10m of arc-length before each
+# turn zone, so accumulation matures right as the turn arrives).
+_DEFAULT_IMU_TURN_ZONE_RADIUS_M = 15.0
+_DEFAULT_IMU_LEADIN_ZONE_RADIUS_M = 8.0
 
 _SCRIPT_DIR      = os.path.dirname(os.path.abspath(__file__))
 _REPO_DIR        = os.path.dirname(os.path.dirname(_SCRIPT_DIR))
 _WORKSPACE_DIR   = os.path.dirname(_REPO_DIR)
 _DEFAULT_MAP_FILE = os.path.join(_WORKSPACE_DIR, 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm')
 _DEFAULT_GOALS_FILE = os.path.join(_REPO_DIR, 'experiments', 'configs', 'captured_goals.json')
+_DEFAULT_TURN_ZONES_FILE = os.path.join(_REPO_DIR, 'experiments', 'configs', 'turn_zones.json')
+_DEFAULT_TL_ZONES_FILE = os.path.join(_REPO_DIR, 'experiments', 'configs', 'tl_zones.json')
 # Fixed production goal set (docs/research_notes/periodic_fault_strategy.md
 # §4/§5, run_fault_campaigns.sh's default GOALS) — not the whole 383-TL-point
 # map, since fault campaigns only ever run on these three routes. Bounding
@@ -404,10 +483,18 @@ def _ll_attr(ll, key, default=''):
 
 
 def _traffic_light_points_in_bbox(map_data, xmin, xmax, ymin, ymax) -> List[Tuple[float, float]]:
-    """Midpoint of each traffic-light-head linestring ('refers' role of
-    traffic_light regulatory elements) within the bbox, deduped by regulatory
-    element id. Ported from experiments/scripts/plot_routes.py's
-    traffic_light_points() — same technique, not reimplemented.
+    """One point per traffic_light regulatory element within the bbox —
+    the average of ALL its 'refers' linestring midpoints, not one point per
+    linestring. A single regulatory element (one traffic_light_group_id,
+    one state in the perception message) commonly refers to 2-3 physical
+    signal-head linestrings (redundant heads for the same approach, or
+    heads for different lanes governed together) that can be tens of
+    metres apart — e.g. regulatory element 1489 in this map spans ~40m
+    across 3 heads. Emitting one point per linestring (the previous
+    behavior, ported unchanged from plot_routes.py's traffic_light_points())
+    made a single real intersection look like 2-3 separate nearby zones,
+    confirmed 2026-07-26 via plot_fault_plan.py showing 3-4 overlapping
+    circles at what is one physical intersection.
     """
     seen_reg = set()
     pts = []
@@ -420,14 +507,13 @@ def _traffic_light_points_in_bbox(map_data, xmin, xmax, ymin, ymax) -> List[Tupl
                 refers = reg.parameters['refers']
             except Exception:
                 continue
-            for ls in refers:
-                pts_xy = [(p.x, p.y) for p in ls]
-                if not pts_xy:
-                    continue
-                mx = sum(p[0] for p in pts_xy) / len(pts_xy)
-                my = sum(p[1] for p in pts_xy) / len(pts_xy)
-                if xmin <= mx <= xmax and ymin <= my <= ymax:
-                    pts.append((mx, my))
+            all_pts_xy = [(p.x, p.y) for ls in refers for p in ls]
+            if not all_pts_xy:
+                continue
+            mx = sum(p[0] for p in all_pts_xy) / len(all_pts_xy)
+            my = sum(p[1] for p in all_pts_xy) / len(all_pts_xy)
+            if xmin <= mx <= xmax and ymin <= my <= ymax:
+                pts.append((mx, my))
     return pts
 
 
@@ -473,6 +559,74 @@ def _load_tl_zone_points(
         return []
 
 
+def _load_turn_zones(
+    goal_ids: List[str],
+    turn_zones_file: str = _DEFAULT_TURN_ZONES_FILE,
+) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
+    """Precomputed (turn_zones, bias_leadin_zones) pooled across the given
+    goals — see experiments/scripts/compute_turn_zones.py, which derives
+    both from real nominal driven trajectories, not a live sensor threshold.
+    Returns ([], []) on any failure (file missing, goal not in it, etc.) —
+    callers degrade to "this fault never arms" rather than crashing, same
+    philosophy as _load_tl_zone_points. Pooled, not kept per-goal, because
+    goals occupy spatially disjoint regions of the map — same simplification
+    _load_tl_zone_points already makes for TL zones.
+    """
+    try:
+        with open(turn_zones_file) as f:
+            data = json.load(f)
+        turn_pts: List[Tuple[float, float]] = []
+        leadin_pts: List[Tuple[float, float]] = []
+        for gid in goal_ids:
+            g = data.get('goals', {}).get(gid)
+            if g is None:
+                continue
+            turn_pts.extend((p['x'], p['y']) for p in g.get('turn_zones', []))
+            leadin_pts.extend((p['x'], p['y']) for p in g.get('bias_leadin_zones', []))
+        return turn_pts, leadin_pts
+    except Exception:
+        return [], []
+
+
+def _load_tl_group_zones(
+    goal_ids: List[str],
+    tl_zones_file: str = _DEFAULT_TL_ZONES_FILE,
+) -> List[Tuple[float, float, int]]:
+    """Pooled (x, y, traffic_light_group_id) from the given goals' ROUTES —
+    see experiments/scripts/compute_tl_zones.py, which derives these from
+    each route's own lanelet sequence (one entry per traffic_light
+    regulatory element actually attached to a lanelet the route drives
+    through), not from "any TL within a bounding box" the way
+    _load_tl_zone_points is. This is what lets a TL fault target the ONE
+    light the vehicle is actually reacting to (see _tl_fault_group_id in
+    _start_tl_fault_window / _on_tl) instead of every currently-tracked
+    group in the perception message. Deduped by group_id across goals (a
+    shared intersection between two routes should only ever be one zone).
+    Returns [] on any failure (file missing — e.g. compute_tl_zones.py
+    hasn't been run yet — goal not covered, etc.); callers fall back to
+    _load_tl_zone_points' cruder bbox-based positions (degraded: works for
+    the runway/zone-arming check, but with no group_id to scope a fault
+    to), not a crash.
+    """
+    try:
+        with open(tl_zones_file) as f:
+            data = json.load(f)
+        pts: List[Tuple[float, float, int]] = []
+        seen_gid = set()
+        for gid_key in goal_ids:
+            g = data.get('goals', {}).get(gid_key)
+            if g is None:
+                continue
+            for z in g.get('tl_zones', []):
+                if z['group_id'] in seen_gid:
+                    continue
+                seen_gid.add(z['group_id'])
+                pts.append((z['x'], z['y'], z['group_id']))
+        return pts
+    except Exception:
+        return []
+
+
 class FaultInjector(Node):
 
     def __init__(
@@ -481,7 +635,6 @@ class FaultInjector(Node):
         tl_params:         Dict[str, Any],
         imu_fault:         Optional[str],
         imu_params:        Dict[str, Any],
-        fault_delay:       float,
         fault_duration:    float,
         tl_recovery_gap:   float,
         max_tl_cycles:     int,
@@ -502,7 +655,6 @@ class FaultInjector(Node):
         self._imu_fault_config: Optional[str] = imu_fault  # what's configured for this run
         self._imu_fault_type: Optional[str]   = None       # None until armed for this trial
         self._imu_params                      = imu_params
-        self._fault_delay                     = fault_delay
         self._fault_duration                  = fault_duration
         self._tl_recovery_gap                 = tl_recovery_gap
         self._max_tl_cycles                   = max_tl_cycles  # 0 = unbounded
@@ -516,23 +668,73 @@ class FaultInjector(Node):
         # distance-only runway and disables map-based TL fault gating — see
         # _on_gt_pose and _on_tl.
         self._tl_zone_radius_m = tl_zone_radius_m
-        self._tl_zone_points: List[Tuple[float, float]] = _load_tl_zone_points(
+        # Route-derived zones (compute_tl_zones.py) are preferred — they carry
+        # a traffic_light_group_id per zone, letting a TL fault target the ONE
+        # light the vehicle's current lanelet is actually governed by (see
+        # _tl_fault_group_id) instead of every group in the perception
+        # message. Falls back to the cruder bbox-based positions (no group_id,
+        # so faults stay unscoped — same behavior as before 2026-07-26) if
+        # tl_zones.json is missing or doesn't cover these goals.
+        self._tl_group_zones: List[Tuple[float, float, int]] = _load_tl_group_zones(
             zone_goals or _DEFAULT_ZONE_GOALS
         )
-        if self._tl_zone_points:
+        if self._tl_group_zones:
+            self._tl_zone_points: List[Tuple[float, float]] = [
+                (x, y) for x, y, _gid in self._tl_group_zones
+            ]
             self.get_logger().info(
-                f'Loaded {len(self._tl_zone_points)} map TL points for zone '
-                f'detection (radius={tl_zone_radius_m:.0f}m, goals='
-                f'{zone_goals or _DEFAULT_ZONE_GOALS})'
+                f'Loaded {len(self._tl_zone_points)} route-derived TL zones with '
+                f'group ids (radius={tl_zone_radius_m:.0f}m, goals='
+                f'{zone_goals or _DEFAULT_ZONE_GOALS}) — TL faults will target only '
+                f'the group id relevant at arm time.'
             )
         else:
-            self.get_logger().warn(
-                'No map TL points loaded — falling back to flat-distance-only '
-                'runway (no map-based "cleared the first intersection" check), '
-                'and TL fault zone gating is disabled (tl_fault will never arm '
-                'if configured). Check lanelet2 is importable and '
-                f'{_DEFAULT_MAP_FILE} / {_DEFAULT_GOALS_FILE} exist.'
-            )
+            self._tl_zone_points = _load_tl_zone_points(zone_goals or _DEFAULT_ZONE_GOALS)
+            if self._tl_zone_points:
+                self.get_logger().warn(
+                    f'No route-derived tl_zones.json data for {zone_goals or _DEFAULT_ZONE_GOALS} — '
+                    f'falling back to {len(self._tl_zone_points)} bbox-based map TL points '
+                    f'(radius={tl_zone_radius_m:.0f}m). Zone-arming still works, but a TL '
+                    f'fault cannot be scoped to one group id this way and will mutate every '
+                    f'group in the message while active. Run '
+                    f'experiments/scripts/compute_tl_zones.py to fix.'
+                )
+            else:
+                self.get_logger().warn(
+                    'No map TL points loaded — falling back to flat-distance-only '
+                    'runway (no map-based "cleared the first intersection" check), '
+                    'and TL fault zone gating is disabled (tl_fault will never arm '
+                    'if configured). Check lanelet2 is importable and '
+                    f'{_DEFAULT_MAP_FILE} / {_DEFAULT_GOALS_FILE} exist.'
+                )
+        # IMU zone-gating (see _load_turn_zones / compute_turn_zones.py) —
+        # loaded unconditionally (not just when imu_fault is configured) for
+        # the same reason TL points load unconditionally: this node is one
+        # long-lived process for the whole campaign, and a config swap
+        # mid-run shouldn't require restarting it. Empty lists (file missing,
+        # goal not covered) degrade to "this IMU fault never arms" rather
+        # than crashing — same philosophy as the TL zone loader.
+        self._imu_turn_zone_radius_m = _DEFAULT_IMU_TURN_ZONE_RADIUS_M
+        self._imu_leadin_zone_radius_m = _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M
+        self._imu_turn_zone_points, self._imu_leadin_zone_points = _load_turn_zones(
+            zone_goals or _DEFAULT_ZONE_GOALS
+        )
+        if imu_fault in ('imu_scale_factor', 'imu_stuck_at', 'imu_bias'):
+            n_turn, n_leadin = len(self._imu_turn_zone_points), len(self._imu_leadin_zone_points)
+            if n_turn or n_leadin:
+                self.get_logger().info(
+                    f'Loaded {n_turn} IMU turn zones + {n_leadin} bias lead-in zones '
+                    f'(goals={zone_goals or _DEFAULT_ZONE_GOALS})'
+                )
+            else:
+                self.get_logger().warn(
+                    f'No IMU turn zones loaded — imu_fault={imu_fault!r} will never arm. '
+                    f'Run experiments/scripts/compute_turn_zones.py first, or check '
+                    f'{_DEFAULT_TURN_ZONES_FILE} covers {zone_goals or _DEFAULT_ZONE_GOALS}.'
+                )
+        self._in_imu_turn_zone: bool = False
+        self._in_imu_leadin_zone: bool = False
+
         # Sticky, one-shot runway tracking (distinct from the continuous
         # _in_detection_zone the TL fault state machine cycles on all trial
         # long) — "cleared the first real intersection" for THIS trial only.
@@ -547,7 +749,7 @@ class FaultInjector(Node):
 
         # TL fault state machine — zone-triggered periodic, gated by a runway
         # (revised 2026-07-24 — see _on_gt_pose):
-        # Phases: 'waiting_runway' → 'waiting_delay' → 'waiting_zone' →
+        # Phases: 'waiting_runway' → 'waiting_zone' →
         #         'fault_active' → 'recovering' → 'waiting_zone' → ...
         #         (repeats at every TL zone encountered for the rest of the
         #         trial). 'done' is a terminal passthrough state, only entered
@@ -556,27 +758,44 @@ class FaultInjector(Node):
         #         from 'waiting_runway', giving each trial its own cycle
         #         budget — see _on_gt_pose's reset_detected branch).
         #
-        # 'waiting_runway' replaces the old design where --fault-delay was a
-        # single wall-clock timer counted from THIS PROCESS's own startup —
-        # since the fault injector is one long-lived relay for an entire
-        # campaign batch (run_experiments.py starts it once, before the first
-        # trial's engage), that old delay only ever meant something for the
-        # batch's first trial, and had no relationship to where the vehicle
-        # physically was. Every collected goal in this repo spawns at the
-        # SAME intersection (verified against captured_goals.json — all 26
-        # goals share one start_position), so a delay with no runway
-        # component reliably armed the fault while the vehicle was still at
-        # or near that first intersection. --fault-delay is now a floor
-        # measured from when the runway clears (its original intended
-        # purpose — letting EKF/localization settle — still applies, just
-        # anchored to a meaningful moment instead of process start).
+        # --fault-delay's wall-clock wait REMOVED from the TL path 2026-07-25
+        # (was 'waiting_runway' → 'waiting_delay' → 'waiting_zone'; the
+        # 'waiting_delay' state no longer exists). Root-caused live on
+        # goal_012 (tl_fault_s3/s4/ramp, this session): the 30s floor is a
+        # pure wall-clock timer with no relationship to how long the vehicle
+        # actually dwells in the SECOND real zone (the first one after
+        # runway) — that dwell is traffic-light-phase-dependent, so it varies
+        # trial to trial (29.8s when the vehicle caught a red and waited,
+        # vs ~6.2s when it sailed through on green). When the 30s delay
+        # outlasts the zone (the 6s case, 3 of 4 trials this session), the
+        # fault misses that zone ENTIRELY and only gets to arm at whatever
+        # zone comes next — arbitrary, not by design. The delay's original
+        # justifications (letting EKF/localization settle after spawn;
+        # avoiding arming while still at the shared start intersection) are
+        # BOTH already fully handled by the runway gate itself (real
+        # traveled distance + real zone-clear + real movement) — the delay
+        # added nothing beyond what runway-clearing already guarantees, once
+        # the runway/zone redesign existed. Now: runway clears → immediately
+        # 'waiting_zone' → fault arms at the very next zone entered, whatever
+        # dwell time that turns out to have. --fault-delay no longer affects
+        # TL faults at all (still used by IMU — see _arm_imu_for_trial).
         self._tl_phase: str             = 'waiting_runway' if tl_fault else 'done'
         self._tl_fault_active: bool     = False   # True only during a fault window
         self._tl_fault_start_time: float = 0.0    # used by tl_confidence_ramp
         self._tl_fault_end_time: float  = 0.0
         self._tl_recovering_end_time: float = 0.0
         self._tl_cycle_count: int       = 0
-        self._tl_runway_wait_started: bool = False  # guards spawning the delay-then-arm thread once
+        # Which real traffic_light_group_id the vehicle is currently near
+        # (set by _on_gt_pose from _tl_group_zones, None if no route-derived
+        # zone data or not currently in one) and which one THIS fault window
+        # is scoped to (captured once, at arm time, in _start_tl_fault_window
+        # — stable for the window's duration even if the vehicle drifts to a
+        # different zone's radius before the window ends). None means
+        # "unscoped": _on_tl mutates every group in the message, the
+        # pre-2026-07-26 behavior — the only option when tl_zones.json has no
+        # data for these goals (see _tl_group_zones).
+        self._current_tl_group_id: Optional[int] = None
+        self._tl_fault_group_id: Optional[int]   = None
 
         # Runway / trial-boundary tracking, driven by ground-truth pose only
         # (never by Autoware's own /localization/kinematic_state, which a
@@ -595,9 +814,9 @@ class FaultInjector(Node):
         self._last_gt_time: float                   = 0.0
         self._runway_cleared: bool                  = False
         # Shared by TL and IMU arming: bumped on every detected trial reset so
-        # a delay-then-arm thread spawned for a superseded trial can recognize
-        # it's stale and no-op instead of firing late into the new trial (see
-        # _delay_then_arm_tl / _arm_imu_for_trial).
+        # a thread spawned for a superseded trial (_arm_imu_for_trial,
+        # _wait_for_zone) can recognize it's stale and no-op instead of
+        # firing late into the new trial.
         self._trial_generation: int                 = 0
 
         # TL zone membership — set by _on_gt_pose (map-position-based), read
@@ -674,50 +893,27 @@ class FaultInjector(Node):
         self._gt_last_msg_wall_time: Optional[float] = None
         self._gt_health_timer = self.create_timer(15.0, self._check_gt_health)
 
-        # Fault arming is normally entirely driven by _on_gt_pose (runway
-        # cleared → start the --fault-delay floor → arm) — see
-        # _delay_then_arm_tl (TL) and _arm_imu_for_trial (IMU).
+        # Fault arming is entirely driven by _on_gt_pose (runway cleared →
+        # arm — immediately for TL, per-cycle zone-wait for periodic IMU
+        # faults) — see _on_gt_pose, _wait_for_zone, _arm_imu_for_trial.
         #
-        # FALLBACK (added 2026-07-24): --fault-min-runway-m <= 0 disables the
-        # runway requirement entirely and arms directly from process start,
-        # matching the pre-runway-gating behavior exactly (same functions,
-        # just triggered here instead of from a runway-clear event). This
-        # exists because the runway gate depends on _on_gt_pose firing at
-        # all, and in the 2026-07-24 goal_012 smoke test it never did across
-        # 9/9 fresh trials (gt_pose_never_received fired every ~15s for the
-        # full duration of every trial) — root cause not yet found (topic
-        # name, QoS reliability/durability, and message type all match
-        # ros_utils.py's proven-working live subscription to the same topic;
-        # see docs/design_decisions.md and TODO.md). Use this to keep
-        # collecting real fault data while that's chased down live — it
-        # reintroduces the original "may arm near the start intersection"
-        # limitation the runway gate was built to remove, nothing else.
-        if fault_min_runway_m <= 0:
-            self.get_logger().warn(
-                'fault_min_runway_m <= 0 — runway gating DISABLED, falling back '
-                'to delay-from-process-start arming (pre-2026-07-24 behavior). '
-                'Faults may arm near the shared start intersection again.'
-            )
-            if tl_fault:
-                t = threading.Thread(
-                    target=self._delay_then_arm_tl,
-                    args=(fault_delay, self._trial_generation),
-                    daemon=True,
-                )
-                t.start()
-            if imu_fault:
-                t = threading.Thread(
-                    target=self._arm_imu_for_trial,
-                    args=(imu_fault, fault_delay, self._trial_generation),
-                    daemon=True,
-                )
-                t.start()
+        # The --fault-min-runway-m<=0 "disable everything, arm from process
+        # start" fallback (added 2026-07-24 for a GT-subscription bug where
+        # _on_gt_pose never fired at all) was REMOVED 2026-07-26: it hadn't
+        # been needed since that bug stopped reproducing, and it had a real
+        # gap — imu_bias/imu_scale_factor/imu_stuck_at's zone-gating
+        # (_wait_for_zone) depends on _on_gt_pose regardless of this flag, so
+        # the fallback silently didn't cover 3 of 4 IMU fault types anyway. A
+        # known-incomplete safety net is worse than none — if the GT bug ever
+        # recurs, it needs its own proper fix, not this workaround revived.
+        # _delay_then_arm_tl (the TL-side half of this fallback) and
+        # --fault-delay (unused by any path once this and the IMU delay were
+        # both removed) were deleted along with it, not left as dead code.
 
         self.get_logger().info(
             f'FaultInjector ready — tl={tl_fault or "passthrough"}, '
             f'imu={imu_fault or "passthrough"}, '
-            f'min_runway={fault_min_runway_m:.0f}m, delay={fault_delay:.0f}s '
-            f'(floor after runway clears), duration={fault_duration:.0f}s'
+            f'min_runway={fault_min_runway_m:.0f}m, duration={fault_duration:.0f}s'
         )
 
     # ── Runway / trial-boundary tracking ────────────────────────────────────────
@@ -752,6 +948,25 @@ class FaultInjector(Node):
             math.hypot(x - px, y - py) <= self._tl_zone_radius_m
             for px, py in self._tl_zone_points
         )
+        # Nearest route-derived TL zone's group_id, if within radius — None
+        # (unscoped) if no route-derived data or not currently in one. See
+        # _tl_fault_group_id: this is captured once at fault-arm time, not
+        # re-read continuously, so it stays stable for the whole window.
+        current_tl_group_id = None
+        best_group_dist = self._tl_zone_radius_m
+        for px, py, gid in self._tl_group_zones:
+            d = math.hypot(x - px, y - py)
+            if d <= best_group_dist:
+                best_group_dist = d
+                current_tl_group_id = gid
+        in_imu_turn_zone = any(
+            math.hypot(x - px, y - py) <= self._imu_turn_zone_radius_m
+            for px, py in self._imu_turn_zone_points
+        )
+        in_imu_leadin_zone = any(
+            math.hypot(x - px, y - py) <= self._imu_leadin_zone_radius_m
+            for px, py in self._imu_leadin_zone_points
+        )
 
         newly_cleared  = False
         reset_detected = False
@@ -779,10 +994,33 @@ class FaultInjector(Node):
                     self._runway_cleared = False
                     self._runway_seen_first_zone = False
                     self._runway_position_ok = False
-                    self._tl_runway_wait_started = False
                     if self._tl_fault_config:
                         self._tl_phase = 'waiting_runway'
                         self._tl_cycle_count = 0
+                        # BUG FIXED 2026-07-25: this branch reset _tl_phase
+                        # but not _tl_fault_active — _on_tl's message-apply
+                        # check (`active = self._tl_fault_active and
+                        # self._in_detection_zone`) reads _tl_fault_active
+                        # directly, never _tl_phase. If a teleport reset
+                        # landed mid-cycle (the previous trial's last fault
+                        # window was still active, not yet ended via
+                        # _end_tl_fault_window), the stale True flag survived
+                        # the reset and kept the fault applying to EVERY
+                        # message for the rest of the batch the instant
+                        # _in_detection_zone next went True — bypassing the
+                        # entire zone/cycling state machine, not just
+                        # skipping it. Confirmed live: goal_026's tl_fault_s4
+                        # trial (2026-07-24) got continuous unconditional
+                        # tl_blackout for its whole drive (111
+                        # tl_fault_applied events starting 1.5s after the
+                        # reset, zero tl_fault_start) after goal_007's last
+                        # cycle didn't get to end cleanly before the
+                        # inter-trial reset fired. Caught by
+                        # FaultValidationMetrics (tl_fault_armed=False, since
+                        # no NEW cycle ever started) — that flag was correct
+                        # to fire even though its message underdescribed the
+                        # actual failure mode (not "never armed", "stuck on").
+                        self._tl_fault_active = False
                     self._trial_generation += 1
                     self._imu_fault_type = None
                     self._imu_bias_active = False
@@ -794,6 +1032,13 @@ class FaultInjector(Node):
             self._in_detection_zone = in_map_zone
             zone_entered = in_map_zone and not was_in_zone
             zone_exited  = (not in_map_zone) and was_in_zone
+            self._current_tl_group_id = current_tl_group_id
+
+            # ── IMU zone membership (precomputed turn geometry) — pure level
+            # flags, no edge-tracking needed: _wait_for_zone just polls
+            # "am I in it right now" (see that method's docstring).
+            self._in_imu_turn_zone = in_imu_turn_zone
+            self._in_imu_leadin_zone = in_imu_leadin_zone
 
             # ── Runway ───────────────────────────────────────────────────────
             if not self._runway_cleared:
@@ -817,17 +1062,21 @@ class FaultInjector(Node):
                     self._runway_cleared = True
                     newly_cleared = True
 
-            start_tl_wait = (
+            # TL arms immediately when the runway clears — no wall-clock
+            # delay (see the state-machine comment above this class's
+            # __init__ for why the old --fault-delay floor was removed from
+            # this path 2026-07-25). The very next zone entered is where the
+            # fault fires, whatever that zone's dwell time turns out to be.
+            tl_armed_now = (
                 newly_cleared and self._tl_fault_config
                 and self._tl_phase == 'waiting_runway'
-                and not self._tl_runway_wait_started
             )
-            if start_tl_wait:
-                self._tl_runway_wait_started = True
+            if tl_armed_now:
+                self._tl_phase = 'waiting_zone'
 
             start_imu_wait = newly_cleared and self._imu_fault_config
 
-            if start_tl_wait or start_imu_wait:
+            if tl_armed_now or start_imu_wait:
                 gen = self._trial_generation  # capture once, used by both below
 
         if zone_entered:
@@ -848,22 +1097,17 @@ class FaultInjector(Node):
                 'min_runway_m': self._fault_min_runway_m,
                 'speed_mps':    round(speed, 2),
             })
-            self.get_logger().info(
-                f'Runway cleared (speed={speed:.1f}m/s) — starting fault-delay floor'
-            )
+            self.get_logger().info(f'Runway cleared (speed={speed:.1f}m/s)')
 
-        if start_tl_wait:
-            t = threading.Thread(
-                target=self._delay_then_arm_tl,
-                args=(self._fault_delay, gen),
-                daemon=True,
+        if tl_armed_now:
+            self.get_logger().info(
+                'TL fault armed — waiting for first detection zone entry (no delay floor)'
             )
-            t.start()
 
         if start_imu_wait:
             t = threading.Thread(
                 target=self._arm_imu_for_trial,
-                args=(self._imu_fault_config, self._fault_delay, gen),
+                args=(self._imu_fault_config, gen),
                 daemon=True,
             )
             t.start()
@@ -894,29 +1138,26 @@ class FaultInjector(Node):
 
     # ── Phase transitions ─────────────────────────────────────────────────────
 
-    def _delay_then_arm_tl(self, delay: float, gen: int):
-        """After the runway-cleared delay floor, move waiting_runway → waiting_zone
-        — unless a later trial reset (gen mismatch) has already superseded
-        this wait, which would otherwise let a stale thread from a previous
-        trial arm the fault early into a new one.
-        """
-        time.sleep(delay)
-        with self._lock:
-            if gen != self._trial_generation:
-                return  # a teleport reset happened during the delay; stale
-            if self._tl_phase == 'waiting_runway':
-                self._tl_phase = 'waiting_zone'
-        self.get_logger().info(
-            f'TL fault armed — waiting for first detection zone entry'
-        )
+    def _arm_imu_for_trial(self, imu_fault: str, gen: int):
+        """Activate the IMU fault for this trial generation immediately on
+        runway-clear — unless superseded by a newer trial reset (gen
+        mismatch) in the meantime. Dispatches to the periodic on/off loop
+        (imu_bias/imu_scale_factor/imu_stuck_at) or the one-shot ramp
+        (imu_bias_ramp) based on fault type.
 
-    def _arm_imu_for_trial(self, imu_fault: str, delay: float, gen: int):
-        """Wait out the post-runway delay floor, then activate the IMU fault
-        for this trial generation — unless superseded by a newer trial reset
-        (gen mismatch) in the meantime. Dispatches to the periodic on/off loop
-        (imu_bias) or the one-shot ramp (imu_bias_ramp) based on fault type.
+        No --fault-delay wait here as of 2026-07-26 (was a fixed floor after
+        runway-clear, originally meant to let EKF/localization settle —
+        already fully handled by the runway gate itself, same reasoning as
+        the TL arming-delay removal earlier this session, which also removed
+        --fault-delay and its TL counterpart _delay_then_arm_tl entirely —
+        both were fully unused once removed from their respective paths, so
+        kept as dead code was worse than deleting them). For
+        imu_bias/imu_scale_factor/imu_stuck_at specifically, the periodic
+        loop's own per-cycle zone-wait (_wait_for_zone) already gates
+        on-transitions on real geometry, so a fixed delay on top of that
+        added nothing but a chance to race against the zone the same way the
+        old TL delay raced against TL zones.
         """
-        time.sleep(delay)
         with self._lock:
             if gen != self._trial_generation:
                 return  # a teleport reset happened during the delay; stale
@@ -977,15 +1218,21 @@ class FaultInjector(Node):
             self._tl_fault_active  = True
             self._tl_fault_start_time = start_t
             self._tl_fault_end_time = end_t
+            # Captured once here, not re-read continuously — see the
+            # _tl_fault_group_id docstring at its declaration. None (unscoped,
+            # mutate every group) if no route-derived zone data is loaded.
+            self._tl_fault_group_id = self._current_tl_group_id
+            group_id = self._tl_fault_group_id
         self._log_event('tl_fault_start', {
             'fault_type':      self._tl_fault_config,
             'params':          self._tl_params,
             'duration_cap_sec': self._fault_duration,
             'cycle':           cycle,
+            'group_id':        group_id,
         })
         self.get_logger().info(
             f'TL fault ACTIVE (cycle {cycle}): {self._tl_fault_config}, '
-            f'duration_cap={self._fault_duration:.0f}s'
+            f'duration_cap={self._fault_duration:.0f}s, group_id={group_id}'
         )
 
     def _end_tl_fault_window(self, reason: str):
@@ -1085,6 +1332,7 @@ class FaultInjector(Node):
         with self._lock:
             active      = self._tl_fault_active and self._in_detection_zone
             fault_start = self._tl_fault_start_time
+            group_id    = self._tl_fault_group_id
 
         if not active:
             self._tl_pub.publish(msg)
@@ -1092,10 +1340,34 @@ class FaultInjector(Node):
 
         fault = self._tl_fault_config
 
+        # Scope mutation to the ONE regulatory element the vehicle's route is
+        # actually governed by right now (group_id, captured at arm time —
+        # see _start_tl_fault_window), not every group currently tracked in
+        # the message (which routinely holds 2-6 groups at once — other
+        # intersections/approaches in the perception lookahead the vehicle
+        # isn't reacting to yet). group_id is None when tl_zones.json has no
+        # route-derived data for these goals (see _tl_group_zones) — falls
+        # back to the pre-2026-07-26 behavior of mutating everything, since
+        # there's no group_id to scope to.
+        target_groups = (
+            list(msg.traffic_light_groups) if group_id is None
+            else [g for g in msg.traffic_light_groups if g.traffic_light_group_id == group_id]
+        )
+
         if fault == 'tl_blackout':
-            empty       = TrafficLightGroupArray()
-            empty.stamp = msg.stamp
-            self._tl_pub.publish(empty)
+            if group_id is None:
+                empty       = TrafficLightGroupArray()
+                empty.stamp = msg.stamp
+                self._tl_pub.publish(empty)
+            else:
+                # Only the targeted light goes dark — others in the message
+                # (different intersections/approaches) are left untouched,
+                # matching a real single-sensor/single-signal failure rather
+                # than the whole tracked network vanishing at once.
+                msg.traffic_light_groups = [
+                    g for g in msg.traffic_light_groups if g.traffic_light_group_id != group_id
+                ]
+                self._tl_pub.publish(msg)
 
         elif fault == 'tl_confidence':
             # Mutated in place, not deepcopy'd: rclpy hands this callback a
@@ -1104,7 +1376,7 @@ class FaultInjector(Node):
             # + full nested-object copy on every message while the fault is
             # active, which otherwise runs at TL topic rate — ~20Hz observed).
             scale = self._tl_params.get('confidence_scale', 0.5)
-            for group in msg.traffic_light_groups:
+            for group in target_groups:
                 for elem in group.elements:
                     elem.confidence = max(0.0, min(1.0, elem.confidence * scale))
             self._tl_pub.publish(msg)
@@ -1124,7 +1396,7 @@ class FaultInjector(Node):
             min_scale = self._tl_params.get('min_confidence_scale', 0.0)
             elapsed   = time.time() - fault_start
             scale     = max(min_scale, 1.0 - rate * elapsed)
-            for group in msg.traffic_light_groups:
+            for group in target_groups:
                 for elem in group.elements:
                     elem.confidence = max(0.0, min(1.0, elem.confidence * scale))
             self._tl_pub.publish(msg)
@@ -1136,14 +1408,14 @@ class FaultInjector(Node):
             # signal toggles between GREEN (go) and the true RED (stop).
             period = self._tl_params.get('period_s', 5.0)
             if time.time() % period < period / 2:
-                for group in msg.traffic_light_groups:
+                for group in target_groups:
                     for elem in group.elements:
                         elem.color      = TrafficLightElement.GREEN
                         elem.confidence = 1.0
             self._tl_pub.publish(msg)
 
         elif fault == 'tl_unknown':
-            for group in msg.traffic_light_groups:
+            for group in target_groups:
                 for elem in group.elements:
                     elem.color      = TrafficLightElement.UNKNOWN
                     elem.confidence = 0.0
@@ -1167,6 +1439,7 @@ class FaultInjector(Node):
 
     def _on_imu(self, msg: Imu):
         self._msg_count_imu += 1
+
         with self._lock:
             fault      = self._imu_fault_type
             active     = self._imu_bias_active
@@ -1218,6 +1491,34 @@ class FaultInjector(Node):
 
         self._imu_pub.publish(msg)
 
+    def _wait_for_zone(self, gen: int, zone_attr: str) -> bool:
+        """Block until ego is inside the precomputed zone named by
+        `zone_attr` (one of '_in_imu_turn_zone', '_in_imu_leadin_zone' — see
+        _load_turn_zones / compute_turn_zones.py). No wall-clock fallback —
+        removed 2026-07-26 (was a live gyro-threshold check with a 45s
+        max-wait cap before this redesign), same shape as the TL
+        arming-delay bug: a timeout escape hatch competing with a real
+        condition just fires on the wrong condition most of the time
+        (measured 72% of on-cycles hitting the old cap instead of a real
+        turn, across imu_fault_s3/scale/stuck). This wait runs in a
+        background daemon thread independent of the trial's own lifecycle
+        (governed by run_experiments.py's stuck-timeout/goal-reached logic)
+        — if the zone is never reached, this on-cycle simply never fires and
+        the vehicle keeps driving unfaulted until the trial ends on its own
+        terms. That's the CORRECT behavior for a geometry-triggered fault,
+        not a stall; there was never a real hang risk here to guard against.
+        Returns False if a trial reset supersedes this generation while
+        waiting (caller should abort, matching the gen-mismatch bailout used
+        everywhere else in this class).
+        """
+        while True:
+            with self._lock:
+                if gen != self._trial_generation:
+                    return False
+                if getattr(self, zone_attr):
+                    return True
+            time.sleep(0.1)
+
     def _imu_bias_loop(self, gen: int):
         """Runs the on/off bias cycle for trial generation `gen`. Bails out
         without touching state if a teleport (_on_gt_pose) has already bumped
@@ -1225,23 +1526,48 @@ class FaultInjector(Node):
         _imu_bias_active=False synchronously, so the only failure mode this
         guards against is a stale loop iteration re-enabling the bias for a
         trial that has already ended.
+
+        Each on-transition waits for a precomputed zone (_wait_for_zone) —
+        WHICH zone depends on fault shape, since the two error mechanisms are
+        different: imu_scale_factor/imu_stuck_at are only consequential
+        during a real turn (gate on turn_zones directly); imu_bias
+        accumulates over elapsed on-time regardless of geometry, so it gates
+        on bias_leadin_zones (10m of arc-length before a turn) instead, so
+        accumulation matures right as the turn arrives rather than waiting
+        for the turn itself (which would leave zero time to accumulate).
         """
         on_sec  = float(self._imu_params.get('on_seconds',  30))
         off_sec = float(self._imu_params.get('off_seconds', 30))
+        zone_attr = '_in_imu_leadin_zone' if self._imu_fault_type == 'imu_bias' else '_in_imu_turn_zone'
 
         while True:
+            with self._lock:
+                if gen != self._trial_generation:
+                    return
+            if not self._wait_for_zone(gen, zone_attr):
+                return  # superseded by a trial reset while waiting
+
             with self._lock:
                 if gen != self._trial_generation:
                     return
                 self._imu_bias_active = True
                 self._imu_bias_on_cycles += 1
                 cycle = self._imu_bias_on_cycles
+                arm_xy = self._last_gt_xy
             self._log_event('imu_bias_on', {
                 'cycle':      cycle,
                 'accel_bias': self._imu_params.get('accel_bias_ms2'),
                 'gyro_bias':  self._imu_params.get('gyro_bias_rads'),
                 'on_seconds': on_sec,
                 'generation': gen,
+                # Position at arming time (added 2026-07-26) — lets post-hoc
+                # validation confirm this cycle actually started inside its
+                # intended zone (turn_zones for scale/stuck, bias_leadin_zones
+                # for bias), independent of trusting the injector's own
+                # _wait_for_zone logic did the right thing. See
+                # experiments/scripts/verify_imu_zone_arming.py.
+                'position':   {'x': arm_xy[0], 'y': arm_xy[1]} if arm_xy else None,
+                'zone_kind':  'bias_leadin' if self._imu_fault_type == 'imu_bias' else 'turn',
             })
             time.sleep(on_sec)
 
@@ -1373,14 +1699,6 @@ def main():
         ),
     )
     parser.add_argument(
-        '--fault-delay', type=float, default=30.0,
-        help=(
-            'Seconds after the runway clears (see --fault-min-runway-m) before '
-            'the fault arms (default: 30) — a floor for EKF/localization to '
-            'settle, no longer counted from process start.'
-        ),
-    )
-    parser.add_argument(
         '--fault-min-runway-m', type=float, default=150.0,
         help=(
             'FALLBACK ONLY as of 2026-07-24 (used when --zone-goals\' map TL '
@@ -1390,10 +1708,13 @@ def main():
             'runway instead requires clearing the first real TL zone (see '
             '--tl-zone-radius-m) — more precise, since it is tied to a real map '
             'feature rather than a distance guess. Every goal in this repo spawns '
-            'at the same intersection, so without ONE of these two mechanisms, '
-            '--fault-delay alone reliably armed faults while still at/near it. A '
-            'ground-truth position jump > 3m mid-trial is treated as a new trial '
-            '(teleport reset) and re-arms the runway gate either way.'
+            'at the same intersection, so without this, arming had no way to '
+            'know it wasn\'t still at/near the start. A ground-truth position '
+            'jump > 3m mid-trial is treated as a new trial (teleport reset) and '
+            're-arms the runway gate either way. (--fault-delay, previously '
+            'documented here as a second such mechanism, was removed 2026-07-26 '
+            '— both its TL and IMU roles turned out to be fully subsumed by '
+            'this runway gate plus zone-gating.)'
         ),
     )
     parser.add_argument(
@@ -1416,7 +1737,10 @@ def main():
             f'{",".join(_DEFAULT_ZONE_GOALS)} — the fixed production goal set; see '
             'run_fault_campaigns.sh). Fault campaigns only ever run on these routes, '
             'so scoping to their bounding boxes (not the whole 383-TL-point map) '
-            'avoids false zone hits from unrelated intersections.'
+            'avoids false zone hits from unrelated intersections. Also selects which '
+            'goals\' precomputed IMU turn/bias-leadin zones load (added 2026-07-26, '
+            'see experiments/scripts/compute_turn_zones.py and _load_turn_zones) — '
+            'same flag, both purposes.'
         ),
     )
     parser.add_argument(
@@ -1445,6 +1769,15 @@ def main():
         '--log-file', type=str, default='/tmp/rise_fault_log.jsonl',
         help='Path to write JSON-lines fault event log.',
     )
+    parser.add_argument(
+        '--arm', type=str, default='A', choices=['A', 'B'],
+        help="Which MRM diagnostic-gate configuration Autoware is running under "
+             "(added 2026-07-25, purely for provenance in the fault log — this "
+             "process doesn't change or check Autoware's config itself, see "
+             "experiments/scripts/switch_diagnostic_arm.sh): A = safety features "
+             "disabled (science condition), B = stock/full gate (ground-truth "
+             "oracle for MRM lead-time measurement).",
+    )
 
     args        = parser.parse_args()
     tl_p        = json.loads(args.tl_params)
@@ -1459,13 +1792,13 @@ def main():
                 'tl_params':      tl_p,
                 'imu_fault':      args.imu_fault,
                 'imu_params':     imu_p,
-                'fault_delay':     args.fault_delay,
                 'fault_duration':  args.fault_duration,
                 'tl_recovery_gap': args.tl_recovery_gap,
                 'max_tl_cycles':   args.max_tl_cycles,
                 'fault_min_runway_m': args.fault_min_runway_m,
                 'tl_zone_radius_m':   args.tl_zone_radius_m,
                 'zone_goals':         zone_goals,
+                'arm':             args.arm,
                 'wall_time':       time.time(),
             }) + '\n')
     except Exception:
@@ -1477,7 +1810,6 @@ def main():
         tl_params          = tl_p,
         imu_fault          = args.imu_fault,
         imu_params         = imu_p,
-        fault_delay        = args.fault_delay,
         fault_duration     = args.fault_duration,
         tl_recovery_gap    = args.tl_recovery_gap,
         max_tl_cycles      = args.max_tl_cycles,

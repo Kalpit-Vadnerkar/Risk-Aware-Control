@@ -259,17 +259,42 @@ def compute_fault_validation(
         m.tl_fault_armed = m.tl_fault_cycles_started > 0
         if not m.tl_fault_armed:
             m.valid = False
-            m.issues.append(
-                f'tl_fault={tl_fault!r} configured but never armed (zero tl_fault_start '
-                f'events) — data is effectively an unfaulted nominal drive'
-            )
+            if m.tl_fault_messages_applied > 0:
+                # Distinct, worse failure mode than "never armed": messages
+                # WERE faulted (zero tl_fault_start but nonzero applied count)
+                # — a stale _tl_fault_active flag surviving a mid-cycle
+                # teleport reset applies the fault continuously/unconditionally
+                # for the rest of the trial, bypassing zone/cycling gating
+                # entirely, rather than the fault simply never reaching
+                # anything (see fault_injector.py's _on_gt_pose reset branch).
+                m.issues.append(
+                    f'tl_fault={tl_fault!r} shows {m.tl_fault_messages_applied} messages '
+                    f'faulted but ZERO tl_fault_start events — the fault was applied '
+                    f'continuously/unconditionally (bypassing zone gating entirely), not '
+                    f'"never armed". Check for a stale _tl_fault_active flag surviving a '
+                    f'mid-cycle teleport reset from the previous trial.'
+                )
+            else:
+                m.issues.append(
+                    f'tl_fault={tl_fault!r} configured but never armed (zero tl_fault_start '
+                    f'events) — data is effectively an unfaulted nominal drive'
+                )
 
-    if imu_fault == 'imu_bias':
+    if imu_fault in ('imu_bias', 'imu_scale_factor', 'imu_stuck_at'):
+        # All three share fault_injector.py's _imu_bias_loop, which logs
+        # 'imu_bias_on' regardless of which of the three is actually active
+        # — this branch used to only match the literal string 'imu_bias',
+        # so imu_scale_factor/imu_stuck_at silently fell through to neither
+        # branch below and kept imu_fault_armed at its vacuous True default,
+        # never actually checked. Found 2026-07-26 while adding zone-arming
+        # verification — these two are used in the current production
+        # suite (imu_fault_scale/imu_fault_stuck), so this wasn't a
+        # theoretical gap.
         m.imu_bias_cycles = sum(1 for e in events if e.get('event') == 'imu_bias_on')
         m.imu_fault_armed = m.imu_bias_cycles > 0
         if not m.imu_fault_armed:
             m.valid = False
-            m.issues.append('imu_fault=imu_bias configured but never armed (zero imu_bias_on events)')
+            m.issues.append(f'imu_fault={imu_fault!r} configured but never armed (zero imu_bias_on events)')
     elif imu_fault == 'imu_bias_ramp':
         m.imu_ramp_started = any(e.get('event') == 'imu_ramp_started' for e in events)
         m.imu_ramp_reached_max = any(e.get('event') == 'imu_ramp_reached_max' for e in events)
