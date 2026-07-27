@@ -132,6 +132,11 @@ class ExperimentConfig:
     scenario_type: str = 'passthrough'  # passthrough, static_obstacle, cut_in, perception_delay, etc.
     scenario_params: Dict[str, Any] = field(default_factory=dict)
     campaign: str = 'default'  # Subdirectory under data/ for grouping experiments
+    diagnostic_arm: str = 'A'  # 'A' (safety disabled, science condition) or 'B' (stock
+                                # diagnostic gate, ground-truth oracle) — see
+                                # experiments/scripts/switch_diagnostic_arm.sh. Recorded
+                                # here so metadata.json is self-describing even if the
+                                # campaign directory naming convention ever changes.
 
     # Computed paths
     data_dir: str = field(init=False)
@@ -173,6 +178,7 @@ class ExperimentConfig:
             'scenario_type': self.scenario_type,
             'scenario_params': self.scenario_params,
             'campaign': self.campaign,
+            'diagnostic_arm': self.diagnostic_arm,
         }
         with open(self.metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)

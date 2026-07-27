@@ -151,11 +151,15 @@ concrete, unambiguous safety violation (proceeding through a signalized
 intersection on a red) — a hard ground-truth event with a well-defined
 timestamp, making lead time cleanly measurable.
 
-**Implementation gap (not yet resolved):** the current repo has one MRM
-diagnostic-gate configuration (README.md item 3 — perception/planning/
-localization stripped out to prevent deadlocks during experiment resets), which
-approximates Arm A. There is no Arm B configuration yet. See `TODO.md`'s
-"Two-Arm Fault Injection Design" section and `docs/design_decisions.md` item 5.
+**Implementation gap (2026-07-25 — Arm B config built, not yet validated live):**
+the repo now has both MRM diagnostic-gate configurations — Arm A (README.md item
+3 — perception/planning/localization stripped out to prevent deadlocks during
+experiment resets) and Arm B (stock/full gate, restoring Autoware's default
+linkage exactly), toggleable via `experiments/scripts/switch_diagnostic_arm.sh`.
+Arm B hasn't been run against a real fault campaign yet, so whether it
+reintroduces the deadlocks Arm A was built to avoid is still open. See
+`TODO.md`'s "Two-Arm Fault Injection Design" section and
+`docs/design_decisions.md` item 5.
 
 ---
 

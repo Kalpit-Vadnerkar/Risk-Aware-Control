@@ -202,13 +202,13 @@ unambiguous safety violation (proceeding through a signalized intersection on
 red) — a hard ground-truth event with a well-defined timestamp, making lead time
 cleanly measurable.
 
-**Gap (flagged, not resolved — also noted in CLAUDE.md):** there is currently only
-one MRM gate configuration in this repo (Arm A — safety features stripped down to
-avoid deadlocking experiment resets). There is no Arm B config that restores the
-full/stock diagnostic gate so Autoware's own MRM trigger can serve as ground
-truth. Building and validating that second configuration (without reintroducing
-the MRM deadlocks that item 3/4/7 in README.md fixed) is real engineering work,
-not just documentation — needed before any lead-time-vs-Arm-B result can be
+**Gap (2026-07-25 — Arm B config now built, NOT yet validated live):** Arm B
+(stock/full diagnostic gate, restoring Autoware's default
+`/autoware/modes/autonomous` linkage exactly) exists now — see CLAUDE.md and
+`experiments/scripts/switch_diagnostic_arm.sh`. Whether it can actually run a
+fault campaign without reintroducing the MRM deadlocks that README.md items
+3/4/7 fixed is untested as of this writing — that validation, not the config
+itself, is what's still open before any lead-time-vs-Arm-B result can be
 claimed.
 
 ---

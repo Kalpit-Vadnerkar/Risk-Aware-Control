@@ -104,14 +104,25 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
 - Params under `config/**/*.param.yaml` are **load-time, not hot-reloadable** —
   Autoware needs a restart after editing, verify with `ros2 param get` that the new
   value actually loaded.
-- **MRM diagnostic gate is currently one configuration, not two.** README.md item 3
-  strips perception/planning/localization out of Autoware's autonomous-mode gate so
-  injected faults propagate instead of being amputated by MRM — that's Arm A
-  (safety disabled, the science condition) territory. There is no Arm B config
-  (stock/full diagnostic gate, so Autoware's own MRM trigger can serve as the
-  ground-truth "unsafe" timestamp for lead-time measurement) yet. See TODO.md's
-  two-arm fault injection section — this is a real gap, not just a documentation
-  one, before lead-time-vs-Arm-B experiments can run.
+- **MRM diagnostic gate is now toggleable between Arm A and Arm B (2026-07-25).**
+  README.md item 3 strips perception/planning/localization out of Autoware's
+  autonomous-mode gate so injected faults propagate instead of being amputated by
+  MRM — that's Arm A (safety disabled, the science condition). Arm B (stock/full
+  gate, restores Autoware's default `/autoware/modes/autonomous` linkage exactly,
+  verified against this checkout's own git HEAD) now exists too, as the
+  ground-truth oracle for MRM lead-time measurement. Switch with
+  `experiments/scripts/switch_diagnostic_arm.sh {A,B}` — this only copies config
+  files (`autoware-main.yaml`/`control.yaml`/`system.yaml` under
+  `autoware/src/launcher/autoware_launch/.../config/system/diagnostics/`, each
+  arm's variant kept alongside as `.armA.yaml`/`.armB.yaml`), it does **not**
+  restart Autoware — these are load-time params, you must restart yourself for a
+  switch to take effect. `collect.sh`/`run_fault_campaigns.sh` take `--arm A|B`
+  (default A) and will refuse to run if that doesn't match the switch script's
+  `.active_arm` marker, to stop mislabeled data before it happens. Arm B is
+  untested against this repo's actual fault-injection workflow as of this
+  writing — it's exactly the config that caused the original MRM deadlocks
+  (routing resets, TF drops during teleports) that Arm A was built to route
+  around, so watch for that when Arm B collection actually runs.
 
 ## Directory conventions
 
