@@ -1,0 +1,171 @@
+{
+  "campaign": "imu_fault_ramp",
+  "goal": "goal_012",
+  "trial": "t1_20260725_131335",
+  "fault_windows": [
+    {
+      "start": 78.37903547286987,
+      "end": 213.5205955505371,
+      "reason": "ramp_reached_max",
+      "cycle": null,
+      "imu_ramp_checkpoints": [
+        {
+          "t": 78.3796033859253,
+          "gyro_bias_rads": 0.0
+        },
+        {
+          "t": 83.38416266441345,
+          "gyro_bias_rads": 0.015
+        },
+        {
+          "t": 88.38916039466858,
+          "gyro_bias_rads": 0.03
+        },
+        {
+          "t": 93.39518427848816,
+          "gyro_bias_rads": 0.0451
+        },
+        {
+          "t": 98.40015435218811,
+          "gyro_bias_rads": 0.0601
+        },
+        {
+          "t": 103.40514731407166,
+          "gyro_bias_rads": 0.0751
+        },
+        {
+          "t": 108.41015386581421,
+          "gyro_bias_rads": 0.0901
+        },
+        {
+          "t": 113.41513800621033,
+          "gyro_bias_rads": 0.1051
+        },
+        {
+          "t": 118.42015051841736,
+          "gyro_bias_rads": 0.1201
+        },
+        {
+          "t": 123.42575216293335,
+          "gyro_bias_rads": 0.1351
+        },
+        {
+          "t": 128.4316372871399,
+          "gyro_bias_rads": 0.1502
+        },
+        {
+          "t": 133.43715167045593,
+          "gyro_bias_rads": 0.1652
+        },
+        {
+          "t": 138.4421408176422,
+          "gyro_bias_rads": 0.1802
+        },
+        {
+          "t": 143.44749999046326,
+          "gyro_bias_rads": 0.1952
+        },
+        {
+          "t": 148.45214343070984,
+          "gyro_bias_rads": 0.2102
+        },
+        {
+          "t": 153.45782852172852,
+          "gyro_bias_rads": 0.2252
+        },
+        {
+          "t": 158.46314573287964,
+          "gyro_bias_rads": 0.2403
+        },
+        {
+          "t": 163.4681499004364,
+          "gyro_bias_rads": 0.2553
+        },
+        {
+          "t": 168.47325348854065,
+          "gyro_bias_rads": 0.2703
+        },
+        {
+          "t": 173.47815227508545,
+          "gyro_bias_rads": 0.2853
+        },
+        {
+          "t": 178.48314261436462,
+          "gyro_bias_rads": 0.3003
+        },
+        {
+          "t": 183.48814415931702,
+          "gyro_bias_rads": 0.3153
+        },
+        {
+          "t": 188.49315333366394,
+          "gyro_bias_rads": 0.3303
+        },
+        {
+          "t": 193.49816012382507,
+          "gyro_bias_rads": 0.3454
+        },
+        {
+          "t": 198.50314807891846,
+          "gyro_bias_rads": 0.3604
+        },
+        {
+          "t": 203.5091507434845,
+          "gyro_bias_rads": 0.3754
+        },
+        {
+          "t": 208.51414680480957,
+          "gyro_bias_rads": 0.3904
+        },
+        {
+          "t": 213.52013874053955,
+          "gyro_bias_rads": 0.4
+        }
+      ]
+    }
+  ],
+  "discriminability": [
+    {
+      "feature": "ekf_gt_divergence_m",
+      "mean_abs_z_in_fault": 1.8965055792709966,
+      "mean_abs_z_out_of_fault": 1.1995876846925027,
+      "delta": 0.696917894578494,
+      "detectable": true
+    },
+    {
+      "feature": "steering_rad",
+      "mean_abs_z_in_fault": 0.6591041270328396,
+      "mean_abs_z_out_of_fault": 0.36570853676901605,
+      "delta": 0.29339559026382356,
+      "detectable": false
+    },
+    {
+      "feature": "velocity_mps",
+      "mean_abs_z_in_fault": 1.019462422560882,
+      "mean_abs_z_out_of_fault": 1.006741699220108,
+      "delta": 0.01272072334077401,
+      "detectable": false
+    },
+    {
+      "feature": "tl_confidence",
+      "mean_abs_z_in_fault": 0.6523875513369196,
+      "mean_abs_z_out_of_fault": 0.6762502983550732,
+      "delta": -0.023862747018153607,
+      "detectable": false
+    },
+    {
+      "feature": "obj_distance_m",
+      "mean_abs_z_in_fault": 0.7923259135076373,
+      "mean_abs_z_out_of_fault": 0.8969822921329872,
+      "delta": -0.10465637862534993,
+      "detectable": false
+    },
+    {
+      "feature": "acceleration_mps2",
+      "mean_abs_z_in_fault": 0.02067939852908055,
+      "mean_abs_z_out_of_fault": 0.1443700129385278,
+      "delta": -0.12369061440944726,
+      "detectable": false
+    }
+  ]
+}
