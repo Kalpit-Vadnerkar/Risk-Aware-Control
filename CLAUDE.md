@@ -144,6 +144,26 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
   `captured_goals.json` with only that session's captures (IDs restart at `goal_001`)
   — back the file up before running it, then hand-merge the new entries in by ID.
 
+## Before running a new TL or IMU fault campaign
+
+`fault_injector.py` gates both fault types on precomputed, route-derived zone
+files, not live thresholds — regenerate these whenever `nom_v11`, the goal
+set, or the map changes, and before the very first campaign run:
+- `experiments/scripts/compute_turn_zones.py` — IMU turn / bias-lead-in zones
+  (`experiments/configs/turn_zones.json`), from each goal's actual planned
+  route (`/planning/mission_planning/route`) geometry.
+- `experiments/scripts/compute_tl_zones.py` — TL zones with each one's real
+  `traffic_light_group_id` (`experiments/configs/tl_zones.json`), from the
+  same route's lanelet sequence. This is what lets a TL fault target only
+  the one light the vehicle's current lanelet is actually governed by
+  (`_tl_fault_group_id`) instead of every group in the perception message —
+  if this file is missing or stale for a goal, TL faults silently fall back
+  to mutating everything, which still works but isn't scoped.
+
+`experiments/scripts/plot_fault_plan.py --campaign <name>` renders a given
+campaign's actual gating zones/radii over the route map — a fast visual
+sanity check before committing to a full collection run.
+
 ## Before trusting newly-collected experiment data
 
 Don't just look at `result.json`'s `status` field — `goal_reached`/`stuck` can both
@@ -167,6 +187,32 @@ trusting that `fault_log.jsonl` logged a cycle, and ranks candidate ST-GAT state
 features by how strongly each responds to the fault. See
 `docs/research_notes/periodic_fault_strategy.md` for the fault-injection design
 this checks against.
+
+For IMU fault campaigns specifically (`imu_fault_s1`, `imu_fault_s3`, `imu_fault_scale`,
+`imu_fault_stuck`), also run `experiments/scripts/verify_imu_zone_arming.py --campaign
+<name>` — no ROS needed, reads `fault_log.jsonl` only; independently re-checks (from
+`turn_zones.json`, not from trusting `fault_injector.py`'s own gating) that every
+`imu_bias_on` on-cycle actually started inside its intended zone (turn zone for
+scale/stuck, bias lead-in zone for bias). Skips pre-2026-07-26 data, which predates
+zone-based arming and doesn't log `position`/`zone_kind`.
+
+For TL fault campaigns specifically (`tl_fault_s2..s4`, `tl_fault_ramp`), also run
+`experiments/scripts/verify_tl_zone_arming.py --campaign <name>` — no ROS needed, reads
+`fault_log.jsonl` only; independently re-checks (from `tl_zones.json`) that every
+`tl_fault_start` event's `group_id` matches a real, reachable zone for that goal — the
+group-id scoping added 2026-07-27 that lets a TL fault target only the one light the
+vehicle is reacting to (see `fault_injector.py`'s `_tl_fault_group_id`). Skips
+pre-2026-07-27 data, which predates group-id scoping and doesn't log `group_id`.
+
+Both `turn_zones.json` and `tl_zones.json` carry a `reachable` field per zone (false
+for the one zone every goal's runway-clear point structurally consumes — see
+`compute_turn_zones.py`'s module docstring) — this is informational, NOT a filter:
+`fault_injector.py` loads the complete list either way, since the runway/arming state
+machine already makes an unreachable zone unable to arm on its own. Don't re-filter
+by `reachable` when loading these files for gating; only the plotting/reporting layer
+should use it, to avoid quietly breaking runway-clear detection again (see
+`docs/fault_scenario_table.md`'s "how zones are computed" section for the incident
+this note is guarding against).
 
 A trial with `mrm_trigger_count: 0` is not automatically clean — that count only
 reflects Autoware's own MRM state machine, not whether the vehicle actually moved.
