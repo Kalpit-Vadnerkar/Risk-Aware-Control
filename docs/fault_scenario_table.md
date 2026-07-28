@@ -135,17 +135,85 @@ the plotted circles are the real gating radii.
 
 ## Scenario table
 
-| Fault type | Magnitude | Scenario | Consequential? | Mechanism / why | Expected behavior | Mission outcome |
-|---|---|---|---|---|---|---|
-| `nominal` (nom_v11) | none — no fault injected | entire route | **No** | Baseline: no fault configured at all. Not a negative control for any specific fault (that's `imu_bias`/imu_fault_s1's job below) — it's the reference distribution everything else is compared against (`compare_fault_vs_nominal.py`'s pooled stats, `plot_fault_impact.py`'s overlaid nominal series) | Normal driving behavior throughout; whatever "no fault" baseline variance looks like | mission_complete |
-| `imu_bias` (imu_fault_s1) | gyro 0.03 rad/s | bias lead-in (10m) + turn | **No** | Bias is within EKF/localization's noise-rejection band — confirmed absorbed even during a turn | EKF-vs-GT divergence stays within nominal noise; no MRM | mission_complete |
-| `imu_bias` (imu_fault_s3) | gyro 0.08 rad/s | bias lead-in (10m) + turn | **Yes** | Constant bias integrates against genuine nonzero yaw rate during the turn → EKF heading diverges from GT | Visible EKF-vs-GT divergence during/after the turn | mission_complete or MRM-triggered (both valid outcomes) |
-| `imu_scale_factor` (imu_fault_scale) | gyro ×1.8 | turn zone only | **Yes** | Scale-factor error is proportional to true yaw rate — zero effect at zero yaw rate, so it is turn-triggered by construction | No effect on straights (by design); measurable EKF-vs-GT divergence during the turn | mission_complete or MRM-triggered |
-| `imu_stuck_at` (imu_fault_stuck) | gyro frozen at activation value | turn zone only | **Yes** | Freezing gyro mid-turn stops reported yaw rate from tracking true yaw rate the moment curvature changes | No effect if frozen during a straight (frozen-at-~0 ≈ correct); divergence during the turn | mission_complete or MRM-triggered |
-| `tl_oscillate` (tl_fault_s2) | 5s period, 15s cap | TL zone (near intersection) | **Yes** | Oscillating color confuses the stop/go decision only when a decision is actually being made, i.e. near a signal | Hesitation / wrong stop-go decision near the intersection | mission_complete or MRM-triggered |
-| `tl_unknown` (tl_fault_s3) | 15s cap | TL zone | **Yes** | UNKNOWN classification forces over-cautious behavior (unnecessary stop) at a real signal | Unwarranted stop/delay at the intersection; possible timeout-style MRM | mission_complete (delayed) or MRM-triggered |
-| `tl_blackout` (tl_fault_s4) | 15s cap | TL zone | **Yes** | No signal at all forces the planner into its no-information fallback right at a decision point | Fallback behavior at the intersection (proceed-with-caution or stop) | mission_complete or MRM-triggered |
-| `tl_confidence_ramp` (tl_fault_ramp) | confidence decays 0.1/s to 0 | TL zone | **Yes** | Same mechanism as oscillate/unknown but confidence degrades continuously rather than switching — tests threshold-crossing behavior specifically | Behavior tracks confidence crossing the planner's internal threshold, not fault onset | mission_complete or MRM-triggered |
+**Fault start / fault end columns added 2026-07-28.** These record the actual
+gating condition, not a nominal duration — useful because the two differ for
+several rows below. "Fault start" is always a zone-entry event (bias lead-in,
+turn, or TL zone, per `_wait_for_zone`/the plotted injection marker — see
+"How zones are computed" above for the first-entry-vs-closest-approach
+distinction). "Fault end" is where the two families now diverge:
+
+- **`imu_scale_factor` and `imu_stuck_at` end at the turn's own real END
+  POINT** (`fault_injector.py`'s `_in_imu_turn_end_zone`, added 2026-07-28,
+  corrected same day), not after a fixed duration. Both error mechanisms
+  are proportional to true yaw rate (scale-factor multiplies it, stuck-at
+  freezes it while curvature keeps changing) — near-zero effect while
+  stationary, so there is no risk in leaving the fault "on" for however
+  long the vehicle actually sits in the zone. This directly replaces a
+  fixed `on_seconds` window (20s), which had a real failure mode: a red
+  light held inside the turn zone could let the timer expire and switch
+  the fault off before the vehicle ever actually executed the turn once
+  the light went green, silently producing a no-effect trial that looked
+  like a normal "on" cycle in the log.
+  **Same-day correction:** the first implementation ended the window on
+  departure from the 15m entry radius around the turn's START
+  (`_DEFAULT_IMU_TURN_ZONE_RADIUS_M`) instead of the turn's actual END —
+  every turn run measured in this dataset (16-34m) exceeds that radius, so
+  the fault was switching off partway through the real turn, sometimes
+  missing over half of it (`goal_026`: 17-19m of 32-34m runs uncovered).
+  Confirmed via EKF-GT divergence: the goal with the smallest shortfall
+  produced the largest divergence (28.6m), the goal with the largest
+  shortfall produced none (`goal_reached`, no consequential effect).
+  `compute_turn_zones.py` now stores each turn run's own real end point
+  (`end_x`/`end_y`) alongside its entry point, and the fault waits for
+  arrival there (`_DEFAULT_IMU_TURN_END_ZONE_RADIUS_M`, 8m catch radius)
+  instead of departure from the entry circle. Zone-based timing (both the
+  arming radius and this end point) also removes any dependence on TL
+  phase for these two fault types specifically, without needing to read TL
+  state at all.
+- **`imu_bias` (both S1 and S3) keeps a real fixed `on_seconds` timer**
+  (20s / 15s respectively) — deliberately NOT switched to zone-exit-ended.
+  `_on_imu` adds `gyro_bias_rads` unconditionally regardless of true rate, so
+  a stationary vehicle waiting at a red light *inside* the lead-in/turn zone
+  still integrates the full bias continuously; an open-ended on-window could
+  accumulate heading error well past the 1.2 rad ceiling these magnitudes
+  were calibrated against (docs/design_decisions.md item 7 — old S2 broke
+  localization within ~1s at 0.15 rad/s over a fixed 30s). This was flagged
+  and confirmed with the user (2026-07-28) before implementing the
+  scale/stuck change, specifically to keep it scale/stuck-only.
+- **All four TL fault types keep their fixed 15s `--fault-duration` cap**,
+  unaffected by this change — zone-exit-ended timing was only considered for
+  the IMU side this round (TL faults don't have the same "stopped inside the
+  zone accumulates error" failure mode, since none of the TL mutations are
+  additive-over-time the way `imu_bias` is).
+
+**A reachable injection point is not a per-trial guarantee.** All four
+periodic IMU fault types (`imu_bias` S1/S3, `imu_scale_factor`, `imu_stuck_at`)
+share `_imu_bias_loop`'s off-cooldown: after a cycle ends, the injector does a
+blocking `time.sleep(off_seconds)` before it resumes polling zone membership —
+it does not track zone entries during that sleep. If the *next* reachable
+zone's entire dwell window falls inside the cooldown (confirmed live: a real
+`imu_fault_s3` trial on `goal_007` entered and fully exited its middle
+bias-lead-in zone 14.3s before a 30s cooldown even finished), that zone gets
+zero exposure for that trial — not a delayed activation, a skipped one.
+`off_seconds` was reduced from 30 to 10 (2026-07-28, all four campaigns) to
+sit comfortably under the tightest observed real inter-zone transit time
+(~28-31s, `goal_007` bias-lead-in zone1→zone2) — this substantially reduces
+the risk but does not eliminate it on routes with tighter zone spacing than
+that. Treat each goal's plotted injection points as *candidate* activation
+sites, not a per-trial exposure guarantee; coverage should even out across a
+campaign's 3 trials/goal rather than being certain within any one trial.
+
+| Fault type | Magnitude | Scenario | Consequential? | Mechanism / why | Fault start (injection point) | Fault end | Expected behavior | Mission outcome |
+|---|---|---|---|---|---|---|---|---|
+| `nominal` (nom_v11) | none — no fault injected | entire route | **No** | Baseline: no fault configured at all. Not a negative control for any specific fault (that's `imu_bias`/imu_fault_s1's job below) — it's the reference distribution everything else is compared against (`compare_fault_vs_nominal.py`'s pooled stats, `plot_fault_impact.py`'s overlaid nominal series) | n/a | n/a | Normal driving behavior throughout; whatever "no fault" baseline variance looks like | mission_complete |
+| `imu_bias` (imu_fault_s1) | gyro 0.03 rad/s | bias lead-in (10m) + turn | **No** | Bias is within EKF/localization's noise-rejection band — confirmed absorbed even during a turn | Bias lead-in zone entry (8m radius, ~10m arc-length before the turn) | Fixed 20s after activation (`on_seconds`), regardless of position — deliberate exception, see note above | EKF-vs-GT divergence stays within nominal noise; no MRM | mission_complete |
+| `imu_bias` (imu_fault_s3) | gyro 0.08 rad/s | bias lead-in (10m) + turn | **Yes** | Constant bias integrates against genuine nonzero yaw rate during the turn → EKF heading diverges from GT | Bias lead-in zone entry (8m radius) | Fixed 15s after activation (`on_seconds`), regardless of position — deliberate exception, see note above | Visible EKF-vs-GT divergence during/after the turn | mission_complete or MRM-triggered (both valid outcomes) |
+| `imu_scale_factor` (imu_fault_scale) | gyro ×1.8 | turn zone only | **Yes** | Scale-factor error is proportional to true yaw rate — zero effect at zero yaw rate, so it is turn-triggered by construction | Turn zone entry (15m radius) | Turn's real end point (8m radius) — zone-exit-ended since 2026-07-28, corrected same day to use the real end point instead of the 15m entry radius, see note above | No effect on straights (by design); measurable EKF-vs-GT divergence during the turn, for exactly as long as the vehicle is actually in it | mission_complete or MRM-triggered |
+| `imu_stuck_at` (imu_fault_stuck) | gyro frozen at activation value | turn zone only | **Yes** | Freezing gyro mid-turn stops reported yaw rate from tracking true yaw rate the moment curvature changes | Turn zone entry (15m radius) | Turn's real end point (8m radius) — zone-exit-ended since 2026-07-28, corrected same day to use the real end point instead of the 15m entry radius, see note above | No effect if frozen during a straight (frozen-at-~0 ≈ correct); divergence during the turn, for exactly as long as the vehicle is actually in it | mission_complete or MRM-triggered |
+| `tl_oscillate` (tl_fault_s2) | 5s period, 15s cap | TL zone (near intersection) | **Yes** | Oscillating color confuses the stop/go decision only when a decision is actually being made, i.e. near a signal | TL zone entry (40m radius around the route's own `traffic_light_group_id`) | Fixed 15s cap after activation (`--fault-duration`), not zone-exit-ended | Hesitation / wrong stop-go decision near the intersection | mission_complete or MRM-triggered |
+| `tl_unknown` (tl_fault_s3) | 15s cap | TL zone | **Yes** | UNKNOWN classification forces over-cautious behavior (unnecessary stop) at a real signal | TL zone entry (40m radius) | Fixed 15s cap after activation | Unwarranted stop/delay at the intersection; possible timeout-style MRM | mission_complete (delayed) or MRM-triggered |
+| `tl_blackout` (tl_fault_s4) | 15s cap | TL zone | **Yes** | No signal at all forces the planner into its no-information fallback right at a decision point | TL zone entry (40m radius) | Fixed 15s cap after activation | Fallback behavior at the intersection (proceed-with-caution or stop) | mission_complete or MRM-triggered |
+| `tl_confidence_ramp` (tl_fault_ramp) | confidence decays 0.1/s to 0 | TL zone | **Yes** | Same mechanism as oscillate/unknown but confidence degrades continuously rather than switching — tests threshold-crossing behavior specifically | TL zone entry (40m radius) | Confidence reaches 0 at 10s (1.0 / 0.1 rad/s decay rate) and holds at 0 for the remaining 5s of the fixed 15s cap | Behavior tracks confidence crossing the planner's internal threshold, not fault onset | mission_complete or MRM-triggered |
 
 ## Not currently in scope
 
