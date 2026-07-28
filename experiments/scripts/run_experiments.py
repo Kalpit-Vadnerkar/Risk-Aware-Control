@@ -67,7 +67,8 @@ from ros_utils import (
     start_rosbag_recording, stop_rosbag_recording,
     wait_for_mrm_recovery, recover_from_emergency,
     wait_for_clean_diagnostics,
-    set_velocity_limit,
+    set_velocity_limit, set_fault_injector_goal,
+    reset_mrm_trigger_count, get_mrm_trigger_count,
     AutowareState, MrmState, MrmBehavior, shutdown_ros
 )
 from metrics import compute_metrics_from_bag, save_metrics, FaultValidationMetrics
@@ -279,8 +280,14 @@ class ExperimentRunner:
 
         driving_start_time = time.time()
         last_moving_time = time.time()
-        mrm_trigger_count = 0
-        prev_mrm_state = MrmState.NORMAL
+        # Counted in the subscription callback (ros_utils.py), not by
+        # polling here — the MRM state machine can flap NORMAL<->
+        # MRM_OPERATING in ~100ms blips (confirmed live: 38 real transitions
+        # in one trial that this loop's old 1Hz poll counted as 0), well
+        # under this loop's 1s cadence. reset here so each trial starts at 0
+        # despite the callback running continuously across the whole node
+        # lifetime (many trials).
+        reset_mrm_trigger_count()
         consecutive_zero_velocity = 0
         VELOCITY_THRESHOLD = 0.1  # m/s - below this is considered stopped
         STUCK_VELOCITY_COUNT = 30  # 30 seconds of near-zero velocity = stuck
@@ -297,17 +304,12 @@ class ExperimentRunner:
                     'status': 'goal_reached',
                     'goal_reached': True,
                     'driving_time': elapsed,
-                    'mrm_trigger_count': mrm_trigger_count,
+                    'mrm_trigger_count': get_mrm_trigger_count(),
                 }
 
             # Check MRM state
             mrm_state, mrm_behavior = get_mrm_state()
             if mrm_state is not None:
-                if prev_mrm_state == MrmState.NORMAL and mrm_state == MrmState.MRM_OPERATING:
-                    mrm_trigger_count += 1
-                    print(f"\r[{elapsed:.0f}s] MRM triggered (#{mrm_trigger_count})     ", end='')
-                prev_mrm_state = mrm_state
-
                 # Check for terminal MRM states (vehicle stopped and won't recover)
                 if mrm_state in [MrmState.MRM_SUCCEEDED, MrmState.MRM_FAILED]:
                     # MRM completed - check if this is permanent
@@ -319,7 +321,7 @@ class ExperimentRunner:
                             'status': f'mrm_{mrm_state.name.lower()}',
                             'goal_reached': False,
                             'driving_time': elapsed,
-                            'mrm_trigger_count': mrm_trigger_count,
+                            'mrm_trigger_count': get_mrm_trigger_count(),
                             'mrm_final_state': mrm_state.name,
                             'mrm_final_behavior': behavior_name,
                         }
@@ -342,7 +344,7 @@ class ExperimentRunner:
                     'status': 'stuck',
                     'goal_reached': False,
                     'driving_time': elapsed,
-                    'mrm_trigger_count': mrm_trigger_count,
+                    'mrm_trigger_count': get_mrm_trigger_count(),
                     'time_since_movement': time_since_movement,
                     'final_velocity': velocity,
                 }
@@ -354,10 +356,11 @@ class ExperimentRunner:
                     'status': 'timeout',
                     'goal_reached': False,
                     'driving_time': elapsed,
-                    'mrm_trigger_count': mrm_trigger_count,
+                    'mrm_trigger_count': get_mrm_trigger_count(),
                 }
 
             # Status display with velocity
+            mrm_trigger_count = get_mrm_trigger_count()
             mrm_str = f" MRM:{mrm_trigger_count}" if mrm_trigger_count > 0 else ""
             vel_str = f" v={velocity:.1f}" if velocity is not None else ""
             stopped_str = f" (stopped {consecutive_zero_velocity}s)" if consecutive_zero_velocity > 5 else ""
@@ -1062,6 +1065,17 @@ def main():
                     print(f"SKIPPING: {goal.id} already has successful result")
                     skipped_count += 1
                     continue
+
+            # Tell the persistent fault_injector.py process which goal THIS
+            # trial is for, before anything else — it pools zones across
+            # every goal in the campaign and has no other way to know which
+            # goal's own zones are actually relevant right now (see
+            # set_fault_injector_goal's docstring for the contamination this
+            # fixes). Best-effort: a failure here degrades to the old pooled
+            # behavior rather than blocking the trial, since it's an
+            # accuracy improvement, not a correctness precondition for
+            # driving.
+            set_fault_injector_goal(goal.id)
 
             # Create experiment ID
             trial_start_wall_time = time.time()

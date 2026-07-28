@@ -94,6 +94,19 @@ class StateMonitorNode(Node):
         self._route_state = None
         self._mrm_state = None
         self._mrm_behavior = None
+        # Edge-triggered MRM trigger count (added 2026-07-28) — counted here,
+        # at message-arrival time in the subscription callback, NOT by
+        # sampling self._mrm_state from a polling loop. run_experiments.py's
+        # monitor_experiment() used to re-derive this itself by polling
+        # get_mrm_state() once per second, but a live trial showed the MRM
+        # state machine can flap NORMAL<->MRM_OPERATING in ~100ms blips (38
+        # real transitions in one trial, confirmed via full-resolution bag
+        # replay) — a 1Hz poll aliases against that and can undercount
+        # arbitrarily, down to 0 in the worst case seen. Counting on every
+        # message here can't miss a transition the subscription itself
+        # received.
+        self._mrm_trigger_count = 0
+        self._prev_mrm_state_for_count = MrmState.NORMAL
         self._velocity = None
         self._velocity_time = None
         self._position = None
@@ -192,6 +205,14 @@ class StateMonitorNode(Node):
         with self._lock:
             self._mrm_state = msg.state
             self._mrm_behavior = msg.behavior
+            try:
+                state_enum = MrmState(msg.state)
+            except ValueError:
+                state_enum = None
+            if state_enum is not None:
+                if self._prev_mrm_state_for_count == MrmState.NORMAL and state_enum == MrmState.MRM_OPERATING:
+                    self._mrm_trigger_count += 1
+                self._prev_mrm_state_for_count = state_enum
 
     def _velocity_callback(self, msg):
         with self._lock:
@@ -265,6 +286,18 @@ class StateMonitorNode(Node):
                 except ValueError:
                     pass
             return state, behavior
+
+    def reset_mrm_trigger_count(self):
+        """Call once at the start of each trial's monitoring — the callback
+        counts continuously across the node's whole lifetime (spanning many
+        trials), so each trial needs its own zeroed starting point."""
+        with self._lock:
+            self._mrm_trigger_count = 0
+            self._prev_mrm_state_for_count = MrmState.NORMAL
+
+    def get_mrm_trigger_count(self) -> int:
+        with self._lock:
+            return self._mrm_trigger_count
 
     def get_velocity(self) -> Tuple[Optional[float], Optional[float]]:
         """Get current velocity and time since last update."""
@@ -394,6 +427,23 @@ def get_mrm_state(timeout: float = 5.0) -> Tuple[Optional[MrmState], Optional[Mr
         time.sleep(0.1)
 
     return None, None
+
+
+def reset_mrm_trigger_count():
+    """Zero the edge-triggered MRM trigger counter — call once at the start
+    of each trial's monitoring (see StateMonitorNode.__init__'s comment on
+    _mrm_trigger_count for why this is counted in the subscription callback,
+    not by polling)."""
+    _ensure_node_running()
+    _monitor_node.reset_mrm_trigger_count()
+
+
+def get_mrm_trigger_count() -> int:
+    """Number of NORMAL->MRM_OPERATING transitions since the last
+    reset_mrm_trigger_count() call, counted at message-arrival time — safe
+    to call as often as needed, unlike get_mrm_state() this never blocks."""
+    _ensure_node_running()
+    return _monitor_node.get_mrm_trigger_count()
 
 
 def get_velocity(timeout: float = 2.0) -> Optional[float]:
@@ -604,6 +654,42 @@ def set_velocity_limit(limit_mps: float) -> bool:
         return True
     except Exception as e:
         print(f"  WARNING: Failed to set velocity limit: {e}")
+        return False
+
+
+def set_fault_injector_goal(goal_id: str, timeout: float = 5.0) -> bool:
+    """Tell the persistent fault_injector.py process which goal the NEXT
+    trial is about to drive, via its active_goal_id ROS parameter.
+
+    fault_injector.py is one long-lived process for the whole campaign,
+    pooling IMU/TL zones across every goal in --goals (goals occupy roads
+    close enough to each other that pooling caused real cross-contamination
+    — found 2026-07-27: a goal_026 trial armed an IMU turn fault 0.6m from
+    its OWN route's straight/untagged lanelet, only because goal_012's
+    adjacent turn-lane zone was within the pooling radius; a goal_007 TL
+    trial targeted a traffic_light_group_id that never once appeared in
+    goal_007's own perception stream for the entire trial — confirmed a
+    complete no-op via the raw rosbag). Setting this parameter before each
+    trial lets fault_injector.py restrict its own zone matching to just the
+    current goal's registered zones (falling back to the old pooled
+    behavior if unset or unrecognized — see fault_injector.py's
+    _on_gt_pose), fixing both classes of contamination at the source.
+
+    Same subprocess `ros2 param set` pattern as set_velocity_limit() above
+    — a parameter, unlike a topic, persists for the node's lifetime, so
+    this doesn't need to be repeated per-message.
+    """
+    try:
+        result = subprocess.run(
+            ['ros2', 'param', 'set', '/fault_injector', 'active_goal_id', goal_id],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode != 0:
+            print(f"  WARNING: failed to set fault_injector active_goal_id: {result.stderr.strip()}")
+            return False
+        return True
+    except Exception as e:
+        print(f"  WARNING: failed to set fault_injector active_goal_id: {e}")
         return False
 
 
