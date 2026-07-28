@@ -1,0 +1,101 @@
+{
+  "campaign": "tl_fault_s4",
+  "goal": "goal_007",
+  "trial": "t1_20260728_155910",
+  "fault_windows": [
+    {
+      "start": 43.37689971923828,
+      "end": 58.411502838134766,
+      "reason": "duration_cap",
+      "cycle": 1
+    },
+    {
+      "start": 66.48145508766174,
+      "end": 81.51479053497314,
+      "reason": "duration_cap",
+      "cycle": 2
+    },
+    {
+      "start": 89.57335877418518,
+      "end": 101.31872653961182,
+      "reason": "zone_exited",
+      "cycle": 3
+    },
+    {
+      "start": 114.88531923294067,
+      "end": 129.6156268119812,
+      "reason": "zone_exited",
+      "cycle": 4
+    },
+    {
+      "start": 140.88548707962036,
+      "end": 150.1784484386444,
+      "reason": "zone_exited",
+      "cycle": 5
+    },
+    {
+      "start": 169.61729192733765,
+      "end": 184.68267941474915,
+      "reason": "duration_cap",
+      "cycle": 6
+    }
+  ],
+  "discriminability": [
+    {
+      "feature": "steering_rad",
+      "mean_abs_z_in_fault": 0.7197672864157829,
+      "mean_abs_z_out_of_fault": 0.18254777278303513,
+      "delta": 0.5372195136327478,
+      "detectable": false
+    },
+    {
+      "feature": "tl_detected",
+      "mean_abs_z_in_fault": 1.3679060854638234,
+      "mean_abs_z_out_of_fault": 0.8976141343022787,
+      "delta": 0.47029195116154476,
+      "detectable": false
+    },
+    {
+      "feature": "tl_is_green",
+      "mean_abs_z_in_fault": 1.0435384771529062,
+      "mean_abs_z_out_of_fault": 0.9362884330961346,
+      "delta": 0.10725004405677152,
+      "detectable": false
+    },
+    {
+      "feature": "obj_distance_m",
+      "mean_abs_z_in_fault": 1.147973822070768,
+      "mean_abs_z_out_of_fault": 1.089205654780678,
+      "delta": 0.058768167290089934,
+      "detectable": false
+    },
+    {
+      "feature": "velocity_mps",
+      "mean_abs_z_in_fault": 1.161497262899678,
+      "mean_abs_z_out_of_fault": 1.1125214296263286,
+      "delta": 0.04897583327334942,
+      "detectable": false
+    },
+    {
+      "feature": "tl_confidence",
+      "mean_abs_z_in_fault": 0.5315262062775107,
+      "mean_abs_z_out_of_fault": 0.5463709150152027,
+      "delta": -0.014844708737692058,
+      "detectable": false
+    },
+    {
+      "feature": "ekf_gt_divergence_m",
+      "mean_abs_z_in_fault": 0.5641462147946384,
+      "mean_abs_z_out_of_fault": 0.6086654938740322,
+      "delta": -0.04451927907939379,
+      "detectable": false
+    },
+    {
+      "feature": "acceleration_mps2",
+      "mean_abs_z_in_fault": 0.2521342090693392,
+      "mean_abs_z_out_of_fault": 0.3310401648609216,
+      "delta": -0.07890595579158238,
+      "detectable": false
+    }
+  ]
+}

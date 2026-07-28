@@ -1,0 +1,81 @@
+{
+  "campaign": "tl_fault_ramp",
+  "goal": "goal_007",
+  "trial": "t1_20260728_161959",
+  "fault_windows": [
+    {
+      "start": 51.70940685272217,
+      "end": 66.71696734428406,
+      "reason": "duration_cap",
+      "cycle": 1
+    },
+    {
+      "start": 81.10610246658325,
+      "end": 96.11754179000854,
+      "reason": "duration_cap",
+      "cycle": 2
+    },
+    {
+      "start": 112.11825323104858,
+      "end": 122.10992503166199,
+      "reason": "zone_exited",
+      "cycle": 3
+    },
+    {
+      "start": 143.21727514266968,
+      "end": 158.232980966568,
+      "reason": "duration_cap",
+      "cycle": 4
+    },
+    {
+      "start": 166.34414672851562,
+      "end": 166.40476775169373,
+      "reason": "zone_exited",
+      "cycle": 5
+    }
+  ],
+  "discriminability": [
+    {
+      "feature": "steering_rad",
+      "mean_abs_z_in_fault": 1.4298756224003564,
+      "mean_abs_z_out_of_fault": 0.3471955009942512,
+      "delta": 1.082680121406105,
+      "detectable": true
+    },
+    {
+      "feature": "tl_confidence",
+      "mean_abs_z_in_fault": 1.2822540141904122,
+      "mean_abs_z_out_of_fault": 0.7006729944700514,
+      "delta": 0.5815810197203608,
+      "detectable": true
+    },
+    {
+      "feature": "acceleration_mps2",
+      "mean_abs_z_in_fault": 0.8658810133572254,
+      "mean_abs_z_out_of_fault": 0.5247530331105852,
+      "delta": 0.34112798024664026,
+      "detectable": false
+    },
+    {
+      "feature": "velocity_mps",
+      "mean_abs_z_in_fault": 0.9864143187693192,
+      "mean_abs_z_out_of_fault": 0.9976011066080693,
+      "delta": -0.011186787838750156,
+      "detectable": false
+    },
+    {
+      "feature": "ekf_gt_divergence_m",
+      "mean_abs_z_in_fault": 0.5636701952921757,
+      "mean_abs_z_out_of_fault": 0.8729212358819395,
+      "delta": -0.3092510405897638,
+      "detectable": false
+    },
+    {
+      "feature": "obj_distance_m",
+      "mean_abs_z_in_fault": 0.741985441776105,
+      "mean_abs_z_out_of_fault": 1.2706213286352808,
+      "delta": -0.5286358868591757,
+      "detectable": false
+    }
+  ]
+}
