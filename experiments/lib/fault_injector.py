@@ -182,7 +182,7 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
     roads (true rate ~0) regardless of factor, growing specifically during
     turns/intersections — a single trial can show both an invisible regime
     and a caught regime without an artificial ramp.
-    Params: {"gyro_scale_factor": 1.8, "on_seconds": 20, "off_seconds": 30}
+    Params: {"gyro_scale_factor": 1.8, "off_seconds": 30}
     Reuses the same periodic on/off loop as imu_bias (see _imu_bias_loop) —
     only the transform applied in _on_imu differs. Since 2026-07-26, that
     loop's on-transitions for THIS fault (and imu_stuck_at) are gated on a
@@ -195,7 +195,11 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
     relative to the on/off cadence, and a wall-clock max-wait fallback (also
     removed) meant most cycles fired blind anyway — the same "arbitrary
     timing race" shape as the TL arming-delay bug. Precomputed geometry
-    removes the race entirely: the zone IS the turn, by construction.
+    removes the race entirely: the zone IS the turn, by construction. Since
+    2026-07-28 the on-window itself also ends on zone EXIT, not a fixed
+    on_seconds (no longer a param for this fault) — see _imu_bias_loop's
+    docstring for why that's safe here (and specifically NOT done the same
+    way for imu_bias).
 
   Fault mode: imu_stuck_at (added 2026-07-24)
     Periodic on/off frozen sensor: angular_velocity.z is held at whatever it
@@ -208,10 +212,12 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
     frozen "going straight" reading vs. a real turn is a large, sudden
     discrepancy) — same "unambiguous ground-truth event" spirit as
     tl_blackout.
-    Params: {"on_seconds": 20, "off_seconds": 30, "stuck_value_rads": null}
-    Same on-transition turn-gating as imu_scale_factor above, for the same
-    reason: "frozen going straight" only becomes an unambiguous discrepancy
-    once the vehicle actually turns.
+    Params: {"off_seconds": 30, "stuck_value_rads": null}
+    Same on-transition turn-gating (and zone-exit-ended on-window, since
+    2026-07-28) as imu_scale_factor above, for the same reason: "frozen
+    going straight" only becomes an unambiguous discrepancy once the
+    vehicle actually turns, and the frozen value can't accumulate error
+    just from elapsed stopped time the way imu_bias's additive offset can.
 
   Severity tiers (gyro_bias_rads is the active parameter) — REDESIGNED
   2026-07-23 after old S2 (0.15 rad/s, on=30s) broke localization within ~1s
@@ -457,6 +463,15 @@ _DEFAULT_TL_ZONE_RADIUS_M = 40.0
 # turn zone, so accumulation matures right as the turn arrives).
 _DEFAULT_IMU_TURN_ZONE_RADIUS_M = 15.0
 _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M = 8.0
+# Radius for detecting arrival at a turn run's real END point (added
+# 2026-07-28) — used by imu_scale_factor/imu_stuck_at's on-window end
+# instead of _DEFAULT_IMU_TURN_ZONE_RADIUS_M. Every measured turn run (16-34m)
+# exceeds that 15m entry radius, so "left the entry circle" ended the fault
+# partway through the real turn — see compute_turn_zones.py's end_xy comment.
+# Smaller than the entry radius deliberately: this needs to catch "arrived
+# near a specific point," not "approaching from any direction," so tighter
+# precision is appropriate, matching _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M's.
+_DEFAULT_IMU_TURN_END_ZONE_RADIUS_M = 8.0
 
 _SCRIPT_DIR      = os.path.dirname(os.path.abspath(__file__))
 _REPO_DIR        = os.path.dirname(os.path.dirname(_SCRIPT_DIR))
@@ -562,30 +577,71 @@ def _load_tl_zone_points(
 def _load_turn_zones(
     goal_ids: List[str],
     turn_zones_file: str = _DEFAULT_TURN_ZONES_FILE,
-) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
-    """Precomputed (turn_zones, bias_leadin_zones) pooled across the given
-    goals — see experiments/scripts/compute_turn_zones.py, which derives
-    both from real nominal driven trajectories, not a live sensor threshold.
-    Returns ([], []) on any failure (file missing, goal not in it, etc.) —
-    callers degrade to "this fault never arms" rather than crashing, same
-    philosophy as _load_tl_zone_points. Pooled, not kept per-goal, because
-    goals occupy spatially disjoint regions of the map — same simplification
-    _load_tl_zone_points already makes for TL zones.
+) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]], List[Tuple[float, float]]]:
+    """Precomputed (turn_zones, turn_end_zones, bias_leadin_zones) pooled
+    across the given goals — see experiments/scripts/compute_turn_zones.py,
+    which derives all three from real nominal driven trajectories, not a
+    live sensor threshold. turn_end_zones (added 2026-07-28) is each turn
+    run's own real end point, parallel to turn_zones — used to end
+    imu_scale_factor/imu_stuck_at's on-window at the turn's actual
+    completion instead of the entry radius (see
+    _DEFAULT_IMU_TURN_END_ZONE_RADIUS_M). Returns ([], [], []) on any
+    failure (file missing, goal not in it, etc.) — callers degrade to "this
+    fault never arms" rather than crashing, same philosophy as
+    _load_tl_zone_points.
+
+    Pooling across goals here was originally justified as "goals occupy
+    spatially disjoint regions of the map" — that turned out to be FALSE
+    (found 2026-07-27): goal_007/012/026 share road segments, so pooling
+    let a goal's trial arm an IMU turn fault near a DIFFERENT goal's own
+    turn lane, sometimes on a lanelet the active goal's own route tags
+    'straight'. This pooled function is now used only as the FALLBACK when
+    the active goal isn't known/set — see _load_turn_zones_by_goal for the
+    per-goal version FaultInjector actually matches against, keyed by the
+    active_goal_id parameter set once per trial by
+    ros_utils.set_fault_injector_goal.
     """
     try:
         with open(turn_zones_file) as f:
             data = json.load(f)
         turn_pts: List[Tuple[float, float]] = []
+        turn_end_pts: List[Tuple[float, float]] = []
         leadin_pts: List[Tuple[float, float]] = []
         for gid in goal_ids:
             g = data.get('goals', {}).get(gid)
             if g is None:
                 continue
             turn_pts.extend((p['x'], p['y']) for p in g.get('turn_zones', []))
+            turn_end_pts.extend((p['end_x'], p['end_y']) for p in g.get('turn_zones', []))
             leadin_pts.extend((p['x'], p['y']) for p in g.get('bias_leadin_zones', []))
-        return turn_pts, leadin_pts
+        return turn_pts, turn_end_pts, leadin_pts
     except Exception:
-        return [], []
+        return [], [], []
+
+
+def _load_turn_zones_by_goal(
+    goal_ids: List[str],
+    turn_zones_file: str = _DEFAULT_TURN_ZONES_FILE,
+) -> Dict[str, Tuple[List[Tuple[float, float]], List[Tuple[float, float]], List[Tuple[float, float]]]]:
+    """Like _load_turn_zones, but keyed by goal instead of pooled — the
+    version FaultInjector actually matches IMU turn/turn-end/lead-in zone
+    membership against once it knows which goal the current trial is for
+    (see active_goal_id). {} on any failure, same as _load_turn_zones."""
+    try:
+        with open(turn_zones_file) as f:
+            data = json.load(f)
+        result: Dict[str, Tuple[List[Tuple[float, float]], List[Tuple[float, float]], List[Tuple[float, float]]]] = {}
+        for gid in goal_ids:
+            g = data.get('goals', {}).get(gid)
+            if g is None:
+                continue
+            turn_pts = [(p['x'], p['y']) for p in g.get('turn_zones', [])]
+            turn_end_pts = [(p['end_x'], p['end_y']) for p in g.get('turn_zones', [])]
+            leadin_pts = [(p['x'], p['y']) for p in g.get('bias_leadin_zones', [])]
+            result[gid] = (turn_pts, turn_end_pts, leadin_pts)
+        return result
+    except Exception:
+        return {}
 
 
 def _load_tl_group_zones(
@@ -605,8 +661,17 @@ def _load_tl_group_zones(
     Returns [] on any failure (file missing — e.g. compute_tl_zones.py
     hasn't been run yet — goal not covered, etc.); callers fall back to
     _load_tl_zone_points' cruder bbox-based positions (degraded: works for
-    the runway/zone-arming check, but with no group_id to scope a fault
-    to), not a crash.
+    the runway check, but with no group_id to scope a fault to), not a
+    crash.
+
+    Pooling here has the SAME cross-goal contamination problem as
+    _load_turn_zones (found 2026-07-27, worse here: confirmed via raw
+    rosbag inspection that a goal_007 trial's TL fault targeted a
+    traffic_light_group_id that never once appeared in goal_007's own
+    perception stream — a complete no-op for that entire cycle). Used only
+    as the FALLBACK when the active goal isn't known — see
+    _load_tl_group_zones_by_goal for the per-goal version actually matched
+    against.
     """
     try:
         with open(tl_zones_file) as f:
@@ -625,6 +690,28 @@ def _load_tl_group_zones(
         return pts
     except Exception:
         return []
+
+
+def _load_tl_group_zones_by_goal(
+    goal_ids: List[str],
+    tl_zones_file: str = _DEFAULT_TL_ZONES_FILE,
+) -> Dict[str, List[Tuple[float, float, int]]]:
+    """Like _load_tl_group_zones, but keyed by goal instead of pooled — the
+    version FaultInjector actually matches TL zone membership (and picks
+    _tl_fault_group_id from) once it knows which goal the current trial is
+    for. {} on any failure, same as _load_tl_group_zones."""
+    try:
+        with open(tl_zones_file) as f:
+            data = json.load(f)
+        result: Dict[str, List[Tuple[float, float, int]]] = {}
+        for gid_key in goal_ids:
+            g = data.get('goals', {}).get(gid_key)
+            if g is None:
+                continue
+            result[gid_key] = [(z['x'], z['y'], z['group_id']) for z in g.get('tl_zones', [])]
+        return result
+    except Exception:
+        return {}
 
 
 class FaultInjector(Node):
@@ -649,6 +736,17 @@ class FaultInjector(Node):
                 rclpy.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, True),
             ],
         )
+
+        # Set once per trial by ros_utils.set_fault_injector_goal, right
+        # before that trial starts — this is the ONLY way this long-lived,
+        # whole-campaign process knows which goal's OWN zones are relevant
+        # right now, rather than matching against the full cross-goal pool
+        # (see _load_turn_zones/_load_tl_group_zones' docstrings for the
+        # contamination that caused). Empty string (the default, and the
+        # value if a caller never sets it) means "unknown" — _on_gt_pose
+        # falls back to the pooled lists in that case, same as before this
+        # fix existed, rather than refusing to arm anything.
+        self.declare_parameter('active_goal_id', '')
 
         self._tl_fault_config: Optional[str] = tl_fault   # what to apply when active
         self._tl_params                       = tl_params
@@ -707,6 +805,13 @@ class FaultInjector(Node):
                     'if configured). Check lanelet2 is importable and '
                     f'{_DEFAULT_MAP_FILE} / {_DEFAULT_GOALS_FILE} exist.'
                 )
+        # Per-goal TL zones (not pooled) — see active_goal_id above and
+        # _on_gt_pose, which prefers this keyed by the current trial's goal,
+        # falling back to self._tl_group_zones (pooled) only if
+        # active_goal_id is unset or this goal isn't in the file.
+        self._tl_group_zones_by_goal: Dict[str, List[Tuple[float, float, int]]] = (
+            _load_tl_group_zones_by_goal(zone_goals or _DEFAULT_ZONE_GOALS)
+        )
         # IMU zone-gating (see _load_turn_zones / compute_turn_zones.py) —
         # loaded unconditionally (not just when imu_fault is configured) for
         # the same reason TL points load unconditionally: this node is one
@@ -715,9 +820,10 @@ class FaultInjector(Node):
         # goal not covered) degrade to "this IMU fault never arms" rather
         # than crashing — same philosophy as the TL zone loader.
         self._imu_turn_zone_radius_m = _DEFAULT_IMU_TURN_ZONE_RADIUS_M
+        self._imu_turn_end_zone_radius_m = _DEFAULT_IMU_TURN_END_ZONE_RADIUS_M
         self._imu_leadin_zone_radius_m = _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M
-        self._imu_turn_zone_points, self._imu_leadin_zone_points = _load_turn_zones(
-            zone_goals or _DEFAULT_ZONE_GOALS
+        self._imu_turn_zone_points, self._imu_turn_end_zone_points, self._imu_leadin_zone_points = (
+            _load_turn_zones(zone_goals or _DEFAULT_ZONE_GOALS)
         )
         if imu_fault in ('imu_scale_factor', 'imu_stuck_at', 'imu_bias'):
             n_turn, n_leadin = len(self._imu_turn_zone_points), len(self._imu_leadin_zone_points)
@@ -732,7 +838,15 @@ class FaultInjector(Node):
                     f'Run experiments/scripts/compute_turn_zones.py first, or check '
                     f'{_DEFAULT_TURN_ZONES_FILE} covers {zone_goals or _DEFAULT_ZONE_GOALS}.'
                 )
+        # Per-goal IMU zones (not pooled) — see active_goal_id above; same
+        # fallback relationship to self._imu_turn_zone_points/
+        # self._imu_turn_end_zone_points/self._imu_leadin_zone_points as
+        # _tl_group_zones_by_goal has to self._tl_group_zones.
+        self._imu_zones_by_goal: Dict[
+            str, Tuple[List[Tuple[float, float]], List[Tuple[float, float]], List[Tuple[float, float]]]
+        ] = _load_turn_zones_by_goal(zone_goals or _DEFAULT_ZONE_GOALS)
         self._in_imu_turn_zone: bool = False
+        self._in_imu_turn_end_zone: bool = False
         self._in_imu_leadin_zone: bool = False
 
         # Sticky, one-shot runway tracking (distinct from the continuous
@@ -822,8 +936,15 @@ class FaultInjector(Node):
         # TL zone membership — set by _on_gt_pose (map-position-based), read
         # by _on_tl. See _DEFAULT_TL_ZONE_RADIUS_M's comment for why this is
         # position-based now rather than the original message-content ring-
-        # buffer heuristic.
+        # buffer heuristic. GOAL-SCOPED (see active_goal_id) — this is what
+        # actually gates fault arming/application.
         self._in_detection_zone: bool = False
+        # POOLED edge-tracking for the runway check only (see _on_gt_pose) —
+        # deliberately a separate variable from _in_detection_zone above,
+        # which tracks the goal-scoped flag; conflating the two would
+        # compare a goal-scoped "was in zone" against a pooled "is in zone
+        # now" and produce meaningless zone_entered/zone_exited edges.
+        self._was_in_pooled_map_zone: bool = False
 
         # Counters
         self._msg_count_tl        = 0
@@ -938,34 +1059,82 @@ class FaultInjector(Node):
         """
         now = time.time()
         self._gt_last_msg_wall_time = now
+        # Speed/dt below deliberately uses the SIM clock, not wall time (fixed
+        # 2026-07-28): this node runs use_sim_time=True and AWSIM's sim clock
+        # doesn't track wall-clock 1:1, especially right after a trial-reset
+        # teleport (a burst of state resets in this node can let a couple of
+        # already-published GT messages queue up and get delivered back-to-
+        # back, collapsing wall-clock dt toward the 1e-3 floor below while
+        # the messages' own content still reflects real simulated motion).
+        # That produced fabricated speeds (34-36 m/s vs. this vehicle's real
+        # ~3 m/s) that trivially cleared _RUNWAY_MIN_SPEED_MPS regardless of
+        # whether the vehicle was actually moving — defeating the whole point
+        # of the check (see its comment above). Sim time isn't subject to
+        # this node's own processing backlog the way time.time() is.
+        sim_now = self.get_clock().now().nanoseconds * 1e-9
 
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
 
+        # Which goal's OWN zones to match against — set once per trial by
+        # ros_utils.set_fault_injector_goal before that trial starts. Empty/
+        # unrecognized falls back to the pooled, cross-goal lists (the
+        # pre-2026-07-27 behavior, kept only as a degrade path — see
+        # _load_turn_zones/_load_tl_group_zones' docstrings for why pooling
+        # alone caused real contamination: an IMU fault arming on a
+        # different goal's turn lane, or a TL fault targeting a group_id
+        # that never appears in the active goal's own perception stream).
+        # `in` checks (not `.get(..., fallback)` with an `or`) deliberately —
+        # a goal legitimately present in the file with zero zones of some
+        # kind is not the same as "goal unknown, use the pooled fallback",
+        # and a falsy-empty-list check would conflate the two.
+        active_goal_id = self.get_parameter('active_goal_id').get_parameter_value().string_value
+        if active_goal_id in self._tl_group_zones_by_goal:
+            tl_group_zones_active = self._tl_group_zones_by_goal[active_goal_id]
+        else:
+            tl_group_zones_active = self._tl_group_zones
+        if active_goal_id in self._imu_zones_by_goal:
+            imu_turn_pts_active, imu_turn_end_pts_active, imu_leadin_pts_active = self._imu_zones_by_goal[active_goal_id]
+        else:
+            imu_turn_pts_active = self._imu_turn_zone_points
+            imu_turn_end_pts_active = self._imu_turn_end_zone_points
+            imu_leadin_pts_active = self._imu_leadin_zone_points
+
         # Pure function of position — computed outside the lock, cheap even
         # with the full goal-scoped TL point set (tens of points, not 383).
+        # POOLED (not goal-scoped) — this one feeds ONLY the runway check
+        # below, which just needs "has the vehicle left the spawn area",
+        # not a specific goal's own zone; not part of the contamination
+        # this fix addresses.
         in_map_zone = any(
             math.hypot(x - px, y - py) <= self._tl_zone_radius_m
             for px, py in self._tl_zone_points
         )
-        # Nearest route-derived TL zone's group_id, if within radius — None
-        # (unscoped) if no route-derived data or not currently in one. See
-        # _tl_fault_group_id: this is captured once at fault-arm time, not
-        # re-read continuously, so it stays stable for the whole window.
+        # Goal-scoped — THIS is what actually gates TL fault arming
+        # (self._in_detection_zone below) and group_id selection, so it
+        # must be the active goal's own zones, not the pooled cross-goal
+        # list in_map_zone uses.
+        in_active_tl_zone = False
         current_tl_group_id = None
         best_group_dist = self._tl_zone_radius_m
-        for px, py, gid in self._tl_group_zones:
+        for px, py, gid in tl_group_zones_active:
             d = math.hypot(x - px, y - py)
+            if d <= self._tl_zone_radius_m:
+                in_active_tl_zone = True
             if d <= best_group_dist:
                 best_group_dist = d
                 current_tl_group_id = gid
         in_imu_turn_zone = any(
             math.hypot(x - px, y - py) <= self._imu_turn_zone_radius_m
-            for px, py in self._imu_turn_zone_points
+            for px, py in imu_turn_pts_active
+        )
+        in_imu_turn_end_zone = any(
+            math.hypot(x - px, y - py) <= self._imu_turn_end_zone_radius_m
+            for px, py in imu_turn_end_pts_active
         )
         in_imu_leadin_zone = any(
             math.hypot(x - px, y - py) <= self._imu_leadin_zone_radius_m
-            for px, py in self._imu_leadin_zone_points
+            for px, py in imu_leadin_pts_active
         )
 
         newly_cleared  = False
@@ -980,14 +1149,14 @@ class FaultInjector(Node):
                 self._gt_ready = True
                 self._trial_origin_xy = (x, y)
                 self._last_gt_xy = (x, y)
-                self._last_gt_time = now
+                self._last_gt_time = sim_now
             else:
                 last_x, last_y = self._last_gt_xy
-                dt = max(now - self._last_gt_time, 1e-3)
+                dt = max(sim_now - self._last_gt_time, 1e-3)
                 jump = math.hypot(x - last_x, y - last_y)
                 speed = jump / dt
                 self._last_gt_xy = (x, y)
-                self._last_gt_time = now
+                self._last_gt_time = sim_now
                 if jump > _TELEPORT_JUMP_THRESHOLD_M:
                     reset_detected = True
                     self._trial_origin_xy = (x, y)
@@ -1028,16 +1197,25 @@ class FaultInjector(Node):
                     self._imu_stuck_value = None
 
             # ── TL zone membership (map-position-based) ─────────────────────
-            was_in_zone = self._in_detection_zone
-            self._in_detection_zone = in_map_zone
-            zone_entered = in_map_zone and not was_in_zone
-            zone_exited  = (not in_map_zone) and was_in_zone
+            # _in_detection_zone (what _on_tl actually gates fault arming
+            # and application on) is the GOAL-SCOPED flag, not in_map_zone —
+            # see this method's docstring and in_active_tl_zone's comment
+            # above for why they must differ. zone_entered/zone_exited stay
+            # on the pooled in_map_zone: they only ever feed the runway
+            # check just below and the tl_window_entered/exited log events,
+            # neither of which needs (or should have) per-goal precision.
+            self._in_detection_zone = in_active_tl_zone
+            was_in_pooled_zone = self._was_in_pooled_map_zone
+            self._was_in_pooled_map_zone = in_map_zone
+            zone_entered = in_map_zone and not was_in_pooled_zone
+            zone_exited  = (not in_map_zone) and was_in_pooled_zone
             self._current_tl_group_id = current_tl_group_id
 
             # ── IMU zone membership (precomputed turn geometry) — pure level
             # flags, no edge-tracking needed: _wait_for_zone just polls
             # "am I in it right now" (see that method's docstring).
             self._in_imu_turn_zone = in_imu_turn_zone
+            self._in_imu_turn_end_zone = in_imu_turn_end_zone
             self._in_imu_leadin_zone = in_imu_leadin_zone
 
             # ── Runway ───────────────────────────────────────────────────────
@@ -1535,10 +1713,39 @@ class FaultInjector(Node):
         on bias_leadin_zones (10m of arc-length before a turn) instead, so
         accumulation matures right as the turn arrives rather than waiting
         for the turn itself (which would leave zero time to accumulate).
+
+        The ON period ends differently per fault type — changed 2026-07-28:
+
+        - imu_scale_factor/imu_stuck_at: ends when the vehicle reaches the
+          turn run's own real END point (`_in_imu_turn_end_zone`, fixed
+          2026-07-28 — previously ended at departure from the 15m entry
+          radius, which every measured turn run exceeds, truncating real
+          exposure), not after a fixed on_seconds. Their error is
+          proportional to the TRUE yaw rate, so
+          it's ~0 while stopped at a red light regardless of how long that
+          takes — a fixed duration risked expiring mid-wait, switching the
+          fault off before the vehicle ever actually turned once the light
+          went green. Zone-exit-ending this has no downside for these two:
+          time spent stopped is harmless (near-zero true rate = near-zero
+          error) whether the fault is nominally "on" or not.
+        - imu_bias: DELIBERATELY KEPT on a fixed on_seconds duration, not
+          zone-exit-ended, even though it has the exact same red-light
+          exposure problem in principle. Its error mechanism is different
+          in a way that makes zone-exit-ending it dangerous rather than
+          free: gyro_bias_rads is added UNCONDITIONALLY in _on_imu,
+          regardless of true rate, so a stationary vehicle waiting at red
+          still integrates the full bias continuously — a long red-light
+          wait could accumulate heading error well past the 1.2 rad
+          ceiling the severity tiers (0.03/0.08 rad/s) were specifically
+          calibrated against (docs/design_decisions.md item 7: old S2,
+          0.15 rad/s over just 30s, broke localization within ~1s of
+          activation). Confirmed with the user 2026-07-28 before
+          implementing — deliberate scope decision, not an oversight.
         """
+        zone_attr = '_in_imu_leadin_zone' if self._imu_fault_type == 'imu_bias' else '_in_imu_turn_zone'
+        zone_exit_ended = self._imu_fault_type in ('imu_scale_factor', 'imu_stuck_at')
         on_sec  = float(self._imu_params.get('on_seconds',  30))
         off_sec = float(self._imu_params.get('off_seconds', 30))
-        zone_attr = '_in_imu_leadin_zone' if self._imu_fault_type == 'imu_bias' else '_in_imu_turn_zone'
 
         while True:
             with self._lock:
@@ -1554,11 +1761,11 @@ class FaultInjector(Node):
                 self._imu_bias_on_cycles += 1
                 cycle = self._imu_bias_on_cycles
                 arm_xy = self._last_gt_xy
+            on_start_t = time.time()
             self._log_event('imu_bias_on', {
                 'cycle':      cycle,
                 'accel_bias': self._imu_params.get('accel_bias_ms2'),
                 'gyro_bias':  self._imu_params.get('gyro_bias_rads'),
-                'on_seconds': on_sec,
                 'generation': gen,
                 # Position at arming time (added 2026-07-26) — lets post-hoc
                 # validation confirm this cycle actually started inside its
@@ -1569,7 +1776,22 @@ class FaultInjector(Node):
                 'position':   {'x': arm_xy[0], 'y': arm_xy[1]} if arm_xy else None,
                 'zone_kind':  'bias_leadin' if self._imu_fault_type == 'imu_bias' else 'turn',
             })
-            time.sleep(on_sec)
+
+            if zone_exit_ended:
+                # Waits for arrival at the turn run's own real END point
+                # (2026-07-28 fix), not departure from the 15m entry radius
+                # around its START (_in_imu_turn_zone) — every measured turn
+                # run (16-34m) exceeds that radius, so the old "exited the
+                # entry circle" signal ended the fault partway through the
+                # real turn, sometimes missing over half of it. See
+                # compute_turn_zones.py's end_xy comment and
+                # _DEFAULT_IMU_TURN_END_ZONE_RADIUS_M.
+                if not self._wait_for_zone(gen, '_in_imu_turn_end_zone'):
+                    return  # superseded by a trial reset mid-transit
+                actual_on_sec = time.time() - on_start_t
+            else:
+                time.sleep(on_sec)
+                actual_on_sec = on_sec
 
             if off_sec <= 0:
                 return  # sustained fault (off_seconds=0) — stays active, no toggle-off
@@ -1581,6 +1803,11 @@ class FaultInjector(Node):
 
             self._log_event('imu_bias_off', {
                 'cycle':       cycle,
+                # Actual elapsed on-time — a fixed value for imu_bias
+                # (on_seconds, unchanged), a real measured duration for
+                # imu_scale_factor/imu_stuck_at (zone-transit-based, no
+                # configured duration exists for those anymore).
+                'on_seconds':  round(actual_on_sec, 2),
                 'off_seconds': off_sec,
                 'generation':  gen,
             })
@@ -1691,9 +1918,12 @@ def main():
         help=(
             'JSON params.\n'
             '  imu_bias:         {"accel_bias_ms2":0.5, "gyro_bias_rads":0.1, "on_seconds":30, "off_seconds":30}\n'
+            '                    (on_seconds is a real fixed duration for this fault only —\n'
+            '                    see _imu_bias_loop for why it is NOT zone-exit-ended like the two below)\n'
             '  imu_bias_ramp:    {"gyro_bias_rate_rads_per_s":0.003, "max_gyro_bias_rads":0.4, "ramp_log_interval_s":5.0}\n'
-            '  imu_scale_factor: {"gyro_scale_factor":1.8, "on_seconds":20, "off_seconds":30}\n'
-            '  imu_stuck_at:     {"on_seconds":20, "off_seconds":30} — optionally\n'
+            '  imu_scale_factor: {"gyro_scale_factor":1.8, "off_seconds":30}\n'
+            '                    (no on_seconds — on-window ends when the vehicle exits the turn zone)\n'
+            '  imu_stuck_at:     {"off_seconds":30} — optionally\n'
             '                    "stuck_value_rads":<float> to freeze at a fixed value\n'
             '                    instead of whatever was read at activation.'
         ),

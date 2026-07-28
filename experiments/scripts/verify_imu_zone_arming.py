@@ -12,6 +12,23 @@ fault_injector.py's own code, using nothing but the position each
 'imu_bias_on' event recorded at arming time (added 2026-07-26 specifically
 for this) and the same turn_zones.json fault_injector.py itself loads.
 
+IMPORTANT (bug found and fixed 2026-07-27, first real run after the zone
+redesign): each trial's fault_log.jsonl is a snapshot COPY of
+fault_injector.py's single cumulative campaign-wide log (one shared
+process/log for the whole campaign — see run_experiments.py's
+batch_fault_log), taken right when that trial finishes. So trial N's own
+fault_log.jsonl also contains every event from trials 1..N-1 (any goal —
+goals are interleaved round-robin within a campaign, not run one at a
+time), NOT just trial N's own activity. metrics.py's compute_fault_validation
+already knew this and filters by wall_time >= trial_start_wall_time; this
+script originally didn't, and scanned every event in the file regardless of
+which trial (or GOAL) it actually belonged to — producing spurious
+"position is 200m+ from the nearest zone" mismatches that were really an
+earlier trial's own (correctly-armed) event being checked against the
+WRONG goal's zone file. Fixed the same way metrics.py does: read
+trial_start_wall_time from the trial's own metadata.json and only consider
+events at or after it.
+
 Usage:
   python3 experiments/scripts/verify_imu_zone_arming.py --campaign imu_fault_scale
   python3 experiments/scripts/verify_imu_zone_arming.py --campaign imu_fault_s1 \
@@ -19,6 +36,7 @@ Usage:
 """
 
 import argparse
+import datetime
 import glob
 import json
 import math
@@ -61,6 +79,21 @@ def min_dist_to_zone(x, y, zone_points):
     return min(math.hypot(x - zx, y - zy) for zx, zy in zone_points)
 
 
+def trial_start_wall_time(trial_dir):
+    """Epoch seconds this trial started, from its own metadata.json —
+    matches run_experiments.py's own trial_start_wall_time exactly (same
+    field, captured at the same moment). Returns 0.0 (i.e. don't filter
+    anything out) if metadata.json is missing/unparseable, so a malformed
+    trial degrades to the old over-inclusive behavior rather than silently
+    reporting zero events checked."""
+    meta_path = os.path.join(trial_dir, 'metadata.json')
+    try:
+        ts = json.load(open(meta_path))['timestamp']
+        return datetime.datetime.fromisoformat(ts).timestamp()
+    except Exception:
+        return 0.0
+
+
 def verify_trial(trial_dir, zones_by_goal):
     goal_id = os.path.basename(os.path.dirname(trial_dir))
     trial_name = os.path.basename(trial_dir)
@@ -75,6 +108,7 @@ def verify_trial(trial_dir, zones_by_goal):
 
     turn_pts = [(p['x'], p['y']) for p in zones.get('turn_zones', [])]
     leadin_pts = [(p['x'], p['y']) for p in zones.get('bias_leadin_zones', [])]
+    start_t = trial_start_wall_time(trial_dir)
 
     checked = 0
     mismatches = []
@@ -85,6 +119,8 @@ def verify_trial(trial_dir, zones_by_goal):
             continue
         if e.get('event') != 'imu_bias_on':
             continue
+        if e.get('wall_time', 0.0) < start_t:
+            continue  # belongs to an earlier trial (any goal) — see module docstring
         pos = e.get('position')
         zone_kind = e.get('zone_kind')
         if pos is None or zone_kind is None:
@@ -125,10 +161,12 @@ def main():
             if 'error' in result:
                 print(f'  {result["goal"]}/{result["trial"]}: ERROR — {result["error"]}')
                 continue
-            n_on_events = sum(
-                1 for line in open(os.path.join(trial_dir, 'fault_log.jsonl'))
-                if json.loads(line).get('event') == 'imu_bias_on'
-            )
+            start_t = trial_start_wall_time(trial_dir)
+            n_on_events = 0
+            for line in open(os.path.join(trial_dir, 'fault_log.jsonl')):
+                e = json.loads(line)
+                if e.get('event') == 'imu_bias_on' and e.get('wall_time', 0.0) >= start_t:
+                    n_on_events += 1
             no_pos = n_on_events - result['checked']
             total_no_position += no_pos
             total_checked += result['checked']

@@ -450,7 +450,23 @@ def main():
                 reachable = runway_arc is None or entry_arc > runway_arc
                 if not reachable:
                     unreachable_count += 1
-                turn_zones.append((entry_xy, reachable))
+                # end_xy = the run's own real last point (added 2026-07-28) —
+                # NOT derivable from entry_xy + a fixed radius. Every turn
+                # run measured so far (16-34m) exceeds
+                # _DEFAULT_IMU_TURN_ZONE_RADIUS_M (15m), so gating
+                # imu_scale_factor/imu_stuck_at's on-window on "left the 15m
+                # entry circle" (the pre-2026-07-28 behavior) ended the fault
+                # partway through the real turn, sometimes missing over half
+                # of it (goal_026: 17-19m of 32-34m runs) — confirmed via
+                # EKF-GT divergence comparisons showing goals with the
+                # smallest shortfall producing the largest divergence, and
+                # the goal with the largest shortfall (goal_026) producing
+                # none. fault_injector.py now waits for actual arrival at
+                # this point instead of departure from the entry radius —
+                # see _DEFAULT_IMU_TURN_END_ZONE_RADIUS_M there.
+                end_idx = min(run[1], len(resampled) - 1)
+                end_xy = (resampled[end_idx][0], resampled[end_idx][1])
+                turn_zones.append((entry_xy, end_xy, reachable))
                 leadin_zones.append((leadin_point(resampled, entry_xy, args.leadin_m), reachable))
             elif kind == 'curved_road_zone':
                 curved_road_zones.append(entry_xy)
@@ -458,7 +474,8 @@ def main():
                 lane_change_zones.append(entry_xy)
 
         result[goal] = {
-            'turn_zones': [{'x': x, 'y': y, 'reachable': r} for (x, y), r in turn_zones],
+            'turn_zones': [{'x': x, 'y': y, 'end_x': ex, 'end_y': ey, 'reachable': r}
+                            for (x, y), (ex, ey), r in turn_zones],
             'bias_leadin_zones': [{'x': x, 'y': y, 'reachable': r} for (x, y), r in leadin_zones],
             'lane_change_zones': [{'x': x, 'y': y} for x, y in lane_change_zones],
             'curved_road_zones': [{'x': x, 'y': y} for x, y in curved_road_zones],
