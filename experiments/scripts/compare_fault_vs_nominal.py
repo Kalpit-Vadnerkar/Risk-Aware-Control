@@ -42,6 +42,7 @@ from nav_msgs.msg import Odometry
 from autoware_perception_msgs.msg import TrafficLightGroupArray, TrafficLightElement
 
 from metrics import MetricsCollector  # noqa: E402 — needs sys.path insert above
+from fault_injector import _load_tl_group_zones_by_goal, _DEFAULT_TL_ZONE_RADIUS_M  # noqa: E402
 
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_comparison')
@@ -61,10 +62,31 @@ COLOR_NAME = {0: 'UNKNOWN', 1: 'RED', 2: 'AMBER', 3: 'GREEN'}
 
 # ── Bag readers ───────────────────────────────────────────────────────────────
 
-def read_gt_and_tl(bag_dir):
+def read_gt_and_tl(bag_dir, goal_id=None):
     """Single pass: ground-truth position + TL status, anchored to the same
     'first message in bag' epoch MetricsCollector uses, so both are directly
-    comparable on the same relative time axis."""
+    comparable on the same relative time axis.
+
+    goal_id scoping (added 2026-07-28): `/perception/traffic_light_recognition/
+    traffic_signals[_faulted]` carries 2-6 currently-tracked groups at once
+    (whatever's in the planning lookahead), but a TL fault only ever mutates
+    the ONE group_id the vehicle's route is actually governed by right now
+    (fault_injector.py's `_tl_fault_group_id`/`current_tl_group_id` — see
+    `_on_tl`). The previous version pooled elements across EVERY group in
+    the message (mean confidence, max-confidence "dominant" color) — for
+    `tl_fault_s4` (blackout) this meant the corrupted group's empty/zero-
+    confidence elements were simply outvoted by whichever OTHER, unfaulted
+    group in the same message had higher confidence, making a total
+    blackout of the relevant light look like ~90% normal detection.
+    Confirmed live: pooled in-fault detection rate for tl_fault_s4 trials
+    was 89-92%, and 0/6 features were discriminable. With goal_id given,
+    this now replicates fault_injector.py's own group-selection exactly
+    (nearest tl_zones.json group to the most recent GT position, within
+    _DEFAULT_TL_ZONE_RADIUS_M) and reads ONLY that group's elements. Falls
+    back to the old pooled-across-all-groups behavior when goal_id is None
+    (caller doesn't know/care) or no zone is within range at that position
+    (e.g. mid-route, nowhere near an intersection) — better than dropping
+    the sample."""
     storage_options = StorageOptions(uri=bag_dir, storage_id='sqlite3')
     converter_options = ConverterOptions(input_serialization_format='cdr',
                                           output_serialization_format='cdr')
@@ -82,9 +104,14 @@ def read_gt_and_tl(bag_dir):
         print(f'  NOTE: {TL_TOPIC_FAULTED} not in this bag — falling back to {TL_TOPIC} '
               f'(pre-fix trial; this topic was never actually faulted).')
 
+    group_zones = []  # [(x, y, group_id), ...] for this goal's real TL zones
+    if goal_id:
+        group_zones = _load_tl_group_zones_by_goal([goal_id]).get(goal_id, [])
+
     start_ns = None
     gt_positions = []   # (t_rel_sec, x, y)
     tl_events = []      # (t_rel_sec, dominant_color_code, mean_confidence, any_detected)
+    last_gt_xy = None
 
     while reader.has_next():
         topic, data, ts = reader.read_next()
@@ -94,10 +121,26 @@ def read_gt_and_tl(bag_dir):
 
         if topic == GT_TOPIC:
             msg = deserialize_message(data, Odometry)
-            gt_positions.append((t_rel, msg.pose.pose.position.x, msg.pose.pose.position.y))
+            x, y = msg.pose.pose.position.x, msg.pose.pose.position.y
+            gt_positions.append((t_rel, x, y))
+            last_gt_xy = (x, y)
         elif topic == tl_topic:
             msg = deserialize_message(data, TrafficLightGroupArray)
-            elems = [e for g in msg.traffic_light_groups for e in g.elements]
+            current_group_id = None
+            if group_zones and last_gt_xy is not None:
+                x, y = last_gt_xy
+                best_d, best_gid = _DEFAULT_TL_ZONE_RADIUS_M, None
+                for gx, gy, gid in group_zones:
+                    d = math.hypot(x - gx, y - gy)
+                    if d <= best_d:
+                        best_d, best_gid = d, gid
+                current_group_id = best_gid
+            if current_group_id is not None:
+                elems = [e for g in msg.traffic_light_groups
+                         if g.traffic_light_group_id == current_group_id
+                         for e in g.elements]
+            else:
+                elems = [e for g in msg.traffic_light_groups for e in g.elements]
             if elems:
                 mean_conf = sum(e.confidence for e in elems) / len(elems)
                 dominant = max(elems, key=lambda e: e.confidence).color
@@ -240,10 +283,10 @@ def in_any_window(t, windows):
 
 # ── Feature series (all as (t, value) lists, relative to bag start) ──────────
 
-def build_feature_series(bag_dir):
+def build_feature_series(bag_dir, goal_id=None):
     mc = MetricsCollector(bag_dir)
     mc.read_bag()
-    gt_tl = read_gt_and_tl(bag_dir)
+    gt_tl = read_gt_and_tl(bag_dir, goal_id)
 
     divergence = ekf_gt_divergence(mc, gt_tl['gt_positions'])
     # Only pool/compare confidence over messages where a TL was actually
@@ -253,6 +296,25 @@ def build_feature_series(bag_dir):
     # the in-fault/out-of-fault comparison for this feature.
     tl_confidence = [(t, c) for t, _col, c, d in gt_tl['tl_events'] if d]
     tl_color = [(t, col) for t, col, _c, _d in gt_tl['tl_events']]
+    # tl_is_green (added 2026-07-28, mirroring plot_fault_impact.py's own
+    # feature added 2026-07-25 for the same reason): tl_oscillate/tl_unknown
+    # corrupt the reported COLOR category, not confidence magnitude — a
+    # forced-UNKNOWN classification can hold high confidence in the
+    # UNKNOWN state, so tl_confidence alone barely moves for those, making
+    # a color-forcing fault look non-discriminating when the categorical
+    # state is exactly what changed. Only defined over detected messages,
+    # same reasoning as tl_confidence above.
+    tl_is_green = [(t, 1.0 if col == TrafficLightElement.GREEN else 0.0)
+                   for t, col, _c, d in gt_tl['tl_events'] if d]
+    # tl_detected (added 2026-07-28): UNFILTERED over every message, unlike
+    # tl_confidence/tl_is_green above — needed because tl_fault_s4
+    # (blackout) empties the group's own elements list, which makes
+    # tl_confidence/tl_is_green have almost no in-fault samples to compare
+    # at all (the resampler then falls back to the nearest OUT-of-fault
+    # sample for those grid points, hiding the effect). "Was anything
+    # detected" is itself the signal blackout corrupts, so it needs to be
+    # measurable at every timestamp, not just when something was seen.
+    tl_detected = [(t, 1.0 if d else 0.0) for t, _col, _c, d in gt_tl['tl_events']]
 
     features = {
         'velocity_mps':        mc.velocities,
@@ -261,6 +323,8 @@ def build_feature_series(bag_dir):
         'obj_distance_m':      mc.object_distances,
         'ekf_gt_divergence_m': divergence,
         'tl_confidence':       tl_confidence,
+        'tl_is_green':         tl_is_green,
+        'tl_detected':         tl_detected,
     }
     meta = {
         'bag_start_abs_sec': gt_tl['bag_start_abs_sec'],
@@ -325,7 +389,7 @@ def main():
     # ── Nominal baseline: pool marginal values per feature across all nominal trials ──
     nominal_pool = {}
     for nd in nominal_dirs:
-        feats, _meta = build_feature_series(os.path.join(nd, 'rosbag'))
+        feats, _meta = build_feature_series(os.path.join(nd, 'rosbag'), args.goal)
         for name, series in feats.items():
             nominal_pool.setdefault(name, []).extend(v for _t, v in series)
 
@@ -348,7 +412,7 @@ def main():
         trial_name = os.path.basename(fd)
         print(f'\n{"=" * 70}\n{trial_name}\n{"=" * 70}')
 
-        feats, meta = build_feature_series(os.path.join(fd, 'rosbag'))
+        feats, meta = build_feature_series(os.path.join(fd, 'rosbag'), args.goal)
         events = load_fault_log(fd)
         windows = extract_fault_windows(events, meta['bag_start_abs_sec'], meta['bag_duration'], kind)
 

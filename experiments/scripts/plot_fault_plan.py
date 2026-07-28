@@ -23,6 +23,24 @@ entered and then exited; flat 150m fallback otherwise) — a zone that would
 fall before this point could never actually arm on a trial's first pass
 through it, which is worth being able to see, not just assume away.
 
+Fault END (de-injection) markers added 2026-07-28, alongside the existing
+start/injection markers — see docs/fault_scenario_table.md's "fault start" /
+"fault end" columns for the underlying design this mirrors:
+  - `imu_fault_scale`/`imu_fault_stuck` (zone_kind='turn') end on turn-zone
+    EXIT (`fault_injector.py`'s `_wait_for_zone_transit_end`) — a real route
+    position, computed here the same way as the entry marker: the first
+    point walking forward, after having entered, where the route leaves the
+    zone radius again. Drawn as a distinct marker so a plan plot alone shows
+    both ends of the on-window.
+  - All fixed-timer fault types (`tl_fault_*`, `imu_fault_s1`/`s3`) end after
+    a real elapsed-time cap, not a route position — where that lands on the
+    route depends on the trial's actual driven speed, which this
+    geometry-only plan plot does not have. Rather than draw a marker at a
+    guessed position, these get a text note instead (see CAMPAIGN_FAULT_END).
+  - `imu_fault_ramp` has no discrete "end" at all (continuous one-shot ramp,
+    see docs/fault_scenario_table.md's "Not currently in scope") — no end
+    marker or note drawn for it.
+
 Background is the planned ROUTE's own lanelet geometry (same source
 compute_turn_zones.py computes zones from), not a driven GT trajectory —
 consistent with the rest of this pipeline. TL zones are read directly from
@@ -90,6 +108,10 @@ LEADIN_COLOR = '#9467bd'          # was '#1f77b4' — identical to the route lin
 LANE_CHANGE_COLOR = '#999999'
 RUNWAY_COLOR = '#555555'
 INJECTION_COLOR = '#d62728'
+FAULT_END_COLOR = '#17becf'       # teal 'P' marker — distinct from the red
+                                   # injection star, for the zone-exit fault
+                                   # end point (imu_fault_scale/stuck only;
+                                   # see CAMPAIGN_FAULT_END)
 ROUTE_COLOR = '#1f77b4'
 UNREACHABLE_COLOR = '#bbbbbb'      # zone kept in the data (see turn_zones.json's
                                    # / tl_zones.json's `reachable` field) but at
@@ -109,6 +131,22 @@ CAMPAIGN_ZONE_KIND = {
     'imu_fault_s1':    ('leadin', 'imu_bias (0.03 rad/s)'),
     'imu_fault_s3':    ('leadin', 'imu_bias (0.08 rad/s)'),
     'imu_fault_ramp':  ('none', 'imu_bias_ramp'),
+}
+
+# campaign name -> ('zone_exit', None) | ('fixed_timer', seconds) | ('continuous', None)
+# Matches docs/fault_scenario_table.md's "Fault end" column exactly — the
+# on_seconds/fault-duration values here are collect.sh's actual --imu-params/
+# --tl-params/--fault-duration values, not independently guessed.
+CAMPAIGN_FAULT_END = {
+    'tl_fault_s2':     ('fixed_timer', 15),
+    'tl_fault_s3':     ('fixed_timer', 15),
+    'tl_fault_s4':     ('fixed_timer', 15),
+    'tl_fault_ramp':   ('fixed_timer', 15),
+    'imu_fault_scale': ('zone_exit', None),
+    'imu_fault_stuck': ('zone_exit', None),
+    'imu_fault_s1':    ('fixed_timer', 20),
+    'imu_fault_s3':    ('fixed_timer', 15),
+    'imu_fault_ramp':  ('continuous', None),
 }
 
 
@@ -153,6 +191,21 @@ def draw_injection_points(ax, points, color, label):
                 label=label if i == 0 else None)
 
 
+def draw_fault_end_points(ax, points, color, label):
+    """points may contain None (a turn_zones.json entry with no stored
+    end point, or a fixed-timer fault type with no geometric end at all) —
+    skipped, not plotted as a fabricated position."""
+    first = True
+    for pt in points:
+        if pt is None:
+            continue
+        x, y = pt
+        ax.plot(x, y, marker='P', color=color, markersize=12,
+                markeredgecolor='black', markeredgewidth=0.6, zorder=6,
+                label=label if first else None)
+        first = False
+
+
 def draw_zones_with_reachability(ax, zones_xyr, injection_pts, radius, color, zone_label, kind_label):
     """zones_xyr: [(x, y, reachable), ...] for the zone CIRCLE (real
     geometry — drawn regardless of reachability); injection_pts: [(x, y),
@@ -186,7 +239,7 @@ def draw_zones_with_reachability(ax, zones_xyr, injection_pts, radius, color, zo
             unreach_label_done = True
 
 
-def plot_goal(map_data, campaign, zone_kind, fault_label, goal, goal_xy, pooled_tl_group_zones,
+def plot_goal(map_data, campaign, zone_kind, fault_label, fault_end, goal, goal_xy, pooled_tl_group_zones,
               zones, tl_zones_for_goal, nominal_campaign, output_dir, margin):
     bag_dir = find_first_bag(nominal_campaign, goal)
     if bag_dir is None:
@@ -211,6 +264,12 @@ def plot_goal(map_data, campaign, zone_kind, fault_label, goal, goal_xy, pooled_
     # ever becomes an active scenario should draw it as a highlighted
     # sub-segment of the route line, not a marker.
     turn_pts = [(p['x'], p['y'], p.get('reachable', True)) for p in zones.get('turn_zones', [])]
+    # Each turn run's own real end point (added 2026-07-28 alongside
+    # fault_injector.py's fix — see compute_turn_zones.py) — None for older
+    # turn_zones.json files predating this field, handled as "never exits"
+    # the same as the old geometric derivation did.
+    turn_end_pts = [((p['end_x'], p['end_y']) if 'end_x' in p else None)
+                     for p in zones.get('turn_zones', [])]
     leadin_pts = [(p['x'], p['y'], p.get('reachable', True)) for p in zones.get('bias_leadin_zones', [])]
     lc_pts = [(p['x'], p['y']) for p in zones.get('lane_change_zones', [])]
 
@@ -296,6 +355,18 @@ def plot_goal(map_data, campaign, zone_kind, fault_label, goal, goal_xy, pooled_
                                       f'IMU turn zone (r={_DEFAULT_IMU_TURN_ZONE_RADIUS_M:.0f}m)',
                                       'start of turn')
         n_zones = sum(r for _, _, r in turn_pts)
+        # Fault end (zone-exit-ended, 2026-07-28; corrected 2026-07-28 to
+        # use the turn run's own real end point instead of "left the 15m
+        # entry radius" — every measured turn run exceeds that radius, so
+        # the old derivation understated where the fault actually turns
+        # off now) — only meaningful for reachable zones, matching which
+        # zones actually get an injection star above.
+        turn_exit_pts = [end_xy for (x, y, r), end_xy in zip(turn_pts, turn_end_pts) if r]
+        n_never_exited = sum(1 for p in turn_exit_pts if p is None)
+        if n_never_exited:
+            print(f'{goal}: WARNING — {n_never_exited} reachable turn zone(s) have no stored '
+                  f'end point (stale turn_zones.json — rerun compute_turn_zones.py)', file=sys.stderr)
+        draw_fault_end_points(ax, turn_exit_pts, FAULT_END_COLOR, 'fault end (turn complete)')
         if lc_pts:
             ax.scatter([p[0] for p in lc_pts], [p[1] for p in lc_pts],
                         marker='x', color=LANE_CHANGE_COLOR, s=50, zorder=5,
@@ -324,6 +395,12 @@ def plot_goal(map_data, campaign, zone_kind, fault_label, goal, goal_xy, pooled_
         subtitle = f'{fault_label} — no zone gating, continuous from runway-clear'
     else:
         subtitle = f'{fault_label} — {n_zones} zone(s)'
+    end_mode, end_seconds = fault_end
+    if end_mode == 'fixed_timer':
+        subtitle += (f'\nfault end: fixed {end_seconds}s timer after activation '
+                      '(not shown geometrically — depends on trial speed)')
+    elif end_mode == 'zone_exit':
+        subtitle += '\nfault end: turn-zone exit (teal marker below)'
     ax.set_title(f'Fault injection PLAN — {campaign} / {goal}\n{subtitle}')
     ax.legend(loc='best', fontsize=7)
     fig.tight_layout()
@@ -348,6 +425,7 @@ def main():
     args = ap.parse_args()
 
     zone_kind, fault_label = CAMPAIGN_ZONE_KIND[args.campaign]
+    fault_end = CAMPAIGN_FAULT_END[args.campaign]
 
     zones_data = json.load(open(args.turn_zones_file))
     tl_zones_data = json.load(open(args.tl_zones_file))
@@ -366,7 +444,7 @@ def main():
         zones = zones_data['goals'].get(goal, {})
         tl_zones_for_goal = tl_zones_data['goals'].get(goal, {}).get('tl_zones', [])
         goal_xy = (goals_by_id[goal]['goal']['position']['x'], goals_by_id[goal]['goal']['position']['y'])
-        plot_goal(map_data, args.campaign, zone_kind, fault_label, goal, goal_xy, pooled_tl_group_zones,
+        plot_goal(map_data, args.campaign, zone_kind, fault_label, fault_end, goal, goal_xy, pooled_tl_group_zones,
                   zones, tl_zones_for_goal, args.nominal_campaign, args.output_dir, args.margin)
 
 

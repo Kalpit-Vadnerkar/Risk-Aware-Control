@@ -24,6 +24,20 @@ that surfaces tl_confidence, for IMU faults it surfaces ekf_gt_divergence
 and/or steering_rad, etc. Each panel also overlays the raw nominal trial(s)'
 own series (not just a mean/std band) for direct visual comparison.
 
+Map panel now also draws the campaign's PLANNED gating zones (added
+2026-07-28) — the same zone circles/injection stars/fault-end markers
+plot_fault_plan.py draws, reusing its own drawing functions directly rather
+than re-implementing them, so a plan plot and its matching impact plot are
+directly comparable side by side: did the fault actually arm where/when it
+was supposed to, on THIS specific trial's real driven trajectory. Zone
+geometry comes from the goal's nominal-campaign route reconstruction (same
+source plot_fault_plan.py uses), not the trial's own bag — routes are
+deterministic per goal, and reusing the nominal reconstruction keeps this
+consistent with the rest of the pipeline instead of re-deriving it per
+trial. Campaigns not in plot_fault_plan.py's CAMPAIGN_ZONE_KIND (e.g. a
+future campaign not yet wired into the plan plot) simply get no zone
+overlay — this degrades gracefully, not an error.
+
 Usage (must source ROS/Autoware, then the repo venv):
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
@@ -52,12 +66,24 @@ sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
 
 from metrics import MetricsCollector  # noqa: E402
 from plot_routes import (  # noqa: E402
-    make_projector, load_map, ll_attr, lanelet_polygon_xy, bbox_hit,
-    traffic_light_points, SPAWN,
+    make_projector, load_map, ll_attr, lanelet_polygon_xy, bbox_hit, SPAWN,
 )
 from compare_fault_vs_nominal import (  # noqa: E402
     read_gt_and_tl, ekf_gt_divergence, load_fault_log, extract_fault_windows,
     resample, in_any_window,
+)
+from compute_turn_zones import (  # noqa: E402
+    find_first_bag, read_route_ids, build_route_polyline, resample_by_arc_length,
+    RESAMPLE_STEP_M,
+)
+from fault_injector import (  # noqa: E402
+    _DEFAULT_TL_ZONE_RADIUS_M, _DEFAULT_IMU_TURN_ZONE_RADIUS_M, _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M,
+)
+from plot_fault_plan import (  # noqa: E402
+    CAMPAIGN_ZONE_KIND, CAMPAIGN_FAULT_END, draw_zones_with_reachability, draw_fault_end_points,
+    first_entry_point_on_route,
+    TL_COLOR, TURN_COLOR, LEADIN_COLOR, FAULT_END_COLOR,
+    DEFAULT_TURN_ZONES_FILE, DEFAULT_TL_ZONES_FILE,
 )
 from autoware_perception_msgs.msg import TrafficLightElement  # noqa: E402
 
@@ -72,7 +98,6 @@ MRM_NORMAL = 1
 MRM_OPERATING = 2
 
 FAULT_COLOR = '#d55e00'
-MRM_COLOR = '#9467bd'
 TRAJ_COLOR = '#1f77b4'
 NOMINAL_COLOR = '#999999'
 
@@ -93,6 +118,7 @@ FEATURE_LABELS = {
     'ekf_gt_divergence_m': 'EKF-GT divergence (m)',
     'tl_confidence':       'TL confidence',
     'tl_is_green':         'TL reported GREEN (0/1)',
+    'tl_detected':         'TL detected at all (0/1)',
 }
 LOG_SCALE_FEATURES = {'ekf_gt_divergence_m'}
 
@@ -122,16 +148,6 @@ def fault_kind_and_windows(trial_dir, bag_start_abs_sec, bag_duration):
     return kind, extract_fault_windows(events, bag_start_abs_sec, bag_duration, kind)
 
 
-def nearest_gt_xy(t, gt_positions):
-    """gt_positions: sorted (t, x, y) list."""
-    if not gt_positions:
-        return None
-    times = np.array([p[0] for p in gt_positions])
-    idx = int(np.searchsorted(times, t))
-    idx = min(max(idx, 0), len(gt_positions) - 1)
-    return gt_positions[idx][1], gt_positions[idx][2]
-
-
 def classify_outcome(result):
     return 'goal_reached' if result.get('status') == 'goal_reached' else 'fatal'
 
@@ -145,11 +161,18 @@ def build_feats_from_mc(mc, gt_tl):
     confidence — tl_confidence alone barely moves for those (oscillate's
     "GREEN-forced" half still reports high confidence, just a wrong color),
     so ranking against confidence-only made a color-forcing fault look like
-    it had no discriminating feature at all. This closes that gap."""
+    it had no discriminating feature at all. This closes that gap. Plus
+    `tl_detected` (added 2026-07-28, unfiltered unlike the two above):
+    tl_fault_s4 (blackout) empties the group's elements entirely, leaving
+    almost no in-fault samples for tl_confidence/tl_is_green to compare —
+    "was anything detected" needs to be measurable at every timestamp, not
+    just when something was seen, or the resampler quietly falls back to
+    nearby out-of-fault samples and hides the effect."""
     divergence = ekf_gt_divergence(mc, gt_tl['gt_positions'])
     tl_confidence = [(t, c) for t, _col, c, d in gt_tl['tl_events'] if d]
     tl_is_green = [(t, 1.0 if col == TrafficLightElement.GREEN else 0.0)
                    for t, col, _c, d in gt_tl['tl_events'] if d]
+    tl_detected = [(t, 1.0 if d else 0.0) for t, _col, _c, d in gt_tl['tl_events']]
     return {
         'velocity_mps':        mc.velocities,
         'acceleration_mps2':   mc.accelerations,
@@ -158,6 +181,7 @@ def build_feats_from_mc(mc, gt_tl):
         'ekf_gt_divergence_m': divergence,
         'tl_confidence':       tl_confidence,
         'tl_is_green':         tl_is_green,
+        'tl_detected':         tl_detected,
     }
 
 
@@ -174,7 +198,7 @@ def nominal_stats_and_series(goal_id, nominal_campaign):
             continue
         mc = MetricsCollector(bag_dir)
         mc.read_bag()
-        gt_tl = read_gt_and_tl(bag_dir)
+        gt_tl = read_gt_and_tl(bag_dir, goal_id)
         feats = build_feats_from_mc(mc, gt_tl)
         series_by_trial.append(feats)
         for name, s in feats.items():
@@ -237,8 +261,75 @@ def find_trial_dirs(campaign, goal, trial=None):
     return sorted(glob.glob(os.path.join(base, pattern)))
 
 
+def draw_planned_zones(ax, map_data, campaign, goal_id, goal_xy, zones, tl_zones_for_goal, nominal_campaign):
+    """Overlay this campaign's PLANNED gating zones (same circles/injection
+    stars/fault-end markers plot_fault_plan.py draws — reused directly, not
+    reimplemented) onto an already-built map panel, so a trial's real
+    trajectory can be checked directly against where the fault was SUPPOSED
+    to arm. Silently draws nothing for campaigns plot_fault_plan.py doesn't
+    know about (e.g. nominal) — this is a bonus overlay, never fatal to the
+    impact plot itself.
+    """
+    zone_kind, _fault_label = CAMPAIGN_ZONE_KIND.get(campaign, (None, None))
+    if zone_kind is None or zone_kind == 'none':
+        return
+
+    bag_dir = find_first_bag(nominal_campaign, goal_id)
+    if bag_dir is None:
+        print(f'  {goal_id}: no {nominal_campaign} trial to reconstruct the planned route from '
+              f'— skipping zone overlay', file=sys.stderr)
+        return
+    route_ids = read_route_ids(bag_dir, goal_xy)
+    if route_ids is None:
+        print(f'  {goal_id}: no route message found in {nominal_campaign} bag — skipping zone overlay',
+              file=sys.stderr)
+        return
+    route_pts = build_route_polyline(map_data, route_ids)
+    resampled = resample_by_arc_length(route_pts, RESAMPLE_STEP_M)
+
+    if zone_kind == 'tl':
+        tl_zone_centers = [(z['x'], z['y']) for z in tl_zones_for_goal]
+        tl_reachable = [z.get('reachable', True) for z in tl_zones_for_goal]
+        tl_group_ids = [z['group_id'] for z in tl_zones_for_goal]
+        tl_injection_pts = [first_entry_point_on_route(resampled, c, _DEFAULT_TL_ZONE_RADIUS_M)
+                             for c in tl_zone_centers]
+        tl_zones_xyr = [(x, y, r) for (x, y), r in zip(tl_zone_centers, tl_reachable)]
+        draw_zones_with_reachability(ax, tl_zones_xyr, tl_injection_pts,
+                                      _DEFAULT_TL_ZONE_RADIUS_M, TL_COLOR,
+                                      f'planned TL zone (r={_DEFAULT_TL_ZONE_RADIUS_M:.0f}m)',
+                                      'planned')
+        for (x, y), gid, reachable in zip(tl_zone_centers, tl_group_ids, tl_reachable):
+            if reachable:
+                ax.annotate(str(gid), (x, y), textcoords='offset points', xytext=(6, 6), fontsize=6)
+
+    elif zone_kind == 'turn':
+        turn_pts = [(p['x'], p['y'], p.get('reachable', True)) for p in zones.get('turn_zones', [])]
+        turn_injection_pts = [first_entry_point_on_route(resampled, (x, y), _DEFAULT_IMU_TURN_ZONE_RADIUS_M)
+                               for x, y, _r in turn_pts]
+        draw_zones_with_reachability(ax, turn_pts, turn_injection_pts,
+                                      _DEFAULT_IMU_TURN_ZONE_RADIUS_M, TURN_COLOR,
+                                      f'planned IMU turn zone (r={_DEFAULT_IMU_TURN_ZONE_RADIUS_M:.0f}m)',
+                                      'planned')
+        # Real end point (2026-07-28 fix) — see plot_fault_plan.py's own
+        # turn_exit_pts comment for why this replaced the old "left the
+        # entry radius" derivation.
+        turn_end_pts_all = [((p['end_x'], p['end_y']) if 'end_x' in p else None)
+                             for p in zones.get('turn_zones', [])]
+        turn_exit_pts = [end_xy for (x, y, r), end_xy in zip(turn_pts, turn_end_pts_all) if r]
+        draw_fault_end_points(ax, turn_exit_pts, FAULT_END_COLOR, 'planned fault end (zone exit)')
+
+    elif zone_kind == 'leadin':
+        leadin_pts = [(p['x'], p['y'], p.get('reachable', True)) for p in zones.get('bias_leadin_zones', [])]
+        leadin_injection_pts = [first_entry_point_on_route(resampled, (x, y), _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M)
+                                 for x, y, _r in leadin_pts]
+        draw_zones_with_reachability(ax, leadin_pts, leadin_injection_pts,
+                                      _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M, LEADIN_COLOR,
+                                      f'planned IMU bias lead-in zone (r={_DEFAULT_IMU_LEADIN_ZONE_RADIUS_M:.0f}m)',
+                                      'planned')
+
+
 def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
-                nominal_series_by_trial, output_dir, margin):
+                nominal_series_by_trial, output_dir, margin, zones, tl_zones_for_goal, nominal_campaign):
     trial_name = os.path.basename(trial_dir)
     bag_dir = os.path.join(trial_dir, 'rosbag')
     result = json.load(open(os.path.join(trial_dir, 'result.json')))
@@ -246,7 +337,7 @@ def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
 
     mc = MetricsCollector(bag_dir)
     mc.read_bag()
-    gt_tl = read_gt_and_tl(bag_dir)
+    gt_tl = read_gt_and_tl(bag_dir, goal_id)
     gt = gt_tl['gt_positions']
     if not gt:
         print(f'  {trial_name}: no ground-truth points, skipping')
@@ -288,11 +379,11 @@ def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
                                   facecolor='#dddddd', edgecolor='#bbbbbb',
                                   linewidth=0.3, zorder=1))
 
-    tl_pts = traffic_light_points(map_data, xmin, xmax, ymin, ymax)
-    if tl_pts:
-        ax_map.scatter([p[0] for p in tl_pts], [p[1] for p in tl_pts],
-                        marker='s', color='#f1c40f', edgecolor='#333333',
-                        linewidth=0.5, s=30, zorder=2, label='traffic light')
+    # No raw all-lights scatter here (removed 2026-07-28) — draw_planned_zones
+    # below already renders one marker per TL zone (matching plot_fault_plan.py's
+    # convention), which is the relevant subset; every individual physical light
+    # in the bbox was cluttering the map with positions the fault never targets.
+    draw_planned_zones(ax_map, map_data, campaign, goal_id, goal_xy, zones, tl_zones_for_goal, nominal_campaign)
 
     ax_map.plot(xs, ys, color=TRAJ_COLOR, linewidth=1.5, alpha=0.6, zorder=3,
                 label='trajectory')
@@ -301,12 +392,13 @@ def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
     if fx:
         ax_map.scatter(fx, fy, color=FAULT_COLOR, s=10, zorder=4, label='fault active')
 
-    for i, tt in enumerate(triggers):
-        pos = nearest_gt_xy(tt, gt)
-        if pos:
-            ax_map.plot(*pos, marker='^', color=MRM_COLOR, markersize=10,
-                        markeredgecolor='black', markeredgewidth=0.7, zorder=6,
-                        label='MRM trigger' if i == 0 else None)
+    # MRM trigger markers deliberately NOT plotted (removed 2026-07-28) — live
+    # data showed the MRM state machine flaps NORMAL<->MRM_OPERATING dozens of
+    # times per trial even under nominal (unfaulted) driving, self-recovering
+    # in ~100ms each time (see docs/research_notes/ for the investigation).
+    # Plotting every blip implied a significance individual triggers don't
+    # have; deciding how to represent REAL sustained MRM engagement (vs. this
+    # noise) is deliberately deferred, not solved by omission.
 
     ax_map.plot(*SPAWN, marker='o', color=TRAJ_COLOR, markersize=8, zorder=5, label='start')
     ax_map.plot(*goal_xy, marker='*', color='black', markersize=13, zorder=5, label='goal')
@@ -326,8 +418,8 @@ def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
     def annotate(ax):
         for w in windows:
             ax.axvspan(w['start'], w['end'], color=FAULT_COLOR, alpha=0.15, zorder=0)
-        for tt in triggers:
-            ax.axvline(tt, color=MRM_COLOR, linestyle='--', linewidth=1.3, zorder=1)
+        # MRM trigger vertical lines deliberately not drawn — see the map
+        # panel's comment above.
         if stop_t is not None and result.get('status') != 'goal_reached':
             ax.axvline(stop_t, color='black', linestyle=':', linewidth=1.5, zorder=1)
 
@@ -383,7 +475,14 @@ def main():
     ap.add_argument('--map-file', default=DEFAULT_MAP_FILE)
     ap.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR)
     ap.add_argument('--margin', type=float, default=40.0)
+    ap.add_argument('--turn-zones-file', default=DEFAULT_TURN_ZONES_FILE)
+    ap.add_argument('--tl-zones-file', default=DEFAULT_TL_ZONES_FILE)
     args = ap.parse_args()
+
+    zones_data = json.load(open(args.turn_zones_file))
+    tl_zones_data = json.load(open(args.tl_zones_file))
+    zones = zones_data['goals'].get(args.goal, {})
+    tl_zones_for_goal = tl_zones_data['goals'].get(args.goal, {}).get('tl_zones', [])
 
     goals_file = args.goals_file
     if not os.path.isabs(goals_file):
@@ -411,7 +510,8 @@ def main():
 
     for trial_dir in trial_dirs:
         plot_trial(map_data, args.campaign, args.goal, goal_xy, trial_dir,
-                   nominal_stats, nominal_series_by_trial, args.output_dir, args.margin)
+                   nominal_stats, nominal_series_by_trial, args.output_dir, args.margin,
+                   zones, tl_zones_for_goal, args.nominal_campaign)
 
 
 if __name__ == '__main__':
