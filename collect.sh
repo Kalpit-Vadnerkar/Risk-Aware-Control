@@ -412,11 +412,33 @@ case "$CAMPAIGN" in
     # divergence and no stuck/collision outcome. If it ISN'T absorbed
     # cleanly, that itself is worth knowing (the boundary moved). Gated on
     # bias_leadin_zones like imu_fault_s3 (see that campaign's comment).
+    # on_seconds stays a real FIXED duration here (unlike imu_fault_scale/
+    # imu_fault_stuck below, whose on-window was switched 2026-07-28 to end
+    # on turn-zone exit instead) — deliberately, not an inconsistency.
+    # gyro_bias_rads is added unconditionally in _on_imu regardless of true
+    # rate, so a stationary vehicle waiting at a red light still integrates
+    # the full bias continuously; an open-ended on-window could accumulate
+    # heading error well past the 1.2 rad ceiling these magnitudes were
+    # calibrated against (see the removal comment above re: old S2 breaking
+    # localization within ~1s). Confirmed with the user before making this
+    # scale/stuck-only, not imu_bias-too.
+    # off_seconds reduced 30 -> 10 (2026-07-28): with on_seconds=20, a 30s
+    # recovery gap made the total on+off budget (50s) longer than real
+    # observed inter-zone transit times on some routes (as low as ~28-31s,
+    # goal_007 bias_leadin zone1->zone2) — the injector's zone-wait loop
+    # blocks through the whole off_seconds sleep with no zone polling during
+    # it (_imu_bias_loop), so a zone whose entire dwell window falls inside
+    # that sleep is silently skipped, not just delayed (confirmed: goal_007's
+    # middle injection point never armed in a real imu_fault_s3 trial,
+    # traced to exactly this). 10s keeps a real recovery gap while fitting
+    # under the tightest observed gap; doesn't guarantee every reachable
+    # zone fires every trial (routes with even tighter spacing can still
+    # skip one) — see docs/fault_scenario_table.md's note on this.
     imu_fault_s1)
-        echo -e "${BLUE}IMU constant-bias fault (S1, control condition): gyro 0.03 rad/s, 20s on / 30s off${NC}"
+        echo -e "${BLUE}IMU constant-bias fault (S1, control condition): gyro 0.03 rad/s, 20s on / 10s off${NC}"
         run imu_fault_s1 imu_fault_s1 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.03,"on_seconds":20,"off_seconds":30}'
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.03,"on_seconds":20,"off_seconds":10}'
         ;;
 
     # Added 2026-07-26 as S1's paired "above threshold" probe, replacing
@@ -437,11 +459,13 @@ case "$CAMPAIGN" in
     # constant bias, not turning itself) — S1 (0.03) is confirmed absorbed,
     # but whether 0.08 is cleanly ABOVE the boundary (vs. still marginal) is
     # this campaign's own open question, not a known fact going in.
+    # off_seconds reduced 30 -> 10 (2026-07-28) — see imu_fault_s1's comment
+    # above for the full reasoning (same shared _imu_bias_loop zone-skip bug).
     imu_fault_s3)
-        echo -e "${BLUE}IMU constant-bias fault (S3, above-threshold probe): gyro 0.08 rad/s, 15s on / 30s off${NC}"
+        echo -e "${BLUE}IMU constant-bias fault (S3, above-threshold probe): gyro 0.08 rad/s, 15s on / 10s off${NC}"
         run imu_fault_s3 imu_fault_s3 \
             --imu-fault imu_bias \
-            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.08,"on_seconds":15,"off_seconds":30}'
+            --imu-params '{"accel_bias_ms2":0.0,"gyro_bias_rads":0.08,"on_seconds":15,"off_seconds":10}'
         ;;
 
     # One-shot linear ramp: gyro bias grows 0 -> max_gyro_bias_rads at
@@ -485,11 +509,22 @@ case "$CAMPAIGN" in
     # like the old bias tiers, for clean reaction/recovery segments. Gated on
     # precomputed turn zones (fault_injector.py's _load_turn_zones,
     # 2026-07-26) — real turn locations per goal, not a live threshold guess.
+    # No on_seconds (removed 2026-07-28): the on-window now ends when the
+    # vehicle exits the turn zone, not after a fixed duration — a fixed
+    # duration could expire while stopped at a red light inside the zone,
+    # switching the fault off before the vehicle ever actually turned once
+    # the light went green. Safe to do here specifically because this
+    # fault's error is proportional to true yaw rate (~0 while stopped);
+    # NOT done the same way for imu_bias below (see its own comment).
+    # off_seconds reduced 30 -> 10 (2026-07-28) — same shared _imu_bias_loop
+    # zone-skip bug as imu_fault_s1/s3 (see that comment above); applies here
+    # too since the on-window is now zone-exit-ended but the off-window is
+    # still a blocking sleep with no zone polling during it.
     imu_fault_scale)
-        echo -e "${BLUE}IMU scale-factor fault: gyro x1.8, 20s on / 30s off${NC}"
+        echo -e "${BLUE}IMU scale-factor fault: gyro x1.8, on until turn-zone exit / 10s off${NC}"
         run imu_fault_scale imu_fault_scale \
             --imu-fault imu_scale_factor \
-            --imu-params '{"gyro_scale_factor":1.8,"on_seconds":20,"off_seconds":30}'
+            --imu-params '{"gyro_scale_factor":1.8,"off_seconds":10}'
         ;;
 
     # Frozen sensor: angular_velocity.z held at whatever it read the instant
@@ -498,12 +533,17 @@ case "$CAMPAIGN" in
     # tracks whatever the vehicle actually does, not a constant), and almost
     # certain to blow through the Mahalanobis gate the moment the vehicle
     # actually turns — same "definite, unambiguous ground-truth event" spirit
-    # as tl_blackout. Same precomputed turn-zone gating as imu_fault_scale.
+    # as tl_blackout. Same precomputed turn-zone gating AND zone-exit-ended
+    # on-window as imu_fault_scale above (no on_seconds, removed 2026-07-28,
+    # same reasoning) — frozen value can't accumulate error from elapsed
+    # stopped time the way imu_bias's additive offset can, so this is safe.
+    # off_seconds reduced 30 -> 10 (2026-07-28) — see imu_fault_s1's comment
+    # above for the full reasoning (same shared _imu_bias_loop zone-skip bug).
     imu_fault_stuck)
-        echo -e "${BLUE}IMU stuck-at fault: gyro frozen at activation value, 20s on / 30s off${NC}"
+        echo -e "${BLUE}IMU stuck-at fault: gyro frozen at activation value, on until turn-zone exit / 10s off${NC}"
         run imu_fault_stuck imu_fault_stuck \
             --imu-fault imu_stuck_at \
-            --imu-params '{"on_seconds":20,"off_seconds":30}'
+            --imu-params '{"off_seconds":10}'
         ;;
 
     *)
