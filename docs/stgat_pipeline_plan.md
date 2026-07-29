@@ -1,6 +1,10 @@
 # ST-GAT Pipeline Plan
 
-**Last Updated:** 2026-07-26 — first draft, written before any implementation.
+**Last Updated:** 2026-07-28 — added §1.10 and Stage 0 notes on entity-collapsing
+features, compute budget, and topic time-sync, from a real bug found live in
+this repo's own fault-comparison analysis code (not just the reference repo).
+
+**Originally drafted:** 2026-07-26 — first draft, written before any implementation.
 Not started yet: fault-campaign data collection (see `TODO.md`) is still being
 finalized. This is a planning document to be discussed and revised, not a
 committed design.
@@ -153,6 +157,32 @@ disabled floor on the *training* loss). Reuse the formula, not the
 surrounding plumbing (ensemble loading via bare `os.listdir` with no
 extension filter is a minor robustness gap).
 
+**1.10 — Hand-engineered feature collapse hid a real, confirmed-present fault
+signature (found live in this repo's own analysis code, 2026-07-28, not the
+reference repo).** `compare_fault_vs_nominal.py`'s original TL feature
+computation pooled elements across *every* currently-tracked
+`traffic_light_group` in a message (2-6 at once, whatever's in the planning
+lookahead) into one mean-confidence / max-confidence-color scalar. A TL fault
+only ever mutates the ONE `group_id` the vehicle's route is actually governed
+by right now — for `tl_fault_s4` (total blackout of that one light), the
+corrupted group's empty/zero-confidence elements were simply outvoted by
+whichever *other*, unfaulted group in the same message had higher confidence.
+Confirmed at the raw signal level that the fault was real and total (in-fault
+detection rate for the targeted group: 0.06%) — the pooled feature nonetheless
+showed 0/6 features discriminable. Fixed by scoping extraction to the one
+`group_id` nearest the vehicle's current position (same selection
+`fault_injector.py` itself uses to target a fault), replicated per-message,
+not computed once and reused.
+
+**Lesson, generalized beyond TL:** a feature-engineering step that collapses
+across entities (multiple tracked objects, multiple traffic-light groups,
+multiple lanelets in view) before the model or detector ever sees the data can
+make a real, present fault signature statistically invisible — not because the
+fault has no signature, but because the collapse discarded *which entity* the
+signal belonged to before anything downstream had a chance to use it. This is
+now a standing risk to check for explicitly in Stage 0 below, not just a
+TL-specific bug that got fixed once.
+
 ---
 
 ## 2. Pipeline plan, stage by stage
@@ -171,6 +201,38 @@ extension filter is a minor robustness gap).
   about *moment-of-divergence* detection, lean toward per-timestep or at
   least per-short-subwindow — re-litigate the reference repo's choice, don't
   inherit it by default.
+- **No entity-collapsing features (§1.10).** State per relevant entity (the
+  TL group(s) actually governing the vehicle's current lanelet, tracked
+  objects individually, not a scene-wide min/mean) rather than pre-reducing
+  across entities into one scalar before the model sees it — a graph model
+  exists specifically so the *architecture* can learn what to attend to
+  across entities; don't let a preprocessing step make that decision first
+  and silently. This doesn't mean "feed raw topic bytes" — the map-grounded
+  prior is itself structural (which `group_id` governs this lanelet, HD map
+  connectivity), and the graph's node/edge structure should carry that, not
+  discard it. The distinction that matters: don't collapse *which entity* a
+  signal belongs to; do keep the structural/categorical context (map graph,
+  entity identity) the negative-evidence mechanism depends on.
+- **Compute budget is a real constraint, not an afterthought.** The lead-time
+  claim (§ Stage 6, `docs/theoretical_framework.md`) is only meaningful if the
+  state representation can be computed fast enough to matter for an online
+  detector, not just a post-hoc analysis script — a feature step that's fine
+  for offline discriminability ranking (this repo's current
+  `compare_fault_vs_nominal.py`) may be too slow (e.g. per-message map
+  queries against the full lanelet graph) for anything resembling real-time.
+  Worth timing the Stage 0 feature computation itself once it exists, against
+  whatever cadence the model needs, before assuming it scales.
+- **Time-sync across topics, explicitly, before windowing.** Input topics
+  publish at different, independent rates (GT/IMU near sensor rate,
+  perception/planning slower, TL recognition slower still) and aren't
+  guaranteed in-phase with each other. Decide and document the
+  resampling/alignment strategy (nearest-neighbor snap onto a fixed grid, as
+  `compare_fault_vs_nominal.py`'s `resample()` currently does for offline
+  analysis, vs. proper interpolation) rather than letting whatever a naive
+  per-topic loop produces define window boundaries by accident — a jittery
+  or inconsistently-phased alignment corrupts exactly the temporal structure
+  the "ST" in ST-GAT, and the time-horizon/lead-time claim built on it,
+  depend on.
 
 ### Stage 1 — Dataset construction
 - Split at the **trial level** before any windowing happens — whole driving

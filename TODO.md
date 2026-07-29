@@ -364,6 +364,15 @@ Work goes in `st_gat/` within this repo.
 
 ### 1.1 Data Extraction
 
+- [ ] **Feature list below is stale — re-derive against
+      `docs/stgat_pipeline_plan.md` Stage 0 / §1.10 before writing
+      `extract.py`.** `traffic_light(1)` as a single scalar is exactly the
+      entity-collapsing pattern §1.10 found hiding a real fault signature
+      live in this repo's own analysis code (2026-07-28) — state per
+      relevant TL group, not one scene-wide value. Also decide the
+      cross-topic time-sync strategy (Stage 0) before this script's window
+      boundaries get defined implicitly by whatever a naive per-topic loop
+      produces.
 - [ ] Write `st_gat/extract.py`: reads rosbag files from `experiments/data/baseline_all/`
       and `nom_v11/`, extracts per-timestep features:
       position(2), velocity(2), steering(1), accel(1), obj_distance(1), traffic_light(1)
