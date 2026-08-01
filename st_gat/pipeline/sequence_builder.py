@@ -16,20 +16,25 @@ The output sequence format is identical to the reference:
         'graph_bounds': [x_min, x_max, y_min, y_max],
     }
 
-Each processed_timestep (14 features + objects):
+Each processed_timestep (12 flat features + object set):
     {
         'position':                 [scaled_x, scaled_y],
         'velocity':                 [scaled_vx, scaled_vy],
         'steering':                 float,
         'acceleration':             float,
-        'object_distance':          float,
         'traffic_light_detected':   0 or 1,   # graph node: upcoming lane has TL (map)
         'traffic_light_state':      float,    # perceived color × confidence [0, 1]
         'traffic_light_discrepancy': 0 or 1,  # map expects a TL, perception found none
-        'closest_object_velocity':  float,    # |velocity| nearest object, scaled
         'has_adjacent_lane':        0.0/1.0,  # lanelet2 routing graph adjacency
         'uncertainty':              [scaled_x_var, scaled_y_var],
-        'objects':                  [...],    # scaled, kept for compatibility
+        'objects_set':              (K, OBJECT_FEATURE_DIM) array, per-object
+                                     [rel_x, rel_y, speed, *class_onehot] — NOT
+                                     collapsed to a nearest-object scalar (see
+                                     docs/stgat_pipeline_plan.md Stage 0's
+                                     entity-collapse warning; model.py's
+                                     ObjectSetEncoder does the pooling, not
+                                     this preprocessing step).
+        'objects_mask':             (K,) array, 1.0 for real objects, 0.0 padding.
     }
 """
 
@@ -37,6 +42,8 @@ import sys
 import os
 import math
 from typing import List, Tuple, Optional
+
+import numpy as np
 
 from .Data_Curator.Point import Point
 from .State_Estimator.GraphBuilder import GraphBuilder
@@ -126,34 +133,60 @@ def _scale_position(point: Point, x_min, x_max, y_min, y_max) -> List[float]:
     ]
 
 
-def _scale_object(obj_dict: dict, x_min, x_max, y_min, y_max) -> dict:
-    # Raw bag-frame position, NOT run through Point.convert_coordinate_frame
-    # (see _process_frame's comment on the same fix — that conversion target
-    # frame is incompatible with this pipeline's graph/map frame).
-    pos = Point(obj_dict['position']['x'], obj_dict['position']['y'])
-    return {
-        'position': _scale_position(pos, x_min, x_max, y_min, y_max),
-        'velocity': [
-            _clamp01((obj_dict['velocity']['x'] - cfg.VELOCITY_X_RANGE[0]) /
-                     (cfg.VELOCITY_X_RANGE[1] - cfg.VELOCITY_X_RANGE[0])),
-            _clamp01((obj_dict['velocity']['y'] - cfg.VELOCITY_Y_RANGE[0]) /
-                     (cfg.VELOCITY_Y_RANGE[1] - cfg.VELOCITY_Y_RANGE[0])),
-        ],
-        'classification': obj_dict['classification'],
-    }
+def _object_class_onehot(label: int) -> List[float]:
+    group = cfg.OBJECT_CLASS_GROUP.get(label, cfg.OBJECT_CLASS_GROUPS - 1)
+    onehot = [0.0] * cfg.OBJECT_CLASS_GROUPS
+    onehot[group] = 1.0
+    return onehot
 
 
-def _closest_object_distance(ego_pos_scaled, objects_scaled) -> float:
-    if not objects_scaled:
-        return 1.0
-    min_d = float('inf')
-    for obj in objects_scaled:
-        op = obj.get('position', [])
-        if len(op) >= 2:
-            d = math.sqrt((ego_pos_scaled[0] - op[0])**2 + (ego_pos_scaled[1] - op[1])**2)
-            if d < min_d:
-                min_d = d
-    return min_d if min_d != float('inf') else 1.0
+def _build_object_set(ego_pos_raw: dict, objects_raw: list) -> Tuple['np.ndarray', 'np.ndarray']:
+    """
+    Per-object feature set for this timestep, NOT collapsed to a
+    nearest-object scalar (see docs/stgat_pipeline_plan.md Stage 0's
+    entity-collapse warning — the same pattern already found and fixed once
+    for traffic lights, §1.11). Padded/masked to cfg.MAX_TRACKED_OBJECTS so
+    every timestep has a fixed-shape (K, F) tensor regardless of how many
+    objects are actually tracked; model.py's ObjectSetEncoder (a
+    permutation-invariant pooling layer) decides what to attend to across
+    them, not this preprocessing step.
+
+    Per-object features (OBJECT_FEATURE_DIM-dim): relative position (dx, dy —
+    both already in the same bag/map frame as ego, no transform needed, see
+    _process_frame's coordinate-frame fix), speed (frame-invariant magnitude
+    — deliberately NOT an ego-relative velocity vector, since TrackedObjects'
+    twist frame and VelocityReport's longitudinal/lateral frame aren't
+    confirmed to match, and silently getting that subtraction wrong would
+    repeat this session's position-frame bug in a new, harder-to-notice
+    place), and a 4-way classification one-hot (vehicle / vulnerable road
+    user / unknown / other).
+
+    Objects beyond K are dropped by distance (nearest K kept) — this bounds
+    the tensor size, it does not collapse the K that remain into one value.
+    """
+    ex, ey = ego_pos_raw['x'], ego_pos_raw['y']
+    k = cfg.MAX_TRACKED_OBJECTS
+    feats = np.zeros((k, cfg.OBJECT_FEATURE_DIM), dtype=np.float32)
+    mask  = np.zeros((k,), dtype=np.float32)
+
+    with_dist = sorted(
+        objects_raw,
+        key=lambda o: (o['position']['x'] - ex) ** 2 + (o['position']['y'] - ey) ** 2,
+    )[:k]
+
+    rx_min, rx_max = cfg.OBJECT_REL_POS_RANGE
+    sp_min, sp_max = cfg.OBJECT_SPEED_RANGE
+    for i, o in enumerate(with_dist):
+        dx = o['position']['x'] - ex
+        dy = o['position']['y'] - ey
+        speed = math.hypot(o['velocity']['x'], o['velocity']['y'])
+        feats[i, 0] = _clamp01((dx - rx_min) / (rx_max - rx_min))
+        feats[i, 1] = _clamp01((dy - rx_min) / (rx_max - rx_min))
+        feats[i, 2] = _clamp01((speed - sp_min) / (sp_max - sp_min))
+        feats[i, 3:3 + cfg.OBJECT_CLASS_GROUPS] = _object_class_onehot(o['classification'])
+        mask[i] = 1.0
+
+    return feats, mask
 
 
 # color from bag_reader: 1=RED, 2=AMBER, 3=GREEN
@@ -181,19 +214,6 @@ def _traffic_light_discrepancy(detected: int, traffic_lights: list) -> int:
     traffic_light_detected and traffic_light_state alone — this makes it a
     first-class, directly observable feature instead."""
     return int(detected == 1 and not traffic_lights)
-
-
-def _closest_object_velocity(ego_pos_raw: dict, objects_raw: list) -> float:
-    """Scaled |longitudinal velocity| of the nearest tracked object."""
-    if not objects_raw:
-        return 0.0
-    ex, ey = ego_pos_raw['x'], ego_pos_raw['y']
-    nearest = min(
-        objects_raw,
-        key=lambda o: (o['position']['x'] - ex)**2 + (o['position']['y'] - ey)**2,
-    )
-    vx_min, vx_max = cfg.VELOCITY_X_RANGE
-    return _clamp01((abs(nearest['velocity']['x']) - vx_min) / (vx_max - vx_min))
 
 
 def _traffic_light_detected(G, ego_pos_scaled) -> int:
@@ -295,24 +315,23 @@ def _process_frame(
     ego_point = Point(ego['position']['x'], ego['position']['y'])
     ego_pos_scaled = _scale_position(ego_point, x_min, x_max, y_min, y_max)
 
-    objects_scaled = [_scale_object(o, x_min, x_max, y_min, y_max) for o in frame['objects']]
     unc = ego['position_uncertainty']
     tl_list      = frame.get('traffic_lights', [])
     tl_detected  = _traffic_light_detected(G, ego_pos_scaled)
+    obj_feats, obj_mask = _build_object_set(ego['position'], frame['objects'])
 
     return {
         'position':                 ego_pos_scaled,
         'velocity':                 _scale_velocity(ego['velocity']),
         'steering':                 _scale_steering(ego['steering']),
         'acceleration':             _scale_acceleration(ego['acceleration']),
-        'object_distance':          _closest_object_distance(ego_pos_scaled, objects_scaled),
         'traffic_light_detected':   tl_detected,
         'traffic_light_state':      _traffic_light_state(tl_list),
         'traffic_light_discrepancy': _traffic_light_discrepancy(tl_detected, tl_list),
-        'closest_object_velocity':  _closest_object_velocity(ego['position'], frame['objects']),
         'has_adjacent_lane':        adj_checker.query(ego_point.x, ego_point.y) if adj_checker else 0.0,
         'uncertainty':              _scale_uncertainty(unc['x_var'], unc['y_var']),
-        'objects':                  objects_scaled,
+        'objects_set':              obj_feats,
+        'objects_mask':             obj_mask,
     }
 
 

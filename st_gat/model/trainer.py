@@ -197,7 +197,7 @@ class Trainer:
             # Periodic per-feature breakdown
             if epoch % self.log_every == 0 or epoch == 1:
                 keys = ['position_loss', 'velocity_loss', 'steering_loss',
-                        'acceleration_loss', 'object_distance_loss', 'traffic_light_loss',
+                        'acceleration_loss', 'traffic_light_loss',
                         'traffic_light_state_loss', 'traffic_light_discrepancy_loss']
                 breakdown = '  '.join(
                     f"{k.replace('_loss','')[:5]}={val_losses.get(k, 0):.3f}"

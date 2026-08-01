@@ -8,9 +8,15 @@ Changes from the T-ITS reference:
     physically present in the prediction, not just a loss clamp.
   - Variance regularisation weight lowered from 0.01 to 0.001 — avoids
     pushing variance artificially high and conflicting with the NLL objective.
-  - object_distance and traffic_light have their own loss weights so you can
-    down-weight them without touching position/velocity.
+  - Each traffic-light channel has its own loss weight so you can down-weight
+    them without touching position/velocity.
   - Added total_nll and total_bce sub-totals for easier tensorboard logging.
+  - object_distance's MSE term removed 2026-08-02 — that feature (and
+    closest_object_velocity) collapsed every tracked object to a "nearest
+    object" heuristic; replaced by objects_set/objects_mask, an input-only
+    per-object representation with no output head (see model.py's
+    ObjectSetEncoder and docs/theoretical_framework.md §3.1 on why objects
+    don't get a negative-evidence residual the way traffic lights do).
 """
 
 import torch
@@ -24,7 +30,6 @@ DEFAULT_WEIGHTS = {
     'velocity':               0.8,
     'steering':               0.5,
     'acceleration':           0.5,
-    'object_distance':        0.3,   # sigmoid output — MSE loss
     'traffic_light_detected': 0.2,   # sigmoid output — BCE loss (map channel)
     # Added 2026-08-01 (docs/stgat_pipeline_plan.md §1.12) — the
     # perception-report channel this dissertation's negative-evidence
@@ -39,8 +44,9 @@ VAR_REG_WEIGHT = 0.001   # prevents variance from collapsing to the floor
 
 class CombinedLoss(nn.Module):
     """
-    Gaussian NLL for continuous outputs (position, velocity, steering, acceleration)
-    + MSE for object_distance + BCE for traffic_light_detected.
+    Gaussian NLL for continuous outputs (position, velocity, steering,
+    acceleration, traffic_light_state) + BCE for the two binary
+    traffic-light outputs (traffic_light_detected, traffic_light_discrepancy).
 
     All variances must already have VAR_FLOOR added (as in model.py).
     """
@@ -82,16 +88,6 @@ class CombinedLoss(nn.Module):
             nll_sum  = nll_sum  + nll * w
 
         losses['total_nll'] = nll_sum.item()
-
-        # ── MSE output: object_distance ──────────────────────────────────────
-        if 'object_distance' in pred and 'object_distance' in target:
-            tgt = target['object_distance']
-            if tgt.dim() == 3:
-                tgt = tgt.squeeze(-1)
-            mse = F.mse_loss(pred['object_distance'], tgt)
-            w   = self.weights.get('object_distance', 0.3)
-            losses['object_distance_loss'] = (mse * w).item()
-            total = total + mse * w
 
         # ── BCE output: traffic_light_detected ───────────────────────────────
         if 'traffic_light_detected' in pred and 'traffic_light_detected' in target:

@@ -28,21 +28,16 @@ UNCERTAINTY FEATURES (new vs T-ITS paper)
 
 FEATURE VECTOR (per timestep, 10 Hz)
 ──────────────────────────────────────
-  Original 6 features (T-ITS):
+  Flat/scalar features (FEATURE_SIZES, concatenated directly — 12 dims):
     position (2): scaled x, y
     velocity (2): longitudinal, lateral
     steering (1): actual tire angle  [/vehicle/status/steering_status]
     acceleration (1): commanded accel [/control/command/control_cmd]
-    object_distance (1): distance to nearest tracked object
-    traffic_light_detected (1): 1 if upcoming lane node has traffic light
-  New 5 features (RISE):
+    traffic_light_detected (1): 1 if upcoming lane node has traffic light (map channel)
     position_uncertainty (2): x_var, y_var from EKF covariance
     traffic_light_state (1): perceived color × confidence [0=none/UNKNOWN,
       0.33=green, 0.67=amber, 1.0=red, scaled down toward 0 as confidence drops]
-    closest_object_velocity (1): |velocity| of nearest tracked object, scaled
     has_adjacent_lane (1): 1 if lanelet2 routing graph has adjacent lane (HD map)
-  1 more feature (fault-analysis-driven, added 2026-07-23 — see
-  docs/research_notes/periodic_fault_strategy.md §6/7 and README.md item 8):
     traffic_light_discrepancy (1): 1 if traffic_light_detected==1 (map expects
       a TL here) but perception found nothing usable — blackout, all-UNKNOWN,
       or any other detection failure, regardless of which. Added because the
@@ -54,10 +49,22 @@ FEATURE VECTOR (per timestep, 10 Hz)
       itself to fold in confidence (previously color-only, so a confidence-
       degradation fault like tl_confidence was invisible to it entirely even
       though color stayed correct).
-  Total: 14 features per timestep — CHANGED 2026-07-23 (was 13). This
-  invalidates `st_gat/checkpoints/best_model.pth` / `st_gat/models/st_gat_rise.pth`
-  (different input dimensionality) — retrain before trusting either checkpoint
-  against new extractions.
+
+  Object detection (objects_set/objects_mask, NOT part of FEATURE_SIZES —
+  handled separately in model.py via a permutation-invariant set encoder,
+  added 2026-08-02, replacing the old object_distance/closest_object_velocity
+  scalars that collapsed every tracked object to one "nearest object"
+  heuristic before the model ever saw the data): up to MAX_TRACKED_OBJECTS
+  objects, each OBJECT_FEATURE_DIM-dim (relative position, speed, a 4-way
+  classification group), padded/masked. Input-only — no output head, since
+  objects don't have a hard map-grounded prior the way traffic lights do
+  (docs/theoretical_framework.md §3.1).
+
+  Total flat dims: 12 (was 14 before object_distance/closest_object_velocity
+  were removed 2026-08-02) + the object-set tensor. This, and the position-
+  feature coordinate-frame fix from the same session, both invalidate every
+  checkpoint/extracted sequence from before 2026-08-02 — retrain against a
+  fresh extraction.
 
 SYNCHRONIZATION
 ───────────────
@@ -185,6 +192,39 @@ ACCEL_RANGE        = (-1.0,   1.0)   # m/s²
 UNCERTAINTY_SCALE  = 30.0    # multiply m² values
 UNCERTAINTY_CAP    = 0.5     # cap before scaling (m²)
 
+# ── Object detection set representation (added 2026-08-02) ─────────────────
+# Replaces the old object_distance/closest_object_velocity scalars, which
+# collapsed every tracked object to a single "nearest object" heuristic
+# BEFORE the model ever saw the data — exactly the entity-collapse pattern
+# docs/stgat_pipeline_plan.md's Stage 0 warns against (already found and
+# fixed once for traffic lights, §1.11). Each tracked object is now its own
+# feature vector; a permutation-invariant set encoder in model.py (not this
+# preprocessing step) learns what to attend to across them. Input-only —
+# no output head/residual on this representation (objects don't have a
+# hard map-grounded prior the way traffic lights do — see
+# docs/theoretical_framework.md §3.1 — so there's no negative-evidence
+# argument for scoring a prediction against it, only for conditioning on it).
+MAX_TRACKED_OBJECTS = 8      # K: objects beyond this (by distance) are dropped, not collapsed
+OBJECT_REL_POS_RANGE  = (-50.0, 50.0)   # m, object position relative to ego (dx, dy)
+OBJECT_SPEED_RANGE    = (0.0, 20.0)     # m/s, object speed magnitude (frame-invariant —
+                                         # deliberately NOT an ego-relative velocity vector;
+                                         # TrackedObjects' twist frame vs. VelocityReport's
+                                         # longitudinal/lateral frame isn't confirmed to
+                                         # match, and getting that subtraction wrong
+                                         # silently would repeat this session's position-
+                                         # frame bug in a new, harder-to-notice place)
+# Autoware's ObjectClassification label -> a coarse 4-way group (avoids either
+# collapsing all classes to one, or a full 12-way one-hot for classes this
+# sim rarely produces). 0=unknown, 1=vehicle, 2=vulnerable road user, 3=other.
+OBJECT_CLASS_GROUP = {
+    0: 0,                    # UNKNOWN
+    1: 1, 2: 1, 3: 1, 4: 1,  # CAR, TRUCK, BUS, TRAILER -> vehicle
+    5: 2, 6: 2, 7: 2,        # MOTORCYCLE, BICYCLE, PEDESTRIAN -> vulnerable road user
+    # 8 (ANIMAL), 9 (HAZARD), 10 (OVER_DRIVABLE), 11 (UNDER_DRIVABLE) -> other (default)
+}
+OBJECT_CLASS_GROUPS = 4
+OBJECT_FEATURE_DIM = 2 + 1 + OBJECT_CLASS_GROUPS   # rel_x, rel_y, speed, class one-hot
+
 # ── Graph parameters (unchanged from T-ITS paper) ─────────────────────────
 
 NODE_FEATURES          = 4       # x, y, traffic_light_node, path_node
@@ -228,16 +268,18 @@ CHECKPOINT_DIR = os.path.join(REPO_ROOT, 'st_gat', 'checkpoints', HORIZON_TAG)
 
 # ── Model config (input feature sizes — updated for uncertainty) ───────────
 
+# object_distance/closest_object_velocity removed 2026-08-02 — replaced by
+# the per-object set representation (objects_set/objects_mask, handled
+# separately in model.py's forward(), not part of this flat-concat dict —
+# see OBJECT_FEATURE_DIM/MAX_TRACKED_OBJECTS above).
 FEATURE_SIZES = {
     'position':                 2,   # scaled x, y
     'velocity':                 2,   # longitudinal, lateral
     'steering':                 1,
     'acceleration':             1,
-    'object_distance':          1,
     'traffic_light_detected':   1,   # graph node: upcoming lane has traffic light (map)
     'traffic_light_state':      1,   # perception: most restrictive color × confidence
     'traffic_light_discrepancy': 1,  # map expects a TL, perception found none (added 2026-07-23)
-    'closest_object_velocity':  1,   # |velocity| of nearest tracked object
     'has_adjacent_lane':        1,   # lanelet2 routing graph: adjacent lane exists
     'uncertainty':              2,   # EKF x_var, y_var
 }
@@ -245,6 +287,8 @@ FEATURE_SIZES = {
 MODEL_CONFIG = {
     'graph_sizes':   {'node_features': NODE_FEATURES, 'number_of_nodes': MAX_GRAPH_NODES},
     'feature_sizes': FEATURE_SIZES,
+    'object_feature_dim':    OBJECT_FEATURE_DIM,
+    'max_tracked_objects':   MAX_TRACKED_OBJECTS,
     'num_epochs':    200,
     'batch_size':    128,
     'hidden_size':   256,

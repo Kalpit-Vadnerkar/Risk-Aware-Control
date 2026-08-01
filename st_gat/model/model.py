@@ -75,6 +75,49 @@ class GraphEncoder(nn.Module):
         return torch.stack(ctx_list)          # (B, d_g)
 
 
+# ── Object set encoder ──────────────────────────────────────────────────────
+
+class ObjectSetEncoder(nn.Module):
+    """
+    Permutation-invariant, per-timestep encoder over up to K tracked objects
+    (added 2026-08-02, replacing the old object_distance/closest_object_velocity
+    scalars). Those scalars collapsed every tracked object to a single
+    "nearest object" heuristic BEFORE the model ever saw the data — exactly
+    the entity-collapse pattern docs/stgat_pipeline_plan.md's Stage 0 warns
+    against (already found and fixed once for traffic lights, §1.11). Here,
+    each object keeps its own feature vector; a masked mean-pool over a
+    per-object embedding (DeepSets-style) lets the pooling itself be learned
+    rather than hand-picked, and the mask means padding slots (fewer than K
+    objects tracked) contribute nothing.
+
+    Objects are inherently per-timestep (they move within a window,
+    independent of whatever cadence the map-node graph uses — see
+    docs/theoretical_framework.md §4's discussion of graph cadence), so this
+    runs once per timestep, not once per window like GraphEncoder.
+    """
+
+    def __init__(self, obj_feat_dim: int, d_obj: int = 32, dropout: float = 0.1):
+        super().__init__()
+        self.embed = nn.Sequential(
+            nn.Linear(obj_feat_dim, d_obj),
+            nn.GELU(),
+            nn.LayerNorm(d_obj),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, objects: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        objects: (B, T, K, F)   mask: (B, T, K) — 1.0 for real objects, 0.0 padding.
+        returns: (B, T, d_obj) — masked mean-pooled object context per timestep.
+        """
+        B, T, K, Fdim = objects.shape
+        h = self.embed(objects.view(B * T * K, Fdim)).view(B, T, K, -1)
+        mask_f  = mask.unsqueeze(-1)                          # (B, T, K, 1)
+        summed  = (h * mask_f).sum(dim=2)                     # (B, T, d_obj)
+        counts  = mask_f.sum(dim=2).clamp(min=1.0)             # (B, T, 1) — avoid /0 when no objects
+        return summed / counts
+
+
 # ── Main model ─────────────────────────────────────────────────────────────
 
 class STGAT(nn.Module):
@@ -83,28 +126,35 @@ class STGAT(nn.Module):
 
     Input dict keys expected in `x`:
         position (B, T, 2), velocity (B, T, 2), steering (B, T, 1),
-        acceleration (B, T, 1), object_distance (B, T, 1),
-        traffic_light_detected (B, T, 1), uncertainty (B, T, 2)
+        acceleration (B, T, 1), traffic_light_detected (B, T, 1),
+        uncertainty (B, T, 2), objects_set (B, T, K, OBJECT_FEATURE_DIM),
+        objects_mask (B, T, K)
 
     Output dict:
         position_mean/var  (B, T_out, 2)
         velocity_mean/var  (B, T_out, 2)
         steering_mean/var  (B, T_out)
         acceleration_mean/var (B, T_out)
-        object_distance    (B, T_out)    — sigmoid-bounded
         traffic_light_detected (B, T_out) — sigmoid-bounded (map fact — the
             route/HD-map expectation channel; not actually uncertain, kept as
             a head mainly for parity with the reference architecture)
         traffic_light_state_mean/var (B, T_out) — Gaussian (added 2026-08-01,
             docs/stgat_pipeline_plan.md §1.12): the perception-report channel
-            (color x confidence). A Gaussian head, not a deterministic sigmoid
-            like object_distance, so the predicted variance can itself widen
-            under a camera/TL fault — this is what makes the negative-evidence
-            divergence between the map channel and this channel computable at
-            all; previously neither traffic_light_state nor
+            (color x confidence). A Gaussian head, not a deterministic sigmoid,
+            so the predicted variance can itself widen under a camera/TL
+            fault — this is what makes the negative-evidence divergence
+            between the map channel and this channel computable at all;
+            previously neither traffic_light_state nor
             traffic_light_discrepancy had any output head.
         traffic_light_discrepancy (B, T_out) — sigmoid-bounded (added
             2026-08-01): binary map-vs-perception mismatch flag, BCE loss.
+
+    No output head for objects_set/objects_mask (added 2026-08-02) — input-
+    only context via ObjectSetEncoder. Objects don't have a hard map-grounded
+    prior the way traffic lights do (docs/theoretical_framework.md §3.1), so
+    there's no negative-evidence argument for scoring a prediction against
+    them, only for conditioning on them. Also no head for object_distance/
+    closest_object_velocity — removed 2026-08-02, replaced by the object set.
     """
 
     def __init__(self, config: dict):
@@ -120,10 +170,20 @@ class STGAT(nn.Module):
         dropout   = config.get('dropout_rate', 0.15)
         nhead     = config.get('nhead', 4)
         node_fdim = config['graph_sizes']['node_features']
+        d_obj     = config.get('d_object', 32)
 
-        F_total = sum(config['feature_sizes'].values())   # 14 with RISE features + discrepancy
+        # 12 flat scalar/vector features (position/velocity/steering/accel/
+        # TL channels/has_adjacent_lane/uncertainty) + d_obj from the object
+        # set encoder (added 2026-08-02, replacing the old object_distance/
+        # closest_object_velocity scalars — see ObjectSetEncoder above).
+        F_total = sum(config['feature_sizes'].values()) + d_obj
 
         self.feature_keys = list(config['feature_sizes'].keys())
+
+        # ── Object set branch ────────────────────────────────────────────────
+        self.object_encoder = ObjectSetEncoder(
+            config['object_feature_dim'], d_obj=d_obj, dropout=dropout,
+        )
 
         # ── Graph branch ────────────────────────────────────────────────────
         self.graph_encoder = GraphEncoder(node_fdim, d_g, dropout)
@@ -169,7 +229,6 @@ class STGAT(nn.Module):
         self.head_velocity    = nn.Linear(d_h, 4  * self.T_out)
         self.head_steering    = nn.Linear(d_h, 2  * self.T_out)   # mean(1) + var(1)
         self.head_accel       = nn.Linear(d_h, 2  * self.T_out)
-        self.head_obj_dist    = nn.Linear(d_h, self.T_out)
         self.head_traffic     = nn.Linear(d_h, self.T_out)
         # Added 2026-08-01 (docs/stgat_pipeline_plan.md §1.12) — the
         # perception-report channel previously had no output head at all.
@@ -202,6 +261,12 @@ class STGAT(nn.Module):
             if t.dim() == 2:
                 t = t.unsqueeze(-1)
             parts.append(t)
+
+        # Object set context — per-timestep (see ObjectSetEncoder docstring
+        # on why this isn't pooled once per window like graph_ctx below).
+        obj_ctx = self.object_encoder(x['objects_set'], x['objects_mask'])   # (B, T, d_obj)
+        parts.append(obj_ctx)
+
         x_cat = torch.cat(parts, dim=-1)   # (B, T, F_total)
 
         # ── 2. Input normalisation ───────────────────────────────────────────
@@ -232,7 +297,6 @@ class STGAT(nn.Module):
         vel   = self.head_velocity(h_last).view(B, T_o, 4)
         steer = self.head_steering(h_last).view(B, T_o, 2)
         accel = self.head_accel(h_last).view(B, T_o, 2)
-        obj   = self.head_obj_dist(h_last).view(B, T_o)
         tl    = self.head_traffic(h_last).view(B, T_o)
         tl_state = self.head_tl_state(h_last).view(B, T_o, 2)
         tl_disc  = self.head_tl_discrepancy(h_last).view(B, T_o)
@@ -246,7 +310,6 @@ class STGAT(nn.Module):
             'steering_var':     F.softplus(steer[..., 1]) + VAR_FLOOR,
             'acceleration_mean': accel[..., 0],
             'acceleration_var':  F.softplus(accel[..., 1]) + VAR_FLOOR,
-            'object_distance':        torch.sigmoid(obj),
             'traffic_light_detected': torch.sigmoid(tl),
             'traffic_light_state_mean': tl_state[..., 0],
             'traffic_light_state_var':  F.softplus(tl_state[..., 1]) + VAR_FLOOR,

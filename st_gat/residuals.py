@@ -169,8 +169,10 @@ _GAUSSIAN_FEATURES = {
 }
 
 # Output features with a deterministic sigmoid head (no predicted variance).
+# object_distance removed 2026-08-02 (collapsed-scalar feature retired,
+# replaced by objects_set/objects_mask — input-only, no output head; see
+# model.py's ObjectSetEncoder and docs/theoretical_framework.md §3.1).
 _SIGMOID_FEATURES = (
-    'object_distance',
     'traffic_light_detected',    # map-expectation channel — kept separate
     'traffic_light_discrepancy', # perception-report channel (§1.12)
 )
@@ -223,7 +225,7 @@ def _sigmoid_residual(key: str, preds: dict, future: dict, t: int = 0) -> dict:
     }
 
 
-def _compute_row(preds: dict, future: dict, past: dict) -> dict:
+def _compute_row(preds: dict, future: dict) -> dict:
     """One row of the divergence trace, at 1-step-ahead prediction (t=0)."""
     row = {}
     for key, dims in _GAUSSIAN_FEATURES.items():
@@ -235,20 +237,15 @@ def _compute_row(preds: dict, future: dict, past: dict) -> dict:
     # these; see docs/stgat_pipeline_plan.md's Stage 0/2 notes on
     # conditioning-only input features).
     row['has_adjacent_lane_actual'] = future['has_adjacent_lane'][:, 0, 0]
-    row['closest_object_velocity_actual'] = future['closest_object_velocity'][:, 0, 0]
+    # Object count, not a residual (objects_set/objects_mask, added
+    # 2026-08-02, have no output head — see model.py's ObjectSetEncoder).
+    row['n_objects_actual'] = future['objects_mask'][:, 0].sum(dim=-1)
 
     # Trajectory-tracking anomaly score, kept for continuity with the prior
     # obstacle-avoidance-era usage (position + 0.8*velocity + 0.5*steering) —
     # deliberately NOT combined with the TL negative-evidence signals above,
     # per the "kept as separate columns" schema requirement.
     row['combined_nll'] = row['position_nll'] + 0.8 * row['velocity_nll'] + 0.5 * row['steering_nll']
-
-    # Obstacle-slope context (kept from the retired infer.py — still a valid
-    # scene-level signal, unrelated to the TL/IMU fault-detection work).
-    past_od = past['object_distance'][:, :, 0]
-    recent  = past_od[:, -10:]
-    row['obj_dist_slope']    = (recent[:, -1] - recent[:, 0]) / 9.0
-    row['obj_dist_past_min'] = recent.min(dim=1).values
 
     return row
 
@@ -330,7 +327,7 @@ def run_trace(
             graph  = {k: v.to(device) for k, v in graph.items()}
 
             preds = model(past, graph)
-            row = _compute_row(preds, future, past)
+            row = _compute_row(preds, future)
 
             for k, v in row.items():
                 all_rows.setdefault(k, []).extend(v.cpu().numpy().tolist())
