@@ -101,24 +101,35 @@ def _train_cal_split(
     seed: int = 42,
 ) -> Tuple[List[str], List[str]]:
     """
-    Stratified split by goal: for each goal, put CAL_FRACTION of runs into cal set.
+    Split at the GOAL level: whole goals assigned wholesale to train or cal,
+    not individual runs within a goal.
 
-    Goals with only 1 run stay in train — we do NOT force a floor of 1 cal run
-    per goal, because baseline_all has 1 run per goal × 22 goals, and forcing
-    each to cal would put all diverse route coverage into cal and leave train
-    with only the 3 nom-dataset goals (007/011/021). Calibration for conformal
-    prediction is handled primarily by the nom_v11 held-out runs, which
-    have 5-6 runs per goal and naturally contribute ≥1 run to cal per goal.
+    Fixed 2026-08-01 — this used to split per-goal-run
+    (`round(len(runs_in_goal) * cal_fraction)`), on the assumption (stated in
+    a since-stale comment here) that nom_v11 would have 5-6 runs/goal, so
+    every goal would naturally contribute >=1 run to cal. The actual
+    collected data (per the 2026-07-21/22 correction to 2 trials/goal — see
+    docs/theoretical_framework.md's project history) has only 1-2 runs/goal,
+    for which `round(n * 0.20)` is 0 for every single goal (round(0.2)=0,
+    round(0.4)=0) — running extraction for the first time on real data
+    produced 39 train / 0 cal runs, which crashes st_gat.train's first
+    validation epoch (empty val_loader -> KeyError on val_losses['total_loss']).
+    Splitting whole goals sidesteps the per-goal-count issue entirely (works
+    the same whether goals have 1, 2, or 20 runs) and is arguably safer
+    against leakage anyway — a held-out goal is a different route/geometry
+    entirely, not just a repeat trial of one already seen in training
+    (matches docs/stgat_pipeline_plan.md Stage 1's "split at the trial level,
+    never post-hoc" principle, one level up).
     """
     rng = random.Random(seed)
-    train_dirs, cal_dirs = [], []
+    goals = sorted(run_dirs_by_goal.keys())
+    rng.shuffle(goals)
+    n_cal_goals = max(1, round(len(goals) * cal_fraction)) if goals else 0
+    cal_goals = set(goals[:n_cal_goals])
 
+    train_dirs, cal_dirs = [], []
     for goal, dirs in sorted(run_dirs_by_goal.items()):
-        shuffled = dirs[:]
-        rng.shuffle(shuffled)
-        n_cal = round(len(shuffled) * cal_fraction)   # 0 is fine for single-run goals
-        cal_dirs.extend(shuffled[:n_cal])
-        train_dirs.extend(shuffled[n_cal:])
+        (cal_dirs if goal in cal_goals else train_dirs).extend(dirs)
 
     return train_dirs, cal_dirs
 
