@@ -25,7 +25,13 @@ DEFAULT_WEIGHTS = {
     'steering':               0.5,
     'acceleration':           0.5,
     'object_distance':        0.3,   # sigmoid output — MSE loss
-    'traffic_light_detected': 0.2,   # sigmoid output — BCE loss
+    'traffic_light_detected': 0.2,   # sigmoid output — BCE loss (map channel)
+    # Added 2026-08-01 (docs/stgat_pipeline_plan.md §1.12) — the
+    # perception-report channel this dissertation's negative-evidence
+    # mechanism actually depends on; previously had no loss term at all
+    # since the model had no head for it.
+    'traffic_light_state':       0.2,   # Gaussian NLL — perception color x confidence
+    'traffic_light_discrepancy': 0.2,   # sigmoid output — BCE loss (perception channel)
 }
 
 VAR_REG_WEIGHT = 0.001   # prevents variance from collapsing to the floor
@@ -49,7 +55,8 @@ class CombinedLoss(nn.Module):
         nll_sum = torch.tensor(0.0, device=total.device)
 
         # ── Gaussian NLL outputs ─────────────────────────────────────────────
-        for key in ('position', 'velocity', 'steering', 'acceleration'):
+        for key in ('position', 'velocity', 'steering', 'acceleration',
+                    'traffic_light_state'):
             mean_k = f'{key}_mean'
             var_k  = f'{key}_var'
             if mean_k not in pred:
@@ -94,6 +101,16 @@ class CombinedLoss(nn.Module):
             bce = F.binary_cross_entropy(pred['traffic_light_detected'], tgt)
             w   = self.weights.get('traffic_light_detected', 0.2)
             losses['traffic_light_loss'] = (bce * w).item()
+            total = total + bce * w
+
+        # ── BCE output: traffic_light_discrepancy (added 2026-08-01) ─────────
+        if 'traffic_light_discrepancy' in pred and 'traffic_light_discrepancy' in target:
+            tgt = target['traffic_light_discrepancy']
+            if tgt.dim() == 3:
+                tgt = tgt.squeeze(-1)
+            bce = F.binary_cross_entropy(pred['traffic_light_discrepancy'], tgt)
+            w   = self.weights.get('traffic_light_discrepancy', 0.2)
+            losses['traffic_light_discrepancy_loss'] = (bce * w).item()
             total = total + bce * w
 
         losses['total_loss'] = total.item()

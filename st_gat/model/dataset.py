@@ -76,8 +76,14 @@ class TrajectoryDataset(Dataset):
         return past_t, future_t, graph_t, seq['graph_bounds']
 
     # ── Internal helpers ───────────────────────────────────────────────────
+    # staticmethods (not instance methods) so st_gat/residuals.py can reuse
+    # them directly instead of re-implementing its own copy — a duplicated,
+    # independently-maintained copy of this logic is exactly what let the
+    # retired st_gat/infer.py drift out of sync with cfg.FEATURE_SIZES
+    # (docs/stgat_pipeline_plan.md §1.12 / TODO.md Phase 1.3).
 
-    def _build_feature_tensors(self, steps: list) -> dict:
+    @staticmethod
+    def _build_feature_tensors(steps: list) -> dict:
         """Convert a list of timestep dicts → dict of float32 tensors."""
         buf = {
             'position':                 [],
@@ -108,7 +114,8 @@ class TrajectoryDataset(Dataset):
 
         return {k: torch.tensor(v, dtype=torch.float32) for k, v in buf.items()}
 
-    def _build_graph_tensors(self, G) -> dict:
+    @staticmethod
+    def _build_graph_tensors(G) -> dict:
         """Convert a networkx.Graph → node_features and adjacency matrix tensors."""
         node_features = torch.zeros((_MAX_GRAPH_NODES, _NODE_FEATURES), dtype=torch.float32)
         for node_id, data in G.nodes(data=True):

@@ -50,7 +50,8 @@ def main():
     parser.add_argument('--lr',      type=float, default=4e-4)
     parser.add_argument('--dropout', type=float, default=0.15)
     parser.add_argument('--workers', type=int,   default=4)
-    parser.add_argument('--out',     type=str,   default=os.path.join(os.path.dirname(__file__), 'checkpoints'))
+    parser.add_argument('--out',     type=str,   default=cfg.CHECKPOINT_DIR,
+                        help="Checkpoint dir (default: horizon-tagged, e.g. st_gat/checkpoints/h30_30/)")
     args = parser.parse_args()
 
     model_cfg = build_model_config(args)

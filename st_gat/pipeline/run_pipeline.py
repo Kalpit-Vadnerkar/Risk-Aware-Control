@@ -150,7 +150,8 @@ def process_dataset(
         print(f"  [pipeline] processing: {run_name}")
 
         try:
-            frames = read_bag(bag_dir, verbose=verbose)
+            goal_id = _goal_from_run_dir(run_dir)
+            frames = read_bag(bag_dir, goal_id=goal_id, verbose=verbose)
             if len(frames) < cfg.INPUT_SEQ_LEN + cfg.OUTPUT_SEQ_LEN:
                 print(f"    WARNING: only {len(frames)} frames, skipping")
                 continue
@@ -178,8 +179,7 @@ def process_dataset(
                 pickle.dump(sequences, f, protocol=4)
 
             print(f"    → {len(sequences)} sequences saved")
-            goal = _goal_from_run_dir(run_dir)
-            runs_by_goal[goal].append(run_dir)
+            runs_by_goal[goal_id].append(run_dir)
             processed += 1
 
         except Exception as e:
@@ -234,10 +234,14 @@ def main():
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
 
-    # Guard against accidentally processing test data
-    bad = set(args.datasets) & set(cfg.TEST_DATASETS)
+    # Guard against accidentally training on fault-campaign data (nominal-only
+    # training is required — see config.py's docstring / advisor_meeting_jun2026.md
+    # §5). cfg.TEST_DATASETS was replaced by cfg.FAULT_DATASETS 2026-08-01 —
+    # the old obs_recovery/obs_noescape/obs_stuck campaigns it named are
+    # deprioritized and aren't present under experiments/data/ on this machine.
+    bad = set(args.datasets) & set(cfg.FAULT_DATASETS)
     if bad:
-        print(f"ERROR: test datasets cannot be used for training: {bad}")
+        print(f"ERROR: fault-campaign datasets cannot be used for training: {bad}")
         sys.exit(1)
 
     print("[pipeline] Loading map data (one-time, ~10s)...")

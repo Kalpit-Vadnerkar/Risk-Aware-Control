@@ -92,7 +92,19 @@ class STGAT(nn.Module):
         steering_mean/var  (B, T_out)
         acceleration_mean/var (B, T_out)
         object_distance    (B, T_out)    — sigmoid-bounded
-        traffic_light_detected (B, T_out) — sigmoid-bounded
+        traffic_light_detected (B, T_out) — sigmoid-bounded (map fact — the
+            route/HD-map expectation channel; not actually uncertain, kept as
+            a head mainly for parity with the reference architecture)
+        traffic_light_state_mean/var (B, T_out) — Gaussian (added 2026-08-01,
+            docs/stgat_pipeline_plan.md §1.12): the perception-report channel
+            (color x confidence). A Gaussian head, not a deterministic sigmoid
+            like object_distance, so the predicted variance can itself widen
+            under a camera/TL fault — this is what makes the negative-evidence
+            divergence between the map channel and this channel computable at
+            all; previously neither traffic_light_state nor
+            traffic_light_discrepancy had any output head.
+        traffic_light_discrepancy (B, T_out) — sigmoid-bounded (added
+            2026-08-01): binary map-vs-perception mismatch flag, BCE loss.
     """
 
     def __init__(self, config: dict):
@@ -159,6 +171,10 @@ class STGAT(nn.Module):
         self.head_accel       = nn.Linear(d_h, 2  * self.T_out)
         self.head_obj_dist    = nn.Linear(d_h, self.T_out)
         self.head_traffic     = nn.Linear(d_h, self.T_out)
+        # Added 2026-08-01 (docs/stgat_pipeline_plan.md §1.12) — the
+        # perception-report channel previously had no output head at all.
+        self.head_tl_state       = nn.Linear(d_h, 2 * self.T_out)   # mean(1) + var(1)
+        self.head_tl_discrepancy = nn.Linear(d_h, self.T_out)
 
         self._init_weights()
 
@@ -218,6 +234,8 @@ class STGAT(nn.Module):
         accel = self.head_accel(h_last).view(B, T_o, 2)
         obj   = self.head_obj_dist(h_last).view(B, T_o)
         tl    = self.head_traffic(h_last).view(B, T_o)
+        tl_state = self.head_tl_state(h_last).view(B, T_o, 2)
+        tl_disc  = self.head_tl_discrepancy(h_last).view(B, T_o)
 
         return {
             'position_mean':    pos[..., :2],
@@ -230,6 +248,9 @@ class STGAT(nn.Module):
             'acceleration_var':  F.softplus(accel[..., 1]) + VAR_FLOOR,
             'object_distance':        torch.sigmoid(obj),
             'traffic_light_detected': torch.sigmoid(tl),
+            'traffic_light_state_mean': tl_state[..., 0],
+            'traffic_light_state_var':  F.softplus(tl_state[..., 1]) + VAR_FLOOR,
+            'traffic_light_discrepancy': torch.sigmoid(tl_disc),
         }
 
     def count_parameters(self) -> int:

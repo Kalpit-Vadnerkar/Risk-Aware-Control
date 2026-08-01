@@ -24,10 +24,11 @@ Each frame dict:
     }
 """
 
+import json
 import math
 import sys
 from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Requires Autoware workspace sourced
 from rclpy.serialization import deserialize_message
@@ -125,13 +126,23 @@ def _extract_objects(msg: TrackedObjects) -> list:
     return objects
 
 
-def _extract_traffic_lights(msg: TrafficLightGroupArray) -> list:
+def _extract_traffic_lights(msg: TrafficLightGroupArray,
+                             group_id: Optional[int] = None) -> list:
     """
     Extract traffic light info from the new TrafficLightGroupArray format.
     Returns only elements with a known color (RED=1, AMBER=2, GREEN=3).
+
+    group_id: if given, only elements from that one traffic_light_group_id are
+    returned (see _load_tl_group_zones / docs/stgat_pipeline_plan.md §1.11) —
+    a TL fault only ever mutates the ONE group governing the vehicle's current
+    lanelet, and pooling across every currently-tracked group (2-6 at once)
+    lets the fault's effect be outvoted by other, unfaulted groups in the same
+    message. None (default) keeps the old pooled-across-all-groups behavior.
     """
     lights = []
     for group in msg.traffic_light_groups:
+        if group_id is not None and int(group.traffic_light_group_id) != group_id:
+            continue
         for element in group.elements:
             if element.color in (1, 2, 3):   # RED, AMBER, GREEN
                 lights.append({
@@ -140,6 +151,50 @@ def _extract_traffic_lights(msg: TrafficLightGroupArray) -> list:
                     'confidence': float(element.confidence),
                 })
     return lights
+
+
+# ── Traffic-light group scoping (docs/stgat_pipeline_plan.md §1.11) ────────
+
+_tl_zones_cache: Dict[str, dict] = {}
+
+
+def _load_tl_zones_file(zones_file: str) -> dict:
+    """Load and cache tl_zones.json (shared across many read_bag() calls in a
+    batch pipeline run). {} on any failure — callers treat that as 'no zones
+    available', same fallback as compare_fault_vs_nominal.py."""
+    if zones_file not in _tl_zones_cache:
+        try:
+            with open(zones_file) as f:
+                _tl_zones_cache[zones_file] = json.load(f)
+        except Exception:
+            _tl_zones_cache[zones_file] = {}
+    return _tl_zones_cache[zones_file]
+
+
+def _load_tl_group_zones(goal_id: str, zones_file: str = cfg.TL_ZONES_FILE
+                          ) -> List[Tuple[float, float, int]]:
+    """(x, y, group_id) zones for one goal, from tl_zones.json. [] if the
+    goal has no entry (e.g. it's never had a TL fault campaign computed for
+    it) — same fallback path as fault_injector.py/compare_fault_vs_nominal.py.
+    Deliberately does NOT filter on the 'reachable' field — see CLAUDE.md's
+    note that 'reachable' is informational for gating, not a filter."""
+    data = _load_tl_zones_file(zones_file)
+    goal = data.get('goals', {}).get(goal_id)
+    if not goal:
+        return []
+    return [(z['x'], z['y'], z['group_id']) for z in goal.get('tl_zones', [])]
+
+
+def _nearest_group_id(x: float, y: float,
+                       zones: List[Tuple[float, float, int]],
+                       radius: float) -> Optional[int]:
+    """Nearest zone's group_id within `radius` metres of (x, y), or None."""
+    best_d, best_gid = radius, None
+    for zx, zy, gid in zones:
+        d = math.hypot(x - zx, y - zy)
+        if d <= best_d:
+            best_d, best_gid = d, gid
+    return best_gid
 
 
 def _filter_stopped_periods(frames: List[dict]) -> List[dict]:
@@ -179,7 +234,8 @@ def _filter_stopped_periods(frames: List[dict]) -> List[dict]:
     return [f for f, k in zip(frames, keep) if k]
 
 
-def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
+def read_bag(bag_dir: str, goal_id: Optional[str] = None,
+             verbose: bool = False) -> List[dict]:
     """
     Read a rosbag and return a list of synchronized 10 Hz frames.
 
@@ -187,6 +243,13 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
     cache for each topic. Every time a TrackedObjects message arrives (master
     clock, ~10 Hz), emit one frame using the cached values. Drop frames where
     any topic is stale beyond MAX_STALENESS_SEC.
+
+    goal_id: if given, traffic-light extraction is scoped to the one
+    traffic_light_group_id governing the vehicle's current lanelet (via
+    experiments/configs/tl_zones.json — see docs/stgat_pipeline_plan.md §1.11),
+    instead of pooling every currently-tracked group. Pass the run's goal
+    (e.g. 'goal_007') whenever it's known; leave None only when it genuinely
+    isn't (falls back to the old pooled behavior).
 
     Returns list of frame dicts in chronological order with stopped periods removed.
     """
@@ -227,6 +290,11 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
     # MRM state tracked separately — optional, not required for frame emission
     _mrm_active: bool = False
 
+    # TL group-scoping (§1.11): last known ego position, used to pick which
+    # traffic_light_group_id governs "right now" whenever a TL message arrives.
+    group_zones = _load_tl_group_zones(goal_id) if goal_id else []
+    last_ego_xy: Optional[Tuple[float, float]] = None
+
     frames: List[dict] = []
 
     master_topic = cfg.TOPICS[cfg.MASTER_CLOCK_TOPIC]
@@ -257,6 +325,8 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
         # Update cache with extracted payload
         if topic == cfg.TOPICS['kinematic_state']:
             cache[key]    = _extract_kinematic_state(msg)
+            pos = cache[key]['position']
+            last_ego_xy = (pos['x'], pos['y'])
         elif topic == cfg.TOPICS['pose_covariance']:
             cache[key]    = _extract_pose_covariance(msg)
         elif topic == cfg.TOPICS['velocity']:
@@ -268,7 +338,11 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
         elif topic == cfg.TOPICS['objects']:
             cache[key]    = _extract_objects(msg)
         elif topic == _tl_topic:
-            cache[key]    = _extract_traffic_lights(msg)
+            current_gid = None
+            if group_zones and last_ego_xy is not None:
+                current_gid = _nearest_group_id(
+                    last_ego_xy[0], last_ego_xy[1], group_zones, cfg.TL_ZONE_RADIUS_M)
+            cache[key]    = _extract_traffic_lights(msg, group_id=current_gid)
 
         cache_ts[key] = t_sec
 
@@ -295,6 +369,14 @@ def read_bag(bag_dir: str, verbose: bool = False) -> List[dict]:
         ctrl = cache['control']
 
         frame = {
+            # Real wall-clock time (seconds) of this frame's master-clock
+            # message, from rosbag2's own recorded timestamp — needed to build
+            # the divergence trace schema's timestamps (docs/theoretical_framework.md
+            # §5) and to join fault_log.jsonl's `wall_time` events (NOT
+            # `sim_time_sec` — a different, unrelated clock; see
+            # compare_fault_vs_nominal.py's extract_fault_windows docstring
+            # for the bug this distinction already caused once).
+            't_sim': t_sec,
             'ego': {
                 'position':    kin['position'],
                 'orientation': kin['orientation'],

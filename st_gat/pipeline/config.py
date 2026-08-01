@@ -88,11 +88,13 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 DATA_ROOT    = os.path.join(REPO_ROOT, 'experiments', 'data')
 MAP_FILE     = os.path.normpath(os.path.join(REPO_ROOT, '..', 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm'))
 OUTPUT_ROOT  = os.path.join(REPO_ROOT, 'st_gat', 'data')
+MODEL_ROOT   = os.path.join(REPO_ROOT, 'st_gat', 'models')
 
-EXTRACTED_DIR  = os.path.join(OUTPUT_ROOT, 'extracted')    # Stage 1: per-run 10Hz dicts
-SEQUENCES_DIR  = os.path.join(OUTPUT_ROOT, 'sequences')    # Stage 2: pkl sequence files
-TRAIN_DIR      = os.path.join(SEQUENCES_DIR, 'train')
-CAL_DIR        = os.path.join(SEQUENCES_DIR, 'calibration')
+# EXTRACTED_DIR/SEQUENCES_DIR/TRAIN_DIR/CAL_DIR/CHECKPOINT_DIR/model_path are
+# defined further down, after HORIZON_TAG (needs INPUT_SEQ_LEN/OUTPUT_SEQ_LEN,
+# in "Sequence parameters" below) — see docs/theoretical_framework.md §4 /
+# docs/stgat_pipeline_plan.md: a horizon sweep needs each horizon's extracted
+# data and checkpoint to live side by side, not silently overwrite each other.
 
 # ── Data split ─────────────────────────────────────────────────────────────
 
@@ -101,8 +103,15 @@ CAL_DIR        = os.path.join(SEQUENCES_DIR, 'calibration')
 # so there's a single operating condition instead of per-speed calibration sets.
 NOMINAL_DATASETS = ['baseline_all', 'nom_v11']
 
-# Datasets reserved for inference/evaluation only
-TEST_DATASETS = ['obs_recovery', 'obs_noescape', 'obs_stuck']
+# Fault campaigns actually collected on this repo's current research direction
+# (replaces the stale TEST_DATASETS = ['obs_recovery', 'obs_noescape',
+# 'obs_stuck'] — those obs_* scenario campaigns are deprioritized per TODO.md's
+# 2026-07-24 reframe and aren't present under experiments/data/ on this
+# machine). Used by st_gat/residuals.py for trace/residual computation.
+FAULT_DATASETS = [
+    'imu_fault_s1', 'imu_fault_s3', 'imu_fault_scale', 'imu_fault_stuck',
+    'tl_fault_s2', 'tl_fault_s3', 'tl_fault_s4', 'tl_fault_ramp',
+]
 
 # Train/calibration split (per dataset, stratified by goal)
 CAL_FRACTION = 0.20
@@ -138,6 +147,17 @@ MASTER_CLOCK_TOPIC = 'objects'
 
 # Drop frame if any topic is more than this stale (seconds)
 MAX_STALENESS_SEC = 0.30
+
+# ── Traffic-light group scoping (fixes the entity-collapse bug — see
+#    docs/stgat_pipeline_plan.md §1.11) ─────────────────────────────────────
+# Same file and radius fault_injector.py/compare_fault_vs_nominal.py already
+# use to pick the ONE traffic_light_group_id governing the vehicle's current
+# lanelet, so a TL fault's effect isn't outvoted by other, unfaulted groups
+# in the same perception message. Not every goal has an entry (only goals
+# that have had TL fault campaigns computed) — bag_reader falls back to the
+# old pooled-across-all-groups behavior when a goal has no zones entry.
+TL_ZONES_FILE      = os.path.join(REPO_ROOT, 'experiments', 'configs', 'tl_zones.json')
+TL_ZONE_RADIUS_M   = 40.0
 
 # Minimum speed before we consider the vehicle "stopped" (m/s)
 STOPPED_THRESHOLD_MS = 0.05
@@ -178,6 +198,18 @@ CONNECTION_THRESHOLD   = 5       # metres
 INPUT_SEQ_LEN  = 30    # 3 seconds of history at 10 Hz
 OUTPUT_SEQ_LEN = 30    # 3 seconds of prediction
 STRIDE         = 1
+
+# Horizon-tagged paths (added 2026-08-01 — docs/theoretical_framework.md §4):
+# the eventual lead-time-vs-horizon sweep (TODO.md P1.3) needs multiple
+# INPUT_SEQ_LEN/OUTPUT_SEQ_LEN combinations' extracted sequences and
+# checkpoints to coexist without one silently overwriting another's cache.
+HORIZON_TAG = f"h{INPUT_SEQ_LEN}_{OUTPUT_SEQ_LEN}"
+
+EXTRACTED_DIR  = os.path.join(OUTPUT_ROOT, HORIZON_TAG, 'extracted')    # Stage 1: per-run 10Hz dicts
+SEQUENCES_DIR  = os.path.join(OUTPUT_ROOT, HORIZON_TAG, 'sequences')    # Stage 2: pkl sequence files
+TRAIN_DIR      = os.path.join(SEQUENCES_DIR, 'train')
+CAL_DIR        = os.path.join(SEQUENCES_DIR, 'calibration')
+CHECKPOINT_DIR = os.path.join(REPO_ROOT, 'st_gat', 'checkpoints', HORIZON_TAG)
 
 # Reference points for coordinate frame conversion (Shinjuku map ↔ local frame)
 # Same values as original T-ITS paper config.py
@@ -221,6 +253,6 @@ MODEL_CONFIG = {
     'acceleration_scaling_factor': ACCEL_SCALING,
     'train_data_folder': TRAIN_DIR,
     'cal_data_folder':   CAL_DIR,
-    'model_path':        os.path.join(REPO_ROOT, 'st_gat', 'models', 'st_gat_rise.pth'),
+    'model_path':        os.path.join(MODEL_ROOT, HORIZON_TAG, 'st_gat_rise.pth'),
     'device':            torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
 }
