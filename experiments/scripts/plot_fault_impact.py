@@ -56,7 +56,6 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
@@ -65,8 +64,11 @@ sys.path.insert(0, SCRIPT_DIR)
 sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
 
 from metrics import MetricsCollector  # noqa: E402
-from plot_routes import (  # noqa: E402
-    make_projector, load_map, ll_attr, lanelet_polygon_xy, bbox_hit, SPAWN,
+from plotting import (  # noqa: E402
+    load_map, SPAWN,
+    draw_map_background, style_map_axes, bbox_with_margin, outcome_style,
+    draw_zones_with_reachability, draw_fault_end_points, shade_fault_windows, mark_event_time,
+    TL_COLOR, TURN_COLOR, LEADIN_COLOR, FAULT_END_COLOR,
 )
 from compare_fault_vs_nominal import (  # noqa: E402
     read_gt_and_tl, ekf_gt_divergence, load_fault_log, extract_fault_windows,
@@ -74,16 +76,18 @@ from compare_fault_vs_nominal import (  # noqa: E402
 )
 from compute_turn_zones import (  # noqa: E402
     find_first_bag, read_route_ids, build_route_polyline, resample_by_arc_length,
-    RESAMPLE_STEP_M,
+    first_entry_point_on_route, RESAMPLE_STEP_M,
 )
 from fault_injector import (  # noqa: E402
     _DEFAULT_TL_ZONE_RADIUS_M, _DEFAULT_IMU_TURN_ZONE_RADIUS_M, _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M,
 )
+# CAMPAIGN_ZONE_KIND/CAMPAIGN_FAULT_END/*_ZONES_FILE are campaign config, not
+# plotting utilities — still imported from plot_fault_plan.py, which owns
+# them. draw_zones_with_reachability/draw_fault_end_points/first_entry_point_on_route
+# used to come from here transitively too; now imported directly from
+# plotting.py/compute_turn_zones.py, where they're actually defined.
 from plot_fault_plan import (  # noqa: E402
-    CAMPAIGN_ZONE_KIND, CAMPAIGN_FAULT_END, draw_zones_with_reachability, draw_fault_end_points,
-    first_entry_point_on_route,
-    TL_COLOR, TURN_COLOR, LEADIN_COLOR, FAULT_END_COLOR,
-    DEFAULT_TURN_ZONES_FILE, DEFAULT_TL_ZONES_FILE,
+    CAMPAIGN_ZONE_KIND, CAMPAIGN_FAULT_END, DEFAULT_TURN_ZONES_FILE, DEFAULT_TL_ZONES_FILE,
 )
 from autoware_perception_msgs.msg import TrafficLightElement  # noqa: E402
 
@@ -105,10 +109,9 @@ NOMINAL_COLOR = '#999999'
 # meaningful distinction for this dissertation's claim: either way the fault
 # was fatal to completing the route. metrics.json's static_collision heuristic
 # still exists as raw data if that distinction matters again later).
-OUTCOME_STYLE = {
-    'goal_reached': dict(color='#2ca02c', marker='o', label='goal reached'),
-    'fatal':        dict(color='#d62728', marker='X', label='fatal (did not reach goal)'),
-}
+# Styling itself now comes from plotting.py's shared OUTCOME_STYLE
+# (outcome_style()) — this used to be a separate, independently-maintained
+# copy that happened to agree with it.
 
 FEATURE_LABELS = {
     'velocity_mps':        'velocity (m/s)',
@@ -367,17 +370,9 @@ def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
     # ── Map panel ──────────────────────────────────────────────────────────
     all_x = xs + [SPAWN[0], goal_xy[0]]
     all_y = ys + [SPAWN[1], goal_xy[1]]
-    xmin, xmax = min(all_x) - margin, max(all_x) + margin
-    ymin, ymax = min(all_y) - margin, max(all_y) + margin
+    xmin, xmax, ymin, ymax = bbox_with_margin(all_x, all_y, margin)
 
-    for ll in map_data.laneletLayer:
-        if ll_attr(ll, 'subtype') != 'road':
-            continue
-        if not bbox_hit(ll, xmin, xmax, ymin, ymax):
-            continue
-        ax_map.add_patch(Polygon(lanelet_polygon_xy(ll), closed=True,
-                                  facecolor='#dddddd', edgecolor='#bbbbbb',
-                                  linewidth=0.3, zorder=1))
+    draw_map_background(ax_map, map_data, xmin, xmax, ymin, ymax)
 
     # No raw all-lights scatter here (removed 2026-07-28) — draw_planned_zones
     # below already renders one marker per TL zone (matching plot_fault_plan.py's
@@ -403,25 +398,19 @@ def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
     ax_map.plot(*SPAWN, marker='o', color=TRAJ_COLOR, markersize=8, zorder=5, label='start')
     ax_map.plot(*goal_xy, marker='*', color='black', markersize=13, zorder=5, label='goal')
 
-    style = OUTCOME_STYLE[outcome]
+    style = outcome_style(outcome)
     ax_map.plot(xs[-1], ys[-1], marker=style['marker'], color=style['color'],
                 markersize=9, markeredgewidth=1.5, zorder=7, label=style['label'])
 
-    ax_map.set_xlim(xmin, xmax)
-    ax_map.set_ylim(ymin, ymax)
-    ax_map.set_aspect('equal')
-    ax_map.set_xlabel('map x (m)')
-    ax_map.set_ylabel('map y (m)')
-    ax_map.legend(loc='best', fontsize=7)
+    style_map_axes(ax_map, xmin, xmax, ymin, ymax)
 
     # ── Time-series panels: top-3 discriminating features for THIS fault ──
     def annotate(ax):
-        for w in windows:
-            ax.axvspan(w['start'], w['end'], color=FAULT_COLOR, alpha=0.15, zorder=0)
+        shade_fault_windows(ax, windows, color=FAULT_COLOR)
         # MRM trigger vertical lines deliberately not drawn — see the map
         # panel's comment above.
-        if stop_t is not None and result.get('status') != 'goal_reached':
-            ax.axvline(stop_t, color='black', linestyle=':', linewidth=1.5, zorder=1)
+        if result.get('status') != 'goal_reached':
+            mark_event_time(ax, stop_t)
 
     for panel_idx, (ax, feat_name) in enumerate(zip(axes_ts, panel_features)):
         for i, nfeats in enumerate(nominal_series_by_trial):

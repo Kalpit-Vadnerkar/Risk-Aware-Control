@@ -128,6 +128,13 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
 
 - `experiments/scripts/` — every one-off/manual Python and shell tool lives here (not
   repo root — keep it that way when adding new scripts).
+- `experiments/lib/` — shared library code imported by multiple scripts (not runnable
+  on its own): `fault_injector.py`, `metrics.py`, and (added 2026-08-01)
+  `plotting.py` — map loading/rendering, outcome styling, zone-drawing, and
+  divergence-trace panel primitives shared by `plot_routes.py`/`plot_fault_plan.py`/
+  `plot_fault_impact.py` and meant to be reused by future model-prediction
+  distribution plots too. Add new cross-script plotting helpers there, not as a
+  copy-pasted function in whichever script needed it first.
 - `experiments/analysis/` — output artifacts from analysis scripts (route maps,
   feasibility reports). Not raw experiment data.
 - `experiments/data/<campaign>/<goal_id>/t<N>_<timestamp>/` — one dir per trial:

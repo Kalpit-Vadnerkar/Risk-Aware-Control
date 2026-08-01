@@ -17,13 +17,11 @@ import argparse
 import glob
 import json
 import os
+import sys
 
-import lanelet2
-from autoware_lanelet2_extension_python.projection import MGRSProjector
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
 
 from rclpy.serialization import deserialize_message
 from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
@@ -32,83 +30,20 @@ from nav_msgs.msg import Odometry
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 WORKSPACE_DIR = os.path.dirname(REPO_DIR)
+sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
+
+from plotting import (  # noqa: E402
+    load_map, ll_attr, lanelet_polygon_xy, bbox_hit, traffic_light_points,
+    draw_map_background, style_map_axes, bbox_with_margin, outcome_style, SPAWN,
+)
 
 DEFAULT_MAP_FILE = os.path.join(WORKSPACE_DIR, 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm')
 DEFAULT_GOALS_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'captured_goals_original.json')
 DEFAULT_DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data', 'nom_v11')
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'route_maps')
 
-# Autoware's own map loader (autoware_map_projection_loader/load_info_from_lanelet2_map.cpp)
-# projects lanelet2 maps with lanelet::projection::MGRSProjector when no
-# map_projector_info.yaml is present (the case here) — NOT a generic UtmProjector
-# with a guessed lat/lon origin. That projector derives the MGRS 100km-grid cell
-# straight from the map's own lat/lon points, which is what actually lines up
-# with the AWSIM/ROS2 map frame (verified: spawn point lands ~3.8m from the
-# nearest road lanelet centerline, vs >1000m off with the guessed-origin
-# UtmProjector previously used in explore_map.py).
-SPAWN = (81384.53, 49921.95)
-
-
-def make_projector():
-    return MGRSProjector(lanelet2.io.Origin(0.0, 0.0))
-
 GT_TOPIC = '/awsim/ground_truth/localization/kinematic_state'
 FALLBACK_TOPIC = '/localization/kinematic_state'
-
-STATUS_COLOR = {
-    'goal_reached': '#2ca02c',
-    'stuck': '#d62728',
-}
-DEFAULT_COLOR = '#ff7f0e'
-
-
-def load_map(map_file):
-    projector = make_projector()
-    map_data, _errs = lanelet2.io.loadRobust(map_file, projector)
-    return map_data
-
-
-def ll_attr(ll, key, default=''):
-    try:
-        return ll.attributes[key]
-    except Exception:
-        return default
-
-
-def lanelet_polygon_xy(ll):
-    left = [(p.x, p.y) for p in ll.leftBound]
-    right = [(p.x, p.y) for p in reversed(list(ll.rightBound))]
-    return left + right
-
-
-def bbox_hit(ll, xmin, xmax, ymin, ymax):
-    for p in ll.centerline:
-        if xmin <= p.x <= xmax and ymin <= p.y <= ymax:
-            return True
-    return False
-
-
-def traffic_light_points(map_data, xmin, xmax, ymin, ymax):
-    """Midpoint of each traffic-light-head linestring ('refers' role of
-    traffic_light regulatory elements), deduped by regulatory element id."""
-    seen_reg = set()
-    pts = []
-    for ll in map_data.laneletLayer:
-        for reg in ll.regulatoryElements:
-            if ll_attr(reg, 'subtype') != 'traffic_light' or reg.id in seen_reg:
-                continue
-            seen_reg.add(reg.id)
-            try:
-                refers = reg.parameters['refers']
-            except Exception:
-                continue
-            for ls in refers:
-                pts_xy = [(p.x, p.y) for p in ls]
-                mx = sum(p[0] for p in pts_xy) / len(pts_xy)
-                my = sum(p[1] for p in pts_xy) / len(pts_xy)
-                if xmin <= mx <= xmax and ymin <= my <= ymax:
-                    pts.append((mx, my))
-    return pts
 
 
 def read_trajectory(bag_dir):
@@ -170,18 +105,10 @@ def plot_goal(map_data, goal, data_dir, output_dir, margin):
         print(f'  {gid}: no readable trials, skipping')
         return
 
-    xmin, xmax = min(xs) - margin, max(xs) + margin
-    ymin, ymax = min(ys) - margin, max(ys) + margin
+    xmin, xmax, ymin, ymax = bbox_with_margin(xs, ys, margin)
 
     fig, ax = plt.subplots(figsize=(10, 10))
-    for ll in map_data.laneletLayer:
-        if ll_attr(ll, 'subtype') != 'road':
-            continue
-        if not bbox_hit(ll, xmin, xmax, ymin, ymax):
-            continue
-        ax.add_patch(Polygon(lanelet_polygon_xy(ll), closed=True,
-                              facecolor='#dddddd', edgecolor='#bbbbbb',
-                              linewidth=0.3, zorder=1))
+    draw_map_background(ax, map_data, xmin, xmax, ymin, ymax)
 
     tl_pts = traffic_light_points(map_data, xmin, xmax, ymin, ymax)
     if tl_pts:
@@ -195,7 +122,7 @@ def plot_goal(map_data, goal, data_dir, output_dir, margin):
         if not traj:
             continue
         status = run['status']
-        color = STATUS_COLOR.get(status, DEFAULT_COLOR)
+        color = outcome_style(status)['color']
         label = status if status not in seen_status else None
         seen_status.add(status)
         tx = [p[0] for p in traj]
@@ -208,15 +135,10 @@ def plot_goal(map_data, goal, data_dir, output_dir, margin):
     ax.plot(*SPAWN, marker='o', color='#1f77b4', markersize=9, zorder=4, label='start')
     ax.plot(gx, gy, marker='*', color='black', markersize=16, zorder=4, label='goal')
 
-    ax.set_xlim(xmin, xmax)
-    ax.set_ylim(ymin, ymax)
-    ax.set_aspect('equal')
+    style_map_axes(ax, xmin, xmax, ymin, ymax)
     captured_dist = goal.get('estimated_distance')
     dist_str = f'{captured_dist:.0f}m' if captured_dist is not None else 'unknown'
     ax.set_title(f'{gid}   route length: {dist_str}')
-    ax.legend(loc='best', fontsize=7)
-    ax.set_xlabel('map x (m)')
-    ax.set_ylabel('map y (m)')
 
     out_path = os.path.join(output_dir, f'{gid}.png')
     fig.savefig(out_path, dpi=150, bbox_inches='tight')

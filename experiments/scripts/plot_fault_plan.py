@@ -73,14 +73,18 @@ import sys
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon, Circle
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, SCRIPT_DIR)
 sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
 
-from plot_routes import load_map, ll_attr, lanelet_polygon_xy, bbox_hit  # noqa: E402
+from plotting import (  # noqa: E402
+    load_map, ll_attr, lanelet_polygon_xy, bbox_hit, draw_map_background,
+    draw_injection_points, draw_fault_end_points, draw_zones_with_reachability,
+    TL_COLOR, TURN_COLOR, LEADIN_COLOR, LANE_CHANGE_COLOR, RUNWAY_COLOR,
+    INJECTION_COLOR, FAULT_END_COLOR, ROUTE_COLOR, UNREACHABLE_COLOR,
+)
 from compute_turn_zones import (  # noqa: E402
     find_first_bag, read_route_ids, build_route_polyline, resample_by_arc_length,
     first_entry_point_on_route, RESAMPLE_STEP_M, DEFAULT_GOALS_FILE,
@@ -98,27 +102,11 @@ DEFAULT_NOMINAL_CAMPAIGN = 'nom_v11'
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_plan')
 FLAT_RUNWAY_FALLBACK_M = 150.0    # matches fault_injector.py's --fault-min-runway-m default
 
-TL_COLOR = '#f1c40f'
-TURN_COLOR = '#2ca02c'
-LEADIN_COLOR = '#9467bd'          # was '#1f77b4' — identical to the route line
-                                   # color, making the lead-in zone circle
-                                   # nearly invisible against it (2026-07-27
-                                   # feedback: looked like missing data, was
-                                   # actually a color collision)
-LANE_CHANGE_COLOR = '#999999'
-RUNWAY_COLOR = '#555555'
-INJECTION_COLOR = '#d62728'
-FAULT_END_COLOR = '#17becf'       # teal 'P' marker — distinct from the red
-                                   # injection star, for the zone-exit fault
-                                   # end point (imu_fault_scale/stuck only;
-                                   # see CAMPAIGN_FAULT_END)
-ROUTE_COLOR = '#1f77b4'
-UNREACHABLE_COLOR = '#bbbbbb'      # zone kept in the data (see turn_zones.json's
-                                   # / tl_zones.json's `reachable` field) but at
-                                   # or before the runway-clear point — greyed
-                                   # out instead of hidden, since it's real
-                                   # geometry, just not an active injection
-                                   # target on this route
+# Zone/route colors (TL_COLOR, TURN_COLOR, LEADIN_COLOR, LANE_CHANGE_COLOR,
+# RUNWAY_COLOR, INJECTION_COLOR, FAULT_END_COLOR, ROUTE_COLOR,
+# UNREACHABLE_COLOR) now live in experiments/lib/plotting.py — this was the
+# only place that defined them; plot_fault_impact.py used to import them
+# from here transitively rather than from a real shared module.
 
 # campaign name -> (zone kind, fault mechanism blurb for the title)
 CAMPAIGN_ZONE_KIND = {
@@ -182,61 +170,6 @@ def compute_runway_clear_point(resampled, tl_points, tl_radius, flat_fallback_m)
         if math.hypot(x1 - x0, y1 - y0) >= flat_fallback_m:
             return (x1, y1), 'flat_fallback'
     return (resampled[-1][0], resampled[-1][1]), 'flat_fallback_never_reached'
-
-
-def draw_injection_points(ax, points, color, label):
-    for i, (x, y) in enumerate(points):
-        ax.plot(x, y, marker='*', color=color, markersize=14,
-                markeredgecolor='black', markeredgewidth=0.6, zorder=6,
-                label=label if i == 0 else None)
-
-
-def draw_fault_end_points(ax, points, color, label):
-    """points may contain None (a turn_zones.json entry with no stored
-    end point, or a fixed-timer fault type with no geometric end at all) —
-    skipped, not plotted as a fabricated position."""
-    first = True
-    for pt in points:
-        if pt is None:
-            continue
-        x, y = pt
-        ax.plot(x, y, marker='P', color=color, markersize=12,
-                markeredgecolor='black', markeredgewidth=0.6, zorder=6,
-                label=label if first else None)
-        first = False
-
-
-def draw_zones_with_reachability(ax, zones_xyr, injection_pts, radius, color, zone_label, kind_label):
-    """zones_xyr: [(x, y, reachable), ...] for the zone CIRCLE (real
-    geometry — drawn regardless of reachability); injection_pts: [(x, y),
-    ...] same length/order, the actual arming-marker position for each
-    (may differ from the circle center — see tl_injection_pts). Reachable
-    zones get the real color + an injection star; unreachable ones (at/
-    before the runway-clear point — see turn_zones.json/tl_zones.json's
-    `reachable` field) are greyed out with no star, since a fault can
-    never actually arm there on this route.
-
-    zone_label is the CIRCLE's own legend entry (e.g. "IMU turn zone
-    (r=15m)") — previously missing entirely (2026-07-27 feedback: the
-    circles were real, correctly-drawn gating radii, just with no legend
-    entry explaining what they were, easy to mistake for leftover debug
-    markers)."""
-    reach_label_done = unreach_label_done = False
-    for (x, y, reachable), (ix, iy) in zip(zones_xyr, injection_pts):
-        if reachable:
-            ax.add_patch(Circle((x, y), radius, facecolor=color, alpha=0.18,
-                                 edgecolor=color, linewidth=1.2, zorder=4,
-                                 label=zone_label if not reach_label_done else None))
-            ax.plot(ix, iy, marker='*', color=INJECTION_COLOR, markersize=14,
-                    markeredgecolor='black', markeredgewidth=0.6, zorder=6,
-                    label=f'injection point ({kind_label})' if not reach_label_done else None)
-            reach_label_done = True
-        else:
-            ax.add_patch(Circle((x, y), radius, facecolor=UNREACHABLE_COLOR, alpha=0.25,
-                                 edgecolor=UNREACHABLE_COLOR, linewidth=1.0, zorder=4))
-            ax.plot(x, y, marker='x', color=UNREACHABLE_COLOR, markersize=7, zorder=5,
-                    label='unreachable zone (before runway-clear)' if not unreach_label_done else None)
-            unreach_label_done = True
 
 
 def plot_goal(map_data, campaign, zone_kind, fault_label, fault_end, goal, goal_xy, pooled_tl_group_zones,
@@ -304,14 +237,11 @@ def plot_goal(map_data, campaign, zone_kind, fault_label, fault_end, goal, goal_
     ymin, ymax = min(all_y) - margin, max(all_y) + margin
 
     fig, ax = plt.subplots(figsize=(10, 11))
-    for ll in map_data.laneletLayer:
-        if ll_attr(ll, 'subtype') != 'road':
-            continue
-        if not bbox_hit(ll, xmin, xmax, ymin, ymax):
-            continue
-        ax.add_patch(Polygon(lanelet_polygon_xy(ll), closed=True,
-                              facecolor='#eeeeee', edgecolor='#cccccc',
-                              linewidth=0.3, zorder=1))
+    # Was '#eeeeee'/'#cccccc' here (slightly lighter than plot_routes.py's/
+    # plot_fault_impact.py's '#dddddd'/'#bbbbbb') for no functional reason —
+    # unified via draw_map_background's shared default, per the same
+    # consistency pass that moved this loop into plotting.py.
+    draw_map_background(ax, map_data, xmin, xmax, ymin, ymax)
 
     # Runway (before runway-clear, NOTHING can arm) drawn distinctly from the
     # eligible remainder of the route.
