@@ -1,17 +1,21 @@
 # ST-GAT Pipeline Plan
 
-**Last Updated:** 2026-07-28 — added §1.10 and Stage 0 notes on entity-collapsing
-features, compute budget, and topic time-sync, from a real bug found live in
-this repo's own fault-comparison analysis code (not just the reference repo).
+**Last Updated:** 2026-08-01 — added §1.11/§1.12 (two concrete bugs found by
+re-reading this plan against the actual implementation, both fixed same-day:
+the TL entity-collapse bug reproduced in this repo's own pipeline, and missing
+model output heads for the perception-report channel) and checked off which
+Stage 0-3 items are now actually implemented, driven by reconciling this plan
+against Kalpit's sharper thesis framing in `docs/theoretical_framework.md`.
 
-**Originally drafted:** 2026-07-26 — first draft, written before any implementation.
-Not started yet: fault-campaign data collection (see `TODO.md`) is still being
-finalized. This is a planning document to be discussed and revised, not a
-committed design.
+**Originally drafted:** 2026-07-26 — first draft, written before any
+implementation.
 
-> **Status:** no code exists for this yet. Everything below is a plan to
-> critique and modify before implementation begins — see `TODO.md` for
-> current phase status.
+> **Status:** Stages 0–3 are now partially implemented (see per-stage notes
+> below) — `st_gat/pipeline/{bag_reader,sequence_builder,run_pipeline}.py` and
+> `st_gat/model/{model,loss,dataset,trainer}.py` exist and compile. **Not yet
+> run against real data** — `st_gat/data/` doesn't exist yet, so no training has
+> actually happened on this architecture. Stage 4 (calibration) and the actual
+> extraction/training/residual runs remain open — see `TODO.md` for phase status.
 
 ---
 
@@ -183,11 +187,54 @@ signal belonged to before anything downstream had a chance to use it. This is
 now a standing risk to check for explicitly in Stage 0 below, not just a
 TL-specific bug that got fixed once.
 
+**1.11 — §1.10's exact bug, reproduced live in this repo's own ST-GAT pipeline,
+not just the analysis script (found and fixed 2026-08-01).**
+`bag_reader._extract_traffic_lights` pulled elements from **every** currently-
+tracked `traffic_light_group` in the message, and `sequence_builder`'s
+`_traffic_light_state`/`_traffic_light_discrepancy` took a max/AND over all of
+them — the identical collapse §1.10 found and fixed in
+`compare_fault_vs_nominal.py`, just never ported back to the pipeline that
+actually builds training data. This muted exactly the signal
+`docs/theoretical_framework.md` leans on hardest (the perception-vs-map
+negative-evidence channel) for every TL-fault trial that would ever be used for
+training or evaluation. **Fixed:** `bag_reader.read_bag()` now accepts a
+`goal_id`, loads `experiments/configs/tl_zones.json` (same file, same
+nearest-zone-within-40m selection `fault_injector.py`/
+`compare_fault_vs_nominal.py` already use, no new code path invented), and
+scopes extraction to the one governing `group_id`. Falls back to the old pooled
+behavior when `goal_id` is `None` or the goal has no zones entry — same
+documented fallback as the analysis script, not a silent behavior change.
+
+**1.12 — Missing output heads meant the negative-evidence signal had no
+residual at all (found and fixed 2026-08-01).** Of the 14 input features, only
+8 had a corresponding model output head (position×2, velocity×2, steering,
+accel, object_distance, `traffic_light_detected`). `traffic_light_state` and
+`traffic_light_discrepancy` — the perception-report channel that's supposed to
+diverge from the map-expectation channel under a camera/TL fault — were
+computed as inputs but **never predicted**, so no NLL/residual was computable
+on them at all. Meanwhile `traffic_light_detected` (the map fact — already
+fully determined by the route, not actually uncertain) did have a head, which
+in hindsight is the less interesting of the two to predict. **Fixed:** added a
+Gaussian (mean+var) head for `traffic_light_state` and a Bernoulli/sigmoid head
+for `traffic_light_discrepancy` in `st_gat/model/model.py`, with matching NLL/
+BCE terms in `st_gat/model/loss.py`. This is what makes the epistemic-stance
+argument in `docs/theoretical_framework.md` §3/§5 actually computable rather
+than just asserted.
+
 ---
 
 ## 2. Pipeline plan, stage by stage
 
 ### Stage 0 — State/feature definition (map-grounded, before any model code)
+
+**Status (2026-08-01):** MGRS projector and the TL entity-collapse fix (§1.11)
+are done. Graph cadence is still per-sequence, not re-litigated. Object/
+closest-object features still collapse to a single nearest-object scalar
+(unchanged — same collapse class as §1.10/§1.11, just not yet revisited for
+non-TL entities). Compute budget not yet timed. Time-sync strategy unchanged
+(forward-fill onto the `objects` topic, 300ms staleness cutoff) — not yet
+re-litigated against the interpolation alternative below.
+
 - Every map query uses `MGRSProjector` (§1.1). Consider a lint-level check.
 - Decide explicitly, in writing, what "TL Status Flag" (and any other
   map-derived categorical feature) *means* and *when it's allowed to be
@@ -249,6 +296,13 @@ TL-specific bug that got fixed once.
   campaigns × goals × trials) gets large, rather than assuming it always fits.
 
 ### Stage 2 — Model architecture
+
+**Status (2026-08-01):** distributional heads now cover the negative-evidence
+channel too (§1.12 — `traffic_light_state`/`traffic_light_discrepancy` heads
+added). Graph convolution is still an unbatched per-sample Python loop
+(`GraphEncoder.forward`'s `for i in range(B)`) — not yet fixed, will matter at
+dataset scale. Graph pooling/cadence unchanged (per-sequence, mean-pooled).
+
 - Keep the distributional heads (mean + variance per continuous feature,
   sigmoid for categorical) — sound, and exactly what "embrace distributions"
   requires.
@@ -259,6 +313,15 @@ TL-specific bug that got fixed once.
   architecture, don't let it fall out of a copy-pasted `forward()`.
 
 ### Stage 3 — Training
+
+**Status (2026-08-01):** variance floor (`VAR_FLOOR = 1e-4`, applied at
+prediction time in `model.py` and matched in `loss.py`) and deliberate
+per-task loss weighting (`loss.py`'s `DEFAULT_WEIGHTS`) are both already
+implemented — not silent equal-weighting. Not stress-tested against real
+fault-trial data yet (no training run has happened). Deep ensemble (§1.9) is
+**not yet implemented** — `Trainer`/`train.py` currently train a single model,
+not an independent-seed ensemble; still open.
+
 - Real variance floor, non-zero epsilon, or log-variance parameterization —
   pick one, stress-test it against a fault trial's corrupted data (feed it
   early, before the ensemble even exists, as an adversarial-ish smoke test).
@@ -279,6 +342,16 @@ TL-specific bug that got fixed once.
   three-way split (train/calibrate/evaluate), not two.
 
 ### Stage 5 — Residual/detection layer
+
+**Status (2026-08-01):** `st_gat/infer.py` (stale, broken against the current
+14-feature config, obs_*-scenario-focused) retired and replaced by
+`st_gat/residuals.py` — see `TODO.md` Phase 1.3. Its CUSUM is a plain function
+over a full array per call (no stateful setter, no cross-trial persistence), so
+§1.2/§1.3's bug classes don't apply by construction — but it's not yet run
+per-feature across the full trace schema in anger against real data, and no
+unit test formally asserts the stateless property. Random Forest / classifier
+step (last bullet) not yet built — depends on Stage 4.
+
 - Reimplement CUSUM (and whichever of Raw/KL are kept)
   **stateless-by-construction between trials** — a fresh instance per trial,
   with the corresponding unit test (§1.3).
@@ -289,6 +362,13 @@ TL-specific bug that got fixed once.
   `GroupKFold`/`GroupShuffleSplit` keyed by trial ID, always (§1.8).
 
 ### Stage 6 — Evaluation, reframed around the actual claim
+
+**Status (2026-08-01):** `residuals.py` now joins the fatal-moment markers
+(Arm A's `static_collision` heuristic, first-`mrm_active` frame) into the
+per-timestep trace, so lead-time reporting has its ground-truth anchor wired
+in — but calibration curves (blocked on Stage 4) and the "what would fool
+this" robustness section are both still open, unstarted.
+
 - Report calibration curves (are the confidence intervals actually right X%
   of the time), not just accuracy.
 - Report lead time against the ground-truth events this repo already has

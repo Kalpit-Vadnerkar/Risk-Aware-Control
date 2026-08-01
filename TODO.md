@@ -111,6 +111,12 @@ contribution, not a candidate that might get dropped.
 policy. As of this reframe, not primarily a control-extension dissertation —
 active control is illustrative future work, not the claim under defense.
 
+**See `docs/theoretical_framework.md` (rewritten 2026-08-01)** for the full
+thesis statement, epistemic stance, horizon-as-variable design principles, the
+divergence trace schema, and the fatal-moment anchor decision — this section
+gives the research-direction summary, that doc is the authoritative statement of
+the claim itself; don't duplicate its text here.
+
 ---
 
 ## Priority 0 — BLOCKING: Mechanism Experiments (added 2026-07-24)
@@ -364,40 +370,74 @@ Work goes in `st_gat/` within this repo.
 
 ### 1.1 Data Extraction
 
-- [ ] **Feature list below is stale — re-derive against
-      `docs/stgat_pipeline_plan.md` Stage 0 / §1.10 before writing
-      `extract.py`.** `traffic_light(1)` as a single scalar is exactly the
-      entity-collapsing pattern §1.10 found hiding a real fault signature
-      live in this repo's own analysis code (2026-07-28) — state per
-      relevant TL group, not one scene-wide value. Also decide the
-      cross-topic time-sync strategy (Stage 0) before this script's window
-      boundaries get defined implicitly by whatever a naive per-topic loop
-      produces.
-- [ ] Write `st_gat/extract.py`: reads rosbag files from `experiments/data/baseline_all/`
-      and `nom_v11/`, extracts per-timestep features:
-      position(2), velocity(2), steering(1), accel(1), obj_distance(1), traffic_light(1)
-- [ ] Output: `st_gat/data/nominal_features.pkl` — one row per timestep, labeled by
-      run_id
-- [ ] Verify feature distributions look sane (no NaNs, velocity capped at expected values)
+**Superseded the standalone `extract.py` idea below — implemented instead as
+`st_gat/pipeline/{bag_reader,sequence_builder,run_pipeline}.py`** (14-feature
+vector, graph-per-window, train/cal split by goal). Code exists; actually running
+it against the collected fault campaigns has not happened yet.
+
+- [x] Entity-collapsing TL feature bug (§1.10/§1.12 in
+      `docs/stgat_pipeline_plan.md`) — fixed 2026-08-01: `bag_reader.py` now
+      scopes `traffic_light_state`/`traffic_light_discrepancy` to the one
+      `group_id` governing the vehicle's current lanelet (via
+      `experiments/configs/tl_zones.json`, same selection `fault_injector.py`
+      itself uses), not pooled across every currently-tracked group. Falls back
+      to the old pooled behavior when a goal has no zones file entry.
+- [ ] Decide the cross-topic time-sync strategy explicitly in writing (Stage 0 in
+      `stgat_pipeline_plan.md`) — currently forward-fill onto the `objects` topic
+      as master clock with a 300ms staleness cutoff; not yet re-litigated against
+      the plan doc's "proper interpolation vs. nearest-neighbor snap" question.
+- [ ] Actually run `python3 -m st_gat.pipeline.run_pipeline` against the
+      collected nominal + fault campaigns and verify feature distributions look
+      sane (no NaNs, velocity capped at expected values) — not yet done.
 
 ### 1.2 Model Training
 
-- [ ] Write `st_gat/config.py`: hyperparams matching T-ITS paper
-- [ ] Write `st_gat/train.py`: train ST-GAT on nominal data (baseline_all + nom_v11),
-      80/20 train/val split
-- [ ] Train and save model checkpoint to `st_gat/checkpoints/`
-- [ ] Verify residuals are low on held-out nominal runs (raw residual < 1σ in majority
-      of timesteps)
+**`st_gat/pipeline/config.py`, `st_gat/model/{model,loss,dataset,trainer}.py`,
+`st_gat/train.py` already exist** (STGAT architecture: graph encoder + BatchNorm
++ transformer + LSTM + distributional output heads, ~1.2M params). Not yet
+trained on real data — `st_gat/data/` doesn't exist yet, and the existing
+`st_gat/checkpoints/best_model.pth`/`st_gat/models/st_gat_rise.pth` predate the
+2026-07-23 14-feature change (config.py already flags them stale) and this
+session's new output heads below — **delete/ignore them, retrain from scratch.**
+
+- [x] `traffic_light_state`/`traffic_light_discrepancy` output heads added
+      2026-08-01 (`model.py`/`loss.py`) — previously only `traffic_light_detected`
+      (a map fact, not actually uncertain) had a head, so no residual/NLL was
+      computable on the actual perception-vs-map negative-evidence signal this
+      dissertation's mechanism depends on. See `stgat_pipeline_plan.md` §1.12.
+- [x] Horizon-tagged cache/checkpoint paths added 2026-08-01
+      (`cfg.HORIZON_TAG`) — a horizon sweep (P1.3 below) needs to hold multiple
+      `INPUT_SEQ_LEN`/`OUTPUT_SEQ_LEN` combinations' extracted data and
+      checkpoints side by side without collision.
+- [ ] Train and save model checkpoint on real extracted data — not yet done.
+- [ ] Verify residuals are low on held-out nominal runs (raw residual < 1σ in
+      majority of timesteps).
 
 **Success criterion:** On held-out nominal data, mean raw residual < 0.5 m/s for
 velocity features, < 1.0m for position features.
 
 ### 1.3 Residual Computation
 
-- [ ] Write `st_gat/residuals.py`: run trained model over all experiment rosbags,
-      compute per-timestep Raw, KL, and CUSUM residuals
-- [ ] Output: one residual CSV per run in `st_gat/residuals/`
-- [ ] Plot residual traces for a clean nominal run and representative fault runs
+**`st_gat/infer.py` retired 2026-08-01** — it was stale (referenced feature keys
+that no longer match `cfg.FEATURE_SIZES`, would `KeyError` on model forward),
+targeted the deprioritized `obs_recovery`/`obs_noescape` scenario campaigns
+(scoped out, not even present in `experiments/data/`), and only logged one
+CVaR95 number per run instead of a per-timestep trace. Replaced by
+`st_gat/residuals.py`, built around the divergence trace schema in
+`docs/theoretical_framework.md` §5:
+
+- [x] `st_gat/residuals.py` written 2026-08-01: per-timestep trace (not
+      per-window summary) over `cfg.NOMINAL_DATASETS` + `cfg.FAULT_DATASETS`
+      (the actual campaigns on disk: `imu_fault_s1/s3/scale/stuck`,
+      `tl_fault_s2/s3/s4/ramp`) — predicted mean/var + actual + raw residual per
+      output feature (including the two new TL heads), map-expectation channel
+      kept separate from perception-report channel, fault-onset-relative time
+      (joined from `fault_log.jsonl`), and fatal-moment markers joined from
+      `metrics.json` (`static_collision.permanent_stop_time_s`) and the
+      first-`mrm_active` frame.
+- [ ] Actually run it once a model is trained (1.2) and inspect real traces —
+      not yet done.
+- [ ] Plot residual traces for a clean nominal run and representative fault runs.
 
 ---
 
@@ -467,9 +507,14 @@ confidence ≈ empirical accuracy) across the fault sweep; empirical coverage
 
 ### P1.3 Horizon study — lead time ← was a hyperparameter sweep, now a safety result
 
+- [x] Prerequisite done 2026-08-01: cache/checkpoint paths are now horizon-tagged
+      (`cfg.HORIZON_TAG`, see 1.2 above) so re-extracting/retraining at a
+      different `INPUT_SEQ_LEN`/`OUTPUT_SEQ_LEN` no longer overwrites another
+      horizon's data — sweeping is now mechanically possible, not just planned.
 - [ ] Vary history and prediction window lengths
 - [ ] **Report as lead time in seconds relative to the ground-truth safety
-      event** (Arm B's Autoware MRM trigger timestamp), not as accuracy deltas
+      event** (Arm B's Autoware MRM trigger timestamp, and/or the fatal-moment
+      anchor in `docs/theoretical_framework.md` §6), not as accuracy deltas
 - [ ] This is the primary evidence for the "lead time" pillar of the claim —
       depends on the Arm B gap being resolved first (see two-arm design section)
 
