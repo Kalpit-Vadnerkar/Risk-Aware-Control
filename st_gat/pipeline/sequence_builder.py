@@ -127,10 +127,10 @@ def _scale_position(point: Point, x_min, x_max, y_min, y_max) -> List[float]:
 
 
 def _scale_object(obj_dict: dict, x_min, x_max, y_min, y_max) -> dict:
-    pos = Point.convert_coordinate_frame(
-        obj_dict['position']['x'], obj_dict['position']['y'],
-        cfg.REFERENCE_POINTS
-    )
+    # Raw bag-frame position, NOT run through Point.convert_coordinate_frame
+    # (see _process_frame's comment on the same fix — that conversion target
+    # frame is incompatible with this pipeline's graph/map frame).
+    pos = Point(obj_dict['position']['x'], obj_dict['position']['y'])
     return {
         'position': _scale_position(pos, x_min, x_max, y_min, y_max),
         'velocity': [
@@ -212,8 +212,11 @@ class LaneletAdjacencyChecker:
     lanelet2 routing graph.  Query is O(n_lanelets) at init, O(n) per frame
     where n is number of lanelets (979 for nishishinjuku ≈ fast enough).
 
-    Coordinate frame: lanelet2 LocalCartesian ≡ the reference frame produced
-    by Point.convert_coordinate_frame — same origin, nearly identity scale.
+    Coordinate frame: this map is loaded via MGRSProjector (MapProcessor.py),
+    the same bag/MGRS frame ego and object positions from the rosbag are
+    already in — query with RAW positions, never through
+    Point.convert_coordinate_frame (see _process_frame's fix comment: that
+    conversion targets an incompatible, now-unused frame).
     """
 
     def __init__(self, map_data):
@@ -276,10 +279,20 @@ def _process_frame(
     """Convert one raw frame dict → scaled feature dict."""
     ego = frame['ego']
 
-    ego_point = Point.convert_coordinate_frame(
-        ego['position']['x'], ego['position']['y'],
-        cfg.REFERENCE_POINTS
-    )
+    # Raw bag/MGRS-frame position (NOT Point.convert_coordinate_frame — see
+    # the 2026-08-02 fix below). The map (MapProcessor.py) and this pipeline's
+    # graph (GraphBuilder, built directly from the map's own lanelet points)
+    # are both in the bag frame ego positions from the rosbag are already in;
+    # convert_coordinate_frame instead mapped into an incompatible ~3500,1800
+    # frame calibrated for a DIFFERENT, since-replaced map projector. Verified
+    # this was live: every extracted sequence's 'position' feature was
+    # uniformly [0.0, 0.0] (silently clamped, since the converted value always
+    # fell far outside the graph's bag-frame bounds) — and because
+    # _traffic_light_detected below looks up the nearest GRAPH node to this
+    # same ego_pos_scaled, 'traffic_light_detected' (the map-expectation
+    # channel the negative-evidence mechanism depends on) was uniformly 0 too,
+    # regardless of where the vehicle actually was.
+    ego_point = Point(ego['position']['x'], ego['position']['y'])
     ego_pos_scaled = _scale_position(ego_point, x_min, x_max, y_min, y_max)
 
     objects_scaled = [_scale_object(o, x_min, x_max, y_min, y_max) for o in frame['objects']]
@@ -384,14 +397,13 @@ class SequenceBuilder:
             init_frame = window[0]['ego']
             last_frame  = window[-1]['ego']
 
-            init_pt = Point.convert_coordinate_frame(
-                init_frame['position']['x'], init_frame['position']['y'],
-                cfg.REFERENCE_POINTS
-            )
-            last_pt = Point.convert_coordinate_frame(
-                last_frame['position']['x'], last_frame['position']['y'],
-                cfg.REFERENCE_POINTS
-            )
+            # Raw bag-frame Points (see _process_frame's fix comment) — this
+            # center_position feeds GraphBuilder._get_sorted_lanelets, which
+            # measures distance against raw (bag-frame) lanelet centerline
+            # points, so it must be in the same frame or every lanelet
+            # "distance" is meaningless.
+            init_pt = Point(init_frame['position']['x'], init_frame['position']['y'])
+            last_pt = Point(last_frame['position']['x'], last_frame['position']['y'])
 
             # Rebuild graph only if window centre shifted significantly
             rebuild = (

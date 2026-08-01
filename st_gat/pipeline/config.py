@@ -211,14 +211,20 @@ TRAIN_DIR      = os.path.join(SEQUENCES_DIR, 'train')
 CAL_DIR        = os.path.join(SEQUENCES_DIR, 'calibration')
 CHECKPOINT_DIR = os.path.join(REPO_ROOT, 'st_gat', 'checkpoints', HORIZON_TAG)
 
-# Reference points for coordinate frame conversion (Shinjuku map ↔ local frame)
-# Same values as original T-ITS paper config.py
-REFERENCE_POINTS = [
-    ((81370.40, 49913.81), (3527.96, 1775.78)),
-    ((81375.16, 49917.01), (3532.70, 1779.04)),
-    ((81371.85, 49911.62), (3529.45, 1773.63)),
-    ((81376.60, 49914.82), (3534.15, 1776.87)),
-]
+# REFERENCE_POINTS (the T-ITS reference repo's bag-frame -> ~3500,1800 "local
+# frame" affine transform) removed 2026-08-02 — it was calibrated for that
+# repo's own guessed-origin map projector (LocalCartesianProjector), a
+# different one than this pipeline's MGRSProjector (MapProcessor.py), which
+# already loads the map in the same bag/MGRS frame ego and object positions
+# from the rosbag are in. Running ego/object positions through it here made
+# every position clamp to [0,0] against the graph's bag-frame bounds (and,
+# because traffic_light_detected looks up the nearest GRAPH node to that same
+# clamped position, made the map-expectation channel uniformly 0 too,
+# regardless of real vehicle position) — found live, all sequences extracted
+# before this fix have degenerate position/object_distance/has_adjacent_lane/
+# traffic_light_detected and must be re-extracted. See sequence_builder.py's
+# _process_frame for the fix (use raw bag-frame Point(x, y) directly, no
+# conversion — everything is already in the same frame).
 
 # ── Model config (input feature sizes — updated for uncertainty) ───────────
 
