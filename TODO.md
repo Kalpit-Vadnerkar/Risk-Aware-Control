@@ -535,6 +535,32 @@ confidence ≈ empirical accuracy) across the fault sweep; empirical coverage
       applies — not yet run, blocked on Priority 0 confirming the mechanism first
       (this experiment presumes the mechanism it's explaining)
 
+### P1.6 Architecture ablation study (added 2026-08-02)
+
+Several architecture decisions in `st_gat/model/model.py` were made by
+judgment call, not measurement — worth grounding in an actual ablation once
+the core mechanism (Priority 0) is established, rather than defending them
+by intuition alone in the eventual write-up.
+
+- [ ] **Graph cadence**: `graph_ctx` is currently pooled once per window (all
+      30 input timesteps share the same vector — see
+      `docs/theoretical_framework.md` §4) vs. rebuilding/re-pooling it more
+      finely. Measure whether finer cadence actually improves position/
+      velocity tracking or fault-reaction lead time, rather than assuming
+      either way.
+- [ ] **Graph node count** (`MAX_GRAPH_NODES = 150`): untested whether this is
+      enough, too many, or arbitrary relative to what the GCN actually uses —
+      sweep it.
+- [ ] **`d_model`/`d_graph`/`hidden_size`/`num_layers`/`nhead`** (all currently
+      128/128/128/2/4, set once and never revisited): a real capacity sweep,
+      not just "it trained and the loss went down."
+- [ ] **Object set encoder** (added 2026-08-02): `MAX_TRACKED_OBJECTS=8`,
+      `d_obj=32`, mean-pool vs. attention-pool — all first-pass choices, not
+      measured against alternatives.
+- [ ] Report as: does the mechanism/calibration/lead-time result hold up
+      across these choices (robustness), and does any of them materially
+      change it (a real finding, not just noise)?
+
 ---
 
 ## Deprioritized / Future Work: Active Control (RISE) — was Phase 2/3/4
