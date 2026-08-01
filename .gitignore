@@ -14,6 +14,11 @@ __pycache__/
 # Experiment data (large rosbags)
 experiments/data/
 
+# ST-GAT extracted/windowed sequence cache (regenerable from experiments/data/
+# via `python3 -m st_gat.pipeline.run_pipeline`; grows large — one horizon-tagged
+# subtree per INPUT_SEQ_LEN/OUTPUT_SEQ_LEN combo, see cfg.HORIZON_TAG)
+st_gat/data/
+
 # Downloaded papers
 docs/papers/
 

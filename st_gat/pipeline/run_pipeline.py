@@ -40,21 +40,34 @@ from .sequence_builder import SequenceBuilder
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _find_run_dirs(dataset: str) -> List[str]:
-    """Return sorted list of run directories for a dataset."""
+    """
+    Return sorted list of trial run directories for a dataset.
+
+    Trials are nested by goal: experiments/data/<dataset>/<goal_id>/<trial>/
+    (revised 2026-07-22 — was flat with the campaign name repeated in every
+    trial dirname; see CLAUDE.md's directory-conventions section). Fixed
+    2026-08-01: this previously only looked one level deep
+    (<dataset>/<entry>/rosbag), so it silently found 0 runs for every
+    dataset on the current layout.
+    """
     dataset_dir = os.path.join(cfg.DATA_ROOT, dataset)
     if not os.path.isdir(dataset_dir):
         print(f"  [pipeline] WARNING: dataset dir not found: {dataset_dir}")
         return []
 
     runs = []
-    for entry in sorted(os.listdir(dataset_dir)):
-        run_dir = os.path.join(dataset_dir, entry)
-        if not os.path.isdir(run_dir):
+    for goal_entry in sorted(os.listdir(dataset_dir)):
+        goal_dir = os.path.join(dataset_dir, goal_entry)
+        if not os.path.isdir(goal_dir) or not goal_entry.startswith('goal_'):
             continue
-        bag_dir = os.path.join(run_dir, 'rosbag')
-        if not os.path.isdir(bag_dir):
-            continue
-        runs.append(run_dir)
+        for trial_entry in sorted(os.listdir(goal_dir)):
+            run_dir = os.path.join(goal_dir, trial_entry)
+            if not os.path.isdir(run_dir):
+                continue
+            bag_dir = os.path.join(run_dir, 'rosbag')
+            if not os.path.isdir(bag_dir):
+                continue
+            runs.append(run_dir)
     return runs
 
 
@@ -67,12 +80,19 @@ def _load_result(run_dir: str) -> dict:
 
 
 def _goal_from_run_dir(run_dir: str) -> str:
-    """Extract goal_id from the directory name (e.g., 'goal_007_...' → 'goal_007')."""
-    basename = os.path.basename(run_dir)
-    parts = basename.split('_')
-    if len(parts) >= 2 and parts[0] == 'goal':
-        return f"{parts[0]}_{parts[1]}"
-    return basename
+    """
+    Extract goal_id for a trial run directory.
+
+    run_dir is a trial dir (e.g. '.../nom_v11/goal_016/t1_20260722_141240') —
+    the goal_id is its PARENT directory's name, not derivable from the trial
+    dirname itself (fixed 2026-08-01, see _find_run_dirs above for why: this
+    used to assume a flat 'goal_XXX_<campaign>_tN_<timestamp>' dirname, which
+    hasn't been the on-disk layout since 2026-07-22).
+    """
+    parent = os.path.basename(os.path.dirname(run_dir))
+    if parent.startswith('goal_'):
+        return parent
+    return os.path.basename(run_dir)
 
 
 def _train_cal_split(
