@@ -141,7 +141,14 @@ def _load_fatal_moment_markers(run_dir: str, frames: list) -> dict:
             with open(metrics_path) as f:
                 m = json.load(f)
             sc = m.get('static_collision', {}) or {}
-            out['permanent_stop_rel_s']    = sc.get('permanent_stop_time_s', float('nan'))
+            # .get(key, default) only applies the default when the KEY is
+            # absent — metrics.json legitimately has permanent_stop_time_s
+            # present but JSON null (Python None) for trials that never got
+            # stuck, which .get() would return as-is, not float('nan').
+            # Explicit None-check, not a truthy check (0.0 is a real,
+            # valid stop time, not "missing").
+            stop_time = sc.get('permanent_stop_time_s')
+            out['permanent_stop_rel_s']    = float(stop_time) if stop_time is not None else float('nan')
             out['likely_static_collision'] = bool(sc.get('likely_static_collision', False))
         except Exception:
             pass
