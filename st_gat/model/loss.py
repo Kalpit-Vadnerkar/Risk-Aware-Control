@@ -17,6 +17,23 @@ Changes from the T-ITS reference:
     per-object representation with no output head (see model.py's
     ObjectSetEncoder and docs/theoretical_framework.md §3.1 on why objects
     don't get a negative-evidence residual the way traffic lights do).
+  - beta-NLL added 2026-08-02 (Seitzer, Tavakoli, Antic & Martius, "On the
+    Pitfalls of Heteroscedastic Uncertainty Estimation with Probabilistic
+    Neural Networks," ICLR 2022, arXiv:2203.09168): plain Gaussian NLL's
+    gradient w.r.t. the mean is implicitly scaled by 1/variance, so a
+    sample the model finds hard can reduce its loss contribution by
+    inflating predicted variance instead of by fitting the mean better —
+    the model "explains away" error rather than reducing it. Found live: a
+    calibration check on this project's first trained model showed every
+    Gaussian-headed feature underconfident (predicted std ~0.6-0.95x what
+    the actual error spread justified, not ~1.0x), alongside genuinely poor
+    point accuracy (1-step position error 30x worse than a trivial
+    constant-velocity baseline) — the textbook beta-NLL failure signature,
+    not just "needs more training." beta-NLL reweights each sample's NLL
+    contribution by its own variance (stop-gradient), raised to BETA_NLL,
+    decoupling the mean-fitting gradient from the variance-scaling
+    pathology; BETA_NLL=0 recovers plain NLL, BETA_NLL=1 weights samples
+    close to how plain MSE would.
 """
 
 import torch
@@ -24,6 +41,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 VAR_FLOOR = 1e-4      # must match model.py — applied at prediction time
+BETA_NLL  = 0.5        # Seitzer et al. 2022 — see module docstring
 
 DEFAULT_WEIGHTS = {
     'position':               1.0,
@@ -76,6 +94,12 @@ class CombinedLoss(nn.Module):
                 target_k = target_k.squeeze(-1)
 
             nll = 0.5 * (torch.log(var) + (target_k - pred[mean_k]).pow(2) / var)
+            # beta-NLL (Seitzer et al. 2022, see module docstring): weight each
+            # sample by its own variance (stop-gradient — the weight itself
+            # contributes no gradient, only rescales the NLL term's) so the
+            # mean-fitting gradient isn't implicitly suppressed by 1/variance.
+            beta_weight = var.detach().pow(BETA_NLL)
+            nll = nll * beta_weight
             nll = nll.sum(dim=tuple(range(1, nll.dim()))).mean()
 
             # Mild penalty if variance collapses toward the floor
