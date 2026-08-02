@@ -188,9 +188,17 @@ class Trainer:
 
             tr_loss   = train_losses['total_loss']
             v_loss    = val_losses['total_loss']
-            self.scheduler.step(v_loss)   # ReduceLROnPlateau: once per epoch, on val loss
+            # Checkpoint/early-stop/LR-schedule criterion: raw position+velocity
+            # error, NOT the NLL total_loss — see loss.py's position_l2_raw/
+            # velocity_l1_raw docstring. NLL can get worse while real accuracy
+            # improves (variance correctly widening for longer-horizon
+            # uncertainty), which made "best total_loss" pick an
+            # undertrained checkpoint in practice. Weighted 1:0.8 to match
+            # DEFAULT_WEIGHTS' position:velocity ratio.
+            v_raw = val_losses.get('position_l2_raw', 0.0) + 0.8 * val_losses.get('velocity_l1_raw', 0.0)
+            self.scheduler.step(v_raw)   # ReduceLROnPlateau: once per epoch
             lr        = self.optimizer.param_groups[0]['lr']
-            improved  = '★' if v_loss < best_val else ' '
+            improved  = '★' if v_raw < best_val else ' '
             patience_left = self.early_stop.patience - self.early_stop.counter
 
             # ETA from mean epoch time
@@ -202,14 +210,15 @@ class Trainer:
             epoch_bar.set_postfix(
                 tr    = f"{tr_loss:.4f}",
                 val   = f"{v_loss:.4f}",
+                raw   = f"{v_raw:.4f}",
                 lr    = f"{lr:.1e}",
                 pat   = patience_left,
                 eta   = eta_str,
             )
 
             # Checkpoint
-            if v_loss < best_val:
-                best_val = v_loss
+            if v_raw < best_val:
+                best_val = v_raw
                 torch.save(self.model.state_dict(), best_path)
 
             # Periodic per-feature breakdown
@@ -221,19 +230,22 @@ class Trainer:
                     f"{k.replace('_loss','')[:5]}={val_losses.get(k, 0):.3f}"
                     for k in keys
                 )
+                raw_str = (f"pos_raw={val_losses.get('position_l2_raw', 0):.4f}  "
+                           f"vel_raw={val_losses.get('velocity_l1_raw', 0):.4f}")
                 tqdm.write(
                     f"  ep {epoch:4d}  "
-                    f"train={tr_loss:.4f}  val={v_loss:.4f}  {improved}  "
-                    f"| {breakdown}  "
+                    f"train={tr_loss:.4f}  val={v_loss:.4f}  raw={v_raw:.4f}  {improved}  "
+                    f"| {breakdown}  | {raw_str}  "
                     f"lr={lr:.1e}  ({elapsed:.1f}s)"
                 )
 
-            if self.early_stop.step(v_loss):
+            if self.early_stop.step(v_raw):
                 tqdm.write(f"\n[trainer] Early stopping at epoch {epoch} — best val={best_val:.4f}")
                 break
 
         epoch_bar.close()
-        tqdm.write(f"\n[trainer] Best val loss: {best_val:.4f} — model at {best_path}")
+        tqdm.write(f"\n[trainer] Best val raw error (position_l2 + 0.8*velocity_l1): "
+                   f"{best_val:.4f} — model at {best_path}")
         self.model.load_state_dict(torch.load(best_path, map_location=self.device, weights_only=True))
         self._save_history()
         return self.model

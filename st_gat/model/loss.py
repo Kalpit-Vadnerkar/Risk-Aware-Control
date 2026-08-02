@@ -113,6 +113,29 @@ class CombinedLoss(nn.Module):
 
         losses['total_nll'] = nll_sum.item()
 
+        # ── Raw accuracy metrics (monitoring only — NOT part of the training
+        # objective, no gradient) ────────────────────────────────────────────
+        # NLL-based checkpoint selection can prefer an undertrained state
+        # where predicted variance hasn't grown to its calibrated size yet:
+        # found live, the epoch with the "best" (most negative) total_loss
+        # was epoch 1, before the model had learned much of anything, because
+        # widening variance to correctly reflect longer-horizon uncertainty
+        # increases the log(var) term faster than any accompanying accuracy
+        # gain reduces it — a real, calibration-appropriate change that still
+        # makes the scalar loss look worse. Track raw position/velocity error
+        # directly so Trainer can select/stop on this project's own stated
+        # accuracy targets (TODO.md: <1.0m position, <0.5 m/s velocity)
+        # instead of an NLL number that can diverge from them.
+        with torch.no_grad():
+            if 'position_mean' in pred and 'position' in target:
+                losses['position_l2_raw'] = torch.norm(
+                    pred['position_mean'] - target['position'], dim=-1
+                ).mean().item()
+            if 'velocity_mean' in pred and 'velocity' in target:
+                losses['velocity_l1_raw'] = (
+                    pred['velocity_mean'] - target['velocity']
+                ).abs().mean().item()
+
         # ── BCE output: traffic_light_detected ───────────────────────────────
         if 'traffic_light_detected' in pred and 'traffic_light_detected' in target:
             tgt = target['traffic_light_detected']
