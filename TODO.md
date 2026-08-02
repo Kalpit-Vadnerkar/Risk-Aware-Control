@@ -540,7 +540,10 @@ confidence ≈ empirical accuracy) across the fault sweep; empirical coverage
 Several architecture decisions in `st_gat/model/model.py` were made by
 judgment call, not measurement — worth grounding in an actual ablation once
 the core mechanism (Priority 0) is established, rather than defending them
-by intuition alone in the eventual write-up.
+by intuition alone in the eventual write-up. See
+`docs/research_notes/model_improvement_notes_2026.md` for the fuller
+write-up (calibration mix, route/goal-signal dilution, ensemble/VAR_FLOOR/
+object-pooling follow-ups) this list is a summary of.
 
 - [ ] **Graph cadence**: `graph_ctx` is currently pooled once per window (all
       30 input timesteps share the same vector — see
@@ -557,6 +560,15 @@ by intuition alone in the eventual write-up.
 - [ ] **Object set encoder** (added 2026-08-02): `MAX_TRACKED_OBJECTS=8`,
       `d_obj=32`, mean-pool vs. attention-pool — all first-pass choices, not
       measured against alternatives.
+- [ ] **Route/goal signal utilization** (found 2026-08-02): the graph's
+      `path_node` flag (real Autoware planned route, not a placeholder) is
+      mean-pooled away with every other node before it reaches the temporal
+      stream, diluting exactly the directional "which way does my route go"
+      signal that should matter most right before a turn. Candidate: an
+      explicit route-heading/next-turn scalar feature, or attention-weighted
+      (not uniform mean) pooling — see the model improvement notes doc for
+      the full reasoning. Worth checking whether this explains any of the
+      remaining longer-horizon (3s) position error specifically.
 - [ ] Report as: does the mechanism/calibration/lead-time result hold up
       across these choices (robustness), and does any of them materially
       change it (a real finding, not just noise)?
