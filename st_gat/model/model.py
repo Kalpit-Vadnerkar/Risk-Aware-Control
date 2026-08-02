@@ -17,6 +17,18 @@ Key improvements over the T-ITS paper's GraphAttentionLSTM:
   - LayerNorm after each GCN layer stabilises graph feature magnitudes
   - Built-in gradient clipping in the Trainer (not in this module)
   - softplus(var) + VAR_FLOOR in loss prevents NLL from collapsing to -inf
+  - VAR_FLOOR lowered 1e-4 -> 1e-8 (2026-08-02): one global floor applies to
+    every Gaussian-headed feature (position, velocity, steering,
+    acceleration, traffic_light_state), but their natural error scales
+    differ a lot. Found live: after the position-representation fix,
+    real position error is ~0.09m out of a +-100m range (~0.0009 scaled,
+    squared ~8e-7) — far below the old 1e-4 floor, so predicted position
+    variance was pinned AT the floor (sqrt(1e-4)*100m = 1.0m predicted std,
+    exactly the observed value) regardless of how accurate the mean
+    prediction became. Velocity/steering/traffic_light_state already sat
+    comfortably above 1e-4 (their calibration was fine or improving at that
+    floor), so lowering it doesn't force them lower — it just stops being
+    the binding constraint for position specifically.
 
 Total parameters: ~1.2M  (vs ~9M original)
 """
@@ -27,7 +39,7 @@ import torch.nn.functional as F
 
 
 # Variance floor applied when computing NLL loss (not in model — see loss.py)
-VAR_FLOOR = 1e-4
+VAR_FLOOR = 1e-8
 
 
 # ── Graph Encoder ──────────────────────────────────────────────────────────

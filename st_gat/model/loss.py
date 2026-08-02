@@ -53,7 +53,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-VAR_FLOOR = 1e-4      # must match model.py — applied at prediction time
+VAR_FLOOR = 1e-8      # must match model.py — applied at prediction time. Lowered
+                       # from 1e-4 2026-08-02: it was pinning position's predicted
+                       # variance (real error ~0.09m needs var ~8e-7, below the old
+                       # floor) — see model.py's docstring for the full diagnosis.
 BETA_NLL  = 0.5        # Seitzer et al. 2022 — see module docstring
 
 DEFAULT_WEIGHTS = {
