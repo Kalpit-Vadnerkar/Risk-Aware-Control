@@ -94,6 +94,10 @@ def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
 def _scale_velocity(vel_dict: dict) -> List[float]:
     vx_min, vx_max = cfg.VELOCITY_X_RANGE
     vy_min, vy_max = cfg.VELOCITY_Y_RANGE
@@ -127,9 +131,42 @@ def _scale_uncertainty(x_var: float, y_var: float) -> List[float]:
 
 
 def _scale_position(point: Point, x_min, x_max, y_min, y_max) -> List[float]:
+    """Graph-frame-relative [0,1] position — used ONLY internally, to look
+    up the nearest graph node for traffic_light_detected/has_adjacent_lane
+    (whose coordinates come from the same per-window _scale_graph bounds).
+    NOT used for the 'position' feature/target — see _scale_position_relative
+    below for why."""
     return [
         _clamp01((point.x - x_min) / (x_max - x_min)),
         _clamp01((point.y - y_min) / (y_max - y_min)),
+    ]
+
+
+def _scale_position_relative(point: Point, ref_x: float, ref_y: float, max_range: float) -> List[float]:
+    """
+    The 'position' feature/target: real-metre displacement from a FIXED
+    reference point (this window's last-observed/'current' frame), scaled to
+    [-1, 1] by a fixed constant (cfg.POSITION_DISPLACEMENT_RANGE_M) — not the
+    window's own bounding box.
+
+    Fixed 2026-08-02: the previous window-bbox-relative [0,1] scaling
+    (_scale_position, still used above for graph lookups) gave the model no
+    way to know the metric scale of its own position target — two windows
+    with identical SCALED position sequences could correspond to very
+    different real displacements depending on that window's own (never
+    given to the model) bbox extent. Confirmed via a baseline check: the
+    trained model's 1-step position error (2.5m) was ~30x worse than a
+    trivial constant-velocity extrapolation baseline (0.08m) — not possible
+    if the scale were consistent and learnable. Real-metre displacement from
+    a fixed reference point has the same units in every training example, so
+    the same network weights can learn one generalizable dynamics-to-
+    displacement mapping instead of an unobservable per-window rescaling.
+    """
+    dx = point.x - ref_x
+    dy = point.y - ref_y
+    return [
+        _clamp(dx / max_range, -1.0, 1.0),
+        _clamp(dy / max_range, -1.0, 1.0),
     ]
 
 
@@ -294,34 +331,42 @@ def _process_frame(
     frame: dict,
     G,
     x_min, x_max, y_min, y_max,
+    ref_x: float, ref_y: float,
     adj_checker: Optional['LaneletAdjacencyChecker'] = None,
 ) -> dict:
-    """Convert one raw frame dict → scaled feature dict."""
+    """Convert one raw frame dict → scaled feature dict.
+
+    ref_x, ref_y: this window's reference point (its last-observed/'current'
+    frame's raw position) — see _scale_position_relative. Same reference for
+    every frame in a window (past and future both), so past positions read
+    as "how far was I before now" and future positions as "how far will I be
+    after now", both anchored to the same present moment.
+    """
     ego = frame['ego']
 
     # Raw bag/MGRS-frame position (NOT Point.convert_coordinate_frame — see
-    # the 2026-08-02 fix below). The map (MapProcessor.py) and this pipeline's
-    # graph (GraphBuilder, built directly from the map's own lanelet points)
-    # are both in the bag frame ego positions from the rosbag are already in;
-    # convert_coordinate_frame instead mapped into an incompatible ~3500,1800
-    # frame calibrated for a DIFFERENT, since-replaced map projector. Verified
-    # this was live: every extracted sequence's 'position' feature was
-    # uniformly [0.0, 0.0] (silently clamped, since the converted value always
-    # fell far outside the graph's bag-frame bounds) — and because
-    # _traffic_light_detected below looks up the nearest GRAPH node to this
-    # same ego_pos_scaled, 'traffic_light_detected' (the map-expectation
-    # channel the negative-evidence mechanism depends on) was uniformly 0 too,
-    # regardless of where the vehicle actually was.
+    # this file's git history, 2026-08-02, for that fix). The map
+    # (MapProcessor.py) and this pipeline's graph (GraphBuilder, built
+    # directly from the map's own lanelet points) are both in the bag frame
+    # ego positions from the rosbag are already in.
     ego_point = Point(ego['position']['x'], ego['position']['y'])
-    ego_pos_scaled = _scale_position(ego_point, x_min, x_max, y_min, y_max)
+
+    # Graph-frame-scaled position — ONLY for the nearest-graph-node lookups
+    # below (traffic_light_detected/has_adjacent_lane compare against graph
+    # node coordinates, which live in this same per-window [0,1] frame). NOT
+    # the 'position' feature/target — see _scale_position_relative's
+    # docstring for why conflating the two made the model's own position
+    # target's units inconsistent across training examples.
+    ego_pos_graph_scaled = _scale_position(ego_point, x_min, x_max, y_min, y_max)
+    position_out = _scale_position_relative(ego_point, ref_x, ref_y, cfg.POSITION_DISPLACEMENT_RANGE_M)
 
     unc = ego['position_uncertainty']
     tl_list      = frame.get('traffic_lights', [])
-    tl_detected  = _traffic_light_detected(G, ego_pos_scaled)
+    tl_detected  = _traffic_light_detected(G, ego_pos_graph_scaled)
     obj_feats, obj_mask = _build_object_set(ego['position'], frame['objects'])
 
     return {
-        'position':                 ego_pos_scaled,
+        'position':                 position_out,
         'velocity':                 _scale_velocity(ego['velocity']),
         'steering':                 _scale_steering(ego['steering']),
         'acceleration':             _scale_acceleration(ego['acceleration']),
@@ -449,11 +494,19 @@ class SequenceBuilder:
             import copy
             G_seq = copy.deepcopy(G_cached)
 
+            # Reference point for the 'position' feature (see
+            # _scale_position_relative): this window's last-observed/'current'
+            # frame — the boundary between past and future — so every frame's
+            # position reads as "how far from now", in real metres, at a
+            # fixed scale shared by every window (not that window's own bbox).
+            current_frame = window[cfg.INPUT_SEQ_LEN - 1]['ego']
+            ref_x, ref_y = current_frame['position']['x'], current_frame['position']['y']
+
             past_seq   = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max,
-                                         self._adj_checker)
+                                         ref_x, ref_y, self._adj_checker)
                           for f in window[:cfg.INPUT_SEQ_LEN]]
             future_seq = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max,
-                                         self._adj_checker)
+                                         ref_x, ref_y, self._adj_checker)
                           for f in window[cfg.INPUT_SEQ_LEN:]]
 
             sequences.append({
@@ -461,6 +514,13 @@ class SequenceBuilder:
                 'future':       future_seq,
                 'graph':        G_seq,
                 'graph_bounds': [x_min, x_max, y_min, y_max],
+                # Reference point (raw bag-frame metres) the 'position'
+                # feature is relative to — added 2026-08-02 alongside the
+                # position-representation fix, so any consumer that needs
+                # real map coordinates back (plotting, residual analysis)
+                # can reconstruct them without separately tracking raw
+                # frame indices: real = ref + scaled * POSITION_DISPLACEMENT_RANGE_M.
+                'position_ref': [ref_x, ref_y],
             })
             n_windows += 1
 

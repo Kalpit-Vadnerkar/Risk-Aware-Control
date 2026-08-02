@@ -72,13 +72,15 @@ def _find_trial_dir(dataset: str, goal: str, trial: int) -> str:
     return matches[0]
 
 
-def _unscale_position(scaled_xy: np.ndarray, bounds) -> np.ndarray:
-    """Inverse of sequence_builder._scale_position — scaled [0,1] back to
-    real bag-frame map coordinates using this window's own graph_bounds."""
-    x_min, x_max, y_min, y_max = bounds
+def _unscale_position(scaled_xy: np.ndarray, ref_xy) -> np.ndarray:
+    """Inverse of sequence_builder._scale_position_relative — [-1,1]
+    displacement-from-reference back to real bag-frame map coordinates,
+    using this window's own position_ref (added 2026-08-02 alongside the
+    position-representation fix) and the fixed cfg.POSITION_DISPLACEMENT_RANGE_M."""
+    ref_x, ref_y = ref_xy
     out = np.empty_like(scaled_xy)
-    out[..., 0] = scaled_xy[..., 0] * (x_max - x_min) + x_min
-    out[..., 1] = scaled_xy[..., 1] * (y_max - y_min) + y_min
+    out[..., 0] = scaled_xy[..., 0] * cfg.POSITION_DISPLACEMENT_RANGE_M + ref_x
+    out[..., 1] = scaled_xy[..., 1] * cfg.POSITION_DISPLACEMENT_RANGE_M + ref_y
     return out
 
 
@@ -96,7 +98,7 @@ def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, mar
     with torch.no_grad():
         preds = model(batch_past, batch_graph)
 
-    bounds = seq['graph_bounds']
+    ref_xy = seq['position_ref']
 
     # ── Position: past (input), actual future, predicted future ────────────
     past_pos_scaled   = np.array([s['position'] for s in seq['past']])
@@ -104,16 +106,12 @@ def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, mar
     pred_mean_scaled  = preds['position_mean'][0].cpu().numpy()          # (T_out, 2)
     pred_var_scaled   = preds['position_var'][0].cpu().numpy()           # (T_out, 2)
 
-    past_xy   = _unscale_position(past_pos_scaled, bounds)
-    actual_xy = _unscale_position(future_pos_scaled, bounds)
-    pred_xy   = _unscale_position(pred_mean_scaled, bounds)
-    # Std in real metres: scale each axis's variance by that axis's own
-    # (max-min) range, same as _unscale_position's linear map.
-    x_min, x_max, y_min, y_max = bounds
-    pred_std_xy = np.stack([
-        np.sqrt(pred_var_scaled[:, 0]) * (x_max - x_min),
-        np.sqrt(pred_var_scaled[:, 1]) * (y_max - y_min),
-    ], axis=-1)
+    past_xy   = _unscale_position(past_pos_scaled, ref_xy)
+    actual_xy = _unscale_position(future_pos_scaled, ref_xy)
+    pred_xy   = _unscale_position(pred_mean_scaled, ref_xy)
+    # Std in real metres: fixed conversion factor, same for every window
+    # (unlike the old per-window graph_bounds scale).
+    pred_std_xy = np.sqrt(pred_var_scaled) * cfg.POSITION_DISPLACEMENT_RANGE_M
 
     fig = plt.figure(figsize=(15, 8.5))
     gs = fig.add_gridspec(len(_SCALAR_PANELS), 2, width_ratios=[1.3, 1])

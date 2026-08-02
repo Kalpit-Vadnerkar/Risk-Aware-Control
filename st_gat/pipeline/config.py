@@ -186,6 +186,15 @@ VELOCITY_Y_RANGE   = (-0.4,   0.4)   # m/s lateral
 STEERING_RANGE     = (-0.5,   0.5)   # radians
 ACCEL_RANGE        = (-1.0,   1.0)   # m/s²
 
+# Position: real-metre displacement from the window's own last-observed
+# frame, scaled to [-1, 1] by this FIXED constant (added 2026-08-02,
+# replacing per-window bbox-relative scaling — see sequence_builder.py's
+# _scale_position_relative for why the old scheme made the model's own
+# position target's units inconsistent across training examples).
+# 11.11 m/s (map speed limit) * 6s window ~= 67m one-way; 100m gives headroom
+# without wasting most of the range on rare cases.
+POSITION_DISPLACEMENT_RANGE_M = 100.0
+
 # Position uncertainty scaling: raw EKF covariance in m²
 # Nominal ≈ 0.003 m² → scale so nominal ≈ 0.1 (manageable input magnitude)
 # Cap at 0.5 m² (localization has catastrophically failed above this)
