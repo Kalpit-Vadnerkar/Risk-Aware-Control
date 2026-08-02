@@ -1,0 +1,26 @@
+INTERPRETATION: WHAT THE RESULTS TELL US
+
+The mechanism holds for a specific subtype, not uniformly:
+  → traffic_light_discrepancy dominates ONLY for genuine negative-evidence
+    faults (tl_unknown, tl_blackout — perception reports nothing/unknown)
+  → NOT for faults where perception reports a present-but-wrong value
+    (tl_oscillate, confidence-ramp)
+  → This is a sharper, more defensible version of the claim, not a weaker
+    one — but it is a refinement, not a new contribution on its own
+
+Calibration and lead time are directionally working, with real gaps:
+  → Clean positive results exist (imu_fault_s3, imu_fault_stuck: 100%
+    detection, real lead time, on genuinely dangerous trials)
+  → The negative control (imu_fault_s1) correctly shows a low detection rate
+  → TL faults have produced zero dangerous outcomes in this dataset so far —
+    lead time is literally undefined for TL faults right now; this is the
+    most important open gap, not a modeling failure
+
+What this means for direction:
+  → Lead time is supporting evidence for the calibrated-confidence claim,
+    not the centerpiece — treating it as the headline risks narrowing the
+    dissertation back toward a single "beat MRM by N seconds" number, which
+    has limited value once Autoware's own MRM is already fast to react
+  → The more defensible framing: signal quality and guarantee tightness
+    first (this session's actual focus), lead time and severity as one
+    supporting axis of that, not the whole claim

@@ -1,6 +1,6 @@
-Real-Time Feasibility Classification for Emergency Avoidance Decisions in Autonomous Vehicles
+Calibrated Confidence and Lead Time for Belief-Divergence Fault Detection in Autonomous Vehicles
 
-Using Digital Twin Residuals, HD Map Topology, and Kinematic Constraints
+A Digital Twin Verification Layer over Autoware, Grounded in HD Map Priors
 
 Kalpit Vadnerkar — PhD Candidate
 Advisor: Dr. Pierluigi Pisu

@@ -1,25 +1,24 @@
-LITERATURE GAP: The Avoidance Decision Has No Owner
+LITERATURE GAP: CALIBRATED CONFIDENCE + LEAD TIME, NOT ANOTHER DETECTOR
 
-Body 1 — Avoidance PLANNING (well-studied):
-  → MPC, CBF, polynomial trajectory optimization, reachability analysis
-  → Assumption: the decision to avoid is already made upstream
-  → Representative work: Ziegler et al. (2014), Brito et al. (2019), Pek & Althoff (2020)
+Body 1 — AV fault/anomaly detection (well-studied, including our own prior work):
+  → Residual-based, learned, and rule-based fault detectors for AV sensors
+  → Reports accuracy / F1 / feature importance on a fixed test set
+  → Representative: our T-ITS 2025 paper; broader anomaly-detection literature
 
-Body 2 — Risk ASSESSMENT (well-studied):
-  → Time-to-Collision (TTC), Post-Encroachment Time (PET), probabilistic risk bounds
-  → Quantifies risk of current state but prescribes no action
-  → Representative work: Jansson (2005), Lefèvre et al. (2014), our prior T-ITS 2025
+Body 2 — Trajectory prediction for AVs (well-studied, actively moving fast):
+  → VectorNet, LaneGCN, HiVT, Wayformer, QCNet — architecture-focused,
+    optimized for point/multimodal accuracy, not calibrated uncertainty
+  → Heteroscedastic regression pitfalls (Seitzer et al., beta-NLL, ICLR 2022)
+    are directly relevant to this project's own model — see below
 
-Body 3 — Emergency Braking / AEB (well-studied):
-  → Purely kinematic threshold logic: TTC < τ → brake
-  → No lane availability check, no learned model, no distinction between obstacle types
-  → ISO 22737, Euro NCAP AEB protocols
+Body 3 — Conformal prediction / distribution-free calibration (active, growing):
+  → Strong theory for i.i.d. or exchangeable calibration/test splits
+  → Lindemann et al. (2023) connects conformal bounds to control decisions —
+    closest precedent for turning a calibrated bound into a safety claim
+  → Rarely applied to a map-grounded AV fault signal with a lead-time claim
 
-The gap — Avoidance DECISION-MAKING (unstudied):
-  → No framework asks: "Given this specific situation, is avoidance the correct response?"
-  → Systems default to MRC (stop) or avoidance (go) based on a static configuration parameter
-  → The decision is made by the system integrator at deployment time, not by the vehicle at runtime
-
-Our problem statement fills this gap:
-  → Real-time binary classification: {avoidance warranted, MRC mandatory}
-  → Validated across conditions where the correct answer differs
+The gap — calibrated, map-grounded, lead-time-aware fault verification:
+  → No framework combines: (a) a mechanistic, map-grounded divergence signal,
+    (b) a distribution-free confidence guarantee on that signal, and
+    (c) a measured, severity-dependent lead time against a real safety outcome
+  → This is what Stage 4 (conformal calibration + lead time) is built to close

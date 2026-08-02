@@ -1,0 +1,30 @@
+HOW THE MODEL REACTS TO FAULTS
+
+(Plot: representative_cusum_trace.png — one imu_fault_s3 trial: the model's
+residual signal (CUSUM) crossing a calibrated threshold ~102s before the
+vehicle's actual permanent stop)
+
+Discriminability (Plot: discriminability_rank_table.png):
+  → Tests whether TL-related residuals are selectively dominant for TL
+    faults vs. IMU faults (the mechanistic prediction from slide 5)
+  → Result: NOT uniform dominance — velocity/steering residuals dominate
+    for IMU faults specifically (physically direct: IMU feeds velocity/
+    steering estimation)
+  → traffic_light_discrepancy ranks #1 ONLY for tl_fault_s3/s4 — the two
+    genuine negative-evidence campaigns (perception reports UNKNOWN/nothing)
+  → A sharper, more defensible claim than "TL faults in general": the
+    mechanism holds for the negative-evidence subtype specifically
+
+Calibration tightening (Plot: calibration_tightening_table.png):
+  → Conformal calibration needs a held-out nominal calibration sample
+  → Extending zone coverage from 3 to 26 goals (analysis-only, no new
+    experiments) grew n_calib from 6 to 35-39 per zone kind
+  → Achievable guarantee tightened from ~86% one-sided coverage to ~97%
+
+Detection rate + lead time (Plot: campaign_lead_time_table.png):
+  → imu_fault_s3, imu_fault_stuck: 100% detection, every genuinely dangerous
+    trial flagged ~50-120s before the fatal moment
+  → imu_fault_s1 (negative control): low detection rate — correctly so
+  → TL fault campaigns: zero trials have reached a real fatal moment yet in
+    this dataset — lead time is undefined for TL faults right now, a data
+    gap, not a detector failure

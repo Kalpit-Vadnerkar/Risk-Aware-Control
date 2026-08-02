@@ -1,20 +1,24 @@
-THE PROBLEM: AV Safety Defaults Are Binary and Static
+THE PROBLEM: DETECTING A FAULT IS NOT THE SAME AS TRUSTING THE DETECTOR
 
-Scenario: autonomous vehicle encounters an unexpected static obstacle at 30m, traveling at 7 m/s
+Our prior work (T-ITS 2025) showed a digital twin CAN detect sensor faults
+(camera, IMU, LiDAR) from behavioral residuals with high accuracy.
 
-Current behavior (Autoware default):
-  → Minimum Risk Condition (MRC): decelerate to a complete stop in-lane
-  → Conservative, always "safe" in the collision-avoidance sense
+But accuracy alone does not answer the questions a safety case needs:
+  → How confident should we be in a given flagged divergence — a calibrated
+    number, not just "the residual went up"?
+  → How many seconds of warning does the signal give before the fault
+    actually becomes dangerous — is there time to act?
+  → Does that warning degrade gracefully as the fault gets more severe,
+    or does it fail unpredictably past some point?
 
-But MRC creates secondary risks:
-  → Stopped vehicle in active traffic lane → rear-end collision hazard
-  → Traffic blockage, mission failure, emergency vehicle obstruction
-  → In urban environments, MRC may be the MORE dangerous outcome
+None of these are answered by a detection-accuracy number, no matter how high.
+A monitor that is confidently wrong is worse than one that is honestly unsure —
+this is the actual bar a verification layer has to clear.
 
-The right action depends on context:
-  → Adjacent lane available + enough lead time → avoidance is safer
-  → No adjacent lane OR obstacle too close → MRC is correct
-  → Current systems cannot distinguish these cases at runtime
+The reframed question:
+  → Not "can the twin detect faults" (already shown)
+  → But "can the twin's divergence signal be trusted with a stated guarantee,
+    with enough lead time to matter, across a range of fault severities"
 
-The gap: avoidance policy is a fixed parameter (manual vs. auto), not a runtime decision
-  → No system assesses whether the specific situation makes avoidance warranted
+This is a verification claim, not a detection claim — and it is the actual
+gap the dissertation is closing.

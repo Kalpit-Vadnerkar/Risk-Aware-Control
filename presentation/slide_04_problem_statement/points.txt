@@ -1,26 +1,31 @@
 PROBLEM STATEMENT & CONTRIBUTION
 
-Formal problem:
-  Given: Ego vehicle at speed v encountering an unexpected static obstacle at distance d
-  Classify in real-time: {avoidance warranted, MRC mandatory}
-  With: formal coverage guarantee on the classification error rate
+One-sentence thesis:
+  The digital twin detects faults through belief divergence under a
+  map-grounded prior — not generic residual anomaly detection — and this
+  work verifies that signal with calibrated confidence, measured lead time,
+  and a severity axis, rather than another detection-accuracy number.
 
-Scope (this work):
-  → Single unexpected static obstacle, obstacle detected by onboard perception
-  → Single adjacent lane considered for avoidance (first-order case)
-  → No NPC vehicles in adjacent lane (controlled simulation)
-  → Static environment (no dynamic obstacles other than the primary one)
+What's already banked (from the T-ITS 2025 paper, not re-argued here):
+  → Fault detection itself: 93.7% accuracy, Camera/IMU/LiDAR faults
+  → Traffic Light Status Flag as the dominant feature (29.7% importance)
 
-Hypothesis:
-  A composite signal combining three independently necessary components correctly
-  classifies avoidance feasibility across all failure modes:
-    (1) Topological feasibility:   ∃ adjacent driveable lanelet in HD map
-    (2) Temporal feasibility:      TTC = d / v_approach > τ_min
-    (3) Behavioral confirmation:   CVaR_α(residual) > θ  (digital twin detects non-nominal event)
+What this chapter adds (the actual new claim):
+  (1) Calibrated confidence — a distribution-free coverage guarantee via
+      conformal prediction, not an accuracy number on a fixed test set
+  (2) Lead time — seconds of warning before a fault becomes safety-relevant,
+      measured against a real fatal-moment anchor, not just "detected: yes/no"
+  (3) Severity — does the guarantee and lead time hold as fault magnitude
+      increases, or does it degrade, and how
 
-  Each component is necessary for a distinct failure mode;
-  no two-signal subset achieves equivalent classification accuracy (ablation study).
+Claim to defend:
+  This framework detects when the autonomy stack's perceptual belief has
+  diverged from a map-grounded, independently derived expectation of the
+  world; it reports that divergence with calibrated confidence and a bounded
+  number of seconds of lead time before the divergence degrades vehicle safety.
 
-Contribution:
-  First empirically validated, real-time feasibility classifier for the avoidance-vs-MRC decision
-  using a composite signal with conformal prediction coverage guarantee on the behavioral component
+Two-arm design (unchanged from prior work, still the experimental backbone):
+  → Arm A: Autoware safety gate disabled — the science condition, lets
+    injected faults actually propagate to a real safety outcome
+  → Arm B: stock safety gate enabled — the ground-truth oracle for
+    independent lead-time validation (not yet collected — see Next Steps)

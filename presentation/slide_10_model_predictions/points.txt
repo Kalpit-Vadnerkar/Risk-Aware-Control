@@ -1,0 +1,26 @@
+MODEL PREDICTIONS
+
+(Plot: prediction_example.png — position tied to the map, past/actual/
+predicted trajectories, sparse outlined uncertainty circles; velocity/
+steering/tl_state/tl_discrepancy panels with predicted mean +/- variance
+band against actual)
+
+Input/output sequence math:
+  → Input: 30 past timesteps (3s at 10Hz) x 14 features + the HD map graph
+  → Output: predicted distribution at each of 30 future timesteps
+  → Position specifically: NOT absolute coordinates, NOT per-window
+    bounding-box-relative (that was a real bug, see slide 6) — a
+    fixed-scale displacement relative to "now" (the last input timestep),
+    clamped to +/-100m, shared across every training example
+
+What the plot shows working:
+  → Predicted trajectory tracks the actual future closely under nominal
+    driving, with uncertainty widening sensibly at longer horizons
+  → traffic_light_state and traffic_light_discrepancy — the two heads
+    added this session — now produce an actual predicted distribution,
+    where before this signal was only ever an input, never predicted
+
+Calibration is real but imperfect (verified via z-score diagnostics on held-
+out data, not assumed): position mildly underconfident, velocity/steering/
+tl_state mildly-to-moderately overconfident — see slide 6 for the numbers
+and the fixes already applied this session.

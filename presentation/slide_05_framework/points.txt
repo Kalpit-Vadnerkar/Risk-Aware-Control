@@ -1,34 +1,34 @@
-THE THREE-SIGNAL FEASIBILITY CLASSIFIER
+THE BELIEF-DIVERGENCE MECHANISM
 
-Decision logic — all three conditions must hold for avoidance to be enabled:
+The digital twin maintains an independent expectation of what perception
+SHOULD report — from HD map assertions, learned nominal patterns, and
+vehicle dynamics — and flags a fault when perception diverges from it.
 
-  ┌─────────────────────────────────────────────────────────────────┐
-  │  Signal 1 (Topology):   has_adjacent_lane(ego_pos, HD_map)?    │
-  │  Signal 2 (Kinematic):  TTC = obj_dist / v_approach > τ_min?  │
-  │  Signal 3 (Behavioral): CVaR_α(NLL residual_t) > θ ?          │
-  │                                                                  │
-  │  IF all three → AVOIDANCE WARRANTED → override policy=auto     │
-  │  IF any fails → MRC MANDATORY      → maintain policy=manual    │
-  └─────────────────────────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  Map-grounded expectation  <--- compare --->  Perception report  │
+  │  (e.g., "a signalized                          (what the AV's    │
+  │   intersection exists here")                    camera reports)  │
+  │                                                                    │
+  │  Divergence  →  belief-divergence residual  →  calibrated alarm  │
+  └──────────────────────────────────────────────────────────────────┘
 
-What each signal handles:
+The strong form — negative-evidence detection:
+  → The map licenses a HARD categorical expectation (a signal exists here)
+  → The fault signature is perception failing to report what must be there
+  → This is mechanistically different from "the residual is elevated" —
+    it's specifically "the system stopped reporting something it should
+    have known about"
 
-  Signal 1 (Topology):
-    → Fails when: obstacle on single-lane road, no driveable neighbor
-    → Deterministic: HD map lookup, no uncertainty
-    → Cannot distinguish: multi-lane with adequate time vs. multi-lane too close
+Epistemic stance:
+  → This is introspection/self-assessment, not interpretability
+  → Non-circular because it's anchored against the map — an independent,
+    externally-licensed ground truth, not the model grading its own homework
 
-  Signal 2 (Kinematic):
-    → Fails when: obstacle detected too late (<5m), no time for path planning
-    → Semi-deterministic: depends on perception accuracy of distance/speed
-    → Cannot distinguish: adjacent lane exists vs. does not exist
+Divergence-trace schema (what's logged, per timestep, per trial):
+  → predicted mean/variance/actual/residual, per feature, uncollapsed
+  → map-expectation channel kept separate from perception-report channel
+  → ground-truth safety-outcome markers (fatal-moment anchor, MRM trigger)
 
-  Signal 3 (Behavioral — digital twin):
-    → Fails when: situation appears nominally plausible (normal deceleration)
-    → Probabilistic: CVaR from learned distribution residual
-    → Necessary because: Signals 1+2 alone cannot distinguish real obstacles
-      from routine stops (traffic lights, crosswalks) — no trajectory anomaly exists
-      until the vehicle has already committed to a stop
-
-Integration point: signals are evaluated at 10 Hz; threshold τ_min and θ calibrated
-on held-out nominal runs using conformal prediction (finite-sample coverage guarantee)
+Two-arm fault injection (unchanged backbone):
+  → Arm A (safety disabled): the science condition — faults reach a real outcome
+  → Arm B (safety enabled): the ground-truth oracle for lead time — not yet collected
