@@ -120,6 +120,25 @@ FAULT_DATASETS = [
     'tl_fault_s2', 'tl_fault_s3', 'tl_fault_s4', 'tl_fault_ramp',
 ]
 
+# Trials excluded from st_gat/residuals.py's analysis for a confirmed data
+# quality issue — NOT deleted (a real AWSIM/Autoware collection run is
+# expensive to redo; keeping the raw data lets a rerun be compared against
+# it later). Each key is (dataset, goal_id, trial_dirname).
+EXCLUDED_TRIALS = {
+    ('imu_fault_scale', 'goal_026', 't1_20260728_201708'):
+        "ekf_gt_divergence_m in-fault mean (0.247m) is LOWER than "
+        "out-of-fault mean (2.572m) — backwards from every other "
+        "imu_fault_scale trial and from the fault's expected effect (gyro "
+        "bias should corrupt EKF twist during the fault window, raising "
+        "in-fault divergence, not lowering it). Consistent with a "
+        "2026-07-28 finding (project memory) that this trial's fault effect "
+        "looks confounded by the vehicle stopping near an unresolved "
+        "traffic light rather than showing the intended IMU-scale-fault "
+        "structural effect. Confirmed still true 2026-08-02 via "
+        "compare_fault_vs_nominal.py. Flagged then for a rerun that never "
+        "happened — exclude until goal_026 is re-collected for this campaign.",
+}
+
 # Train/calibration split (per dataset, stratified by goal)
 CAL_FRACTION = 0.20
 
