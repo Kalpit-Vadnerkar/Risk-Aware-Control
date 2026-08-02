@@ -4,10 +4,25 @@ Trainer for STGAT (RISE edition).
 Improvements over the T-ITS reference Trainer:
   - Gradient clipping (max_norm=1.0)
   - Early stopping with patience
-  - AdamW + OneCycleLR
+  - AdamW + ReduceLROnPlateau
   - Rich tqdm progress: outer epoch bar with live loss/lr, inner batch bar
   - ETA estimation and per-feature loss breakdown printed every N epochs
   - Saves best checkpoint automatically
+
+Scheduler changed 2026-08-02 from OneCycleLR to ReduceLROnPlateau — OneCycleLR
+anneals over a FIXED total (`epochs=config['num_epochs']`, the early-stopping
+ceiling, not the actual training length), so a run that early-stops well
+before that ceiling (e.g. epoch 49 of a 200-epoch schedule, with only a
+20-epoch warmup) never reaches the low-LR fine-tuning phase the schedule
+promises — LR was still ~98% of peak when training stopped. Found via a
+calibration check on the first real trained model: position accuracy missed
+this project's own stated target (mean 2.56m vs. TODO.md's <1.0m) and every
+Gaussian-headed feature was underconfident (predicted variance wider than the
+actual error spread justified) — both consistent with a model that never got
+to fine-tune at a low learning rate. ReduceLROnPlateau ties LR reduction to
+the same val-loss-plateau signal already driving early stopping, so it
+adapts to however long training actually runs instead of assuming a duration
+upfront.
 """
 
 import os
@@ -67,14 +82,15 @@ class Trainer:
             weight_decay = config.get('weight_decay', 1e-4),
         )
 
-        steps_per_epoch = len(train_loader)
-        self.scheduler  = torch.optim.lr_scheduler.OneCycleLR(
+        # Reduction patience shorter than early-stopping patience (default 20)
+        # so LR actually drops — giving the model a chance to improve at the
+        # lower LR — before early stopping gives up entirely.
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer,
-            max_lr          = config['learning_rate'],
-            epochs          = self.num_epochs,
-            steps_per_epoch = steps_per_epoch,
-            pct_start       = 0.1,
-            anneal_strategy = 'cos',
+            mode     = 'min',
+            factor   = config.get('lr_factor', 0.5),
+            patience = config.get('lr_patience', 7),
+            min_lr   = config.get('min_lr', 1e-6),
         )
 
         self.early_stop = EarlyStopping(
@@ -118,7 +134,8 @@ class Trainer:
                     loss.backward()
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                     self.optimizer.step()
-                    self.scheduler.step()
+                    # ReduceLROnPlateau steps once per epoch (on val loss),
+                    # not per batch — see train()'s main loop.
 
                 for k, v in losses.items():
                     totals[k] = totals.get(k, 0.0) + v
@@ -169,9 +186,10 @@ class Trainer:
             self.history['train'].append(train_losses)
             self.history['val'].append(val_losses)
 
-            lr        = self.scheduler.get_last_lr()[0]
             tr_loss   = train_losses['total_loss']
             v_loss    = val_losses['total_loss']
+            self.scheduler.step(v_loss)   # ReduceLROnPlateau: once per epoch, on val loss
+            lr        = self.optimizer.param_groups[0]['lr']
             improved  = '★' if v_loss < best_val else ' '
             patience_left = self.early_stop.patience - self.early_stop.counter
 
