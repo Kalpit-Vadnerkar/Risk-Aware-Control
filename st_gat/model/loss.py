@@ -34,6 +34,19 @@ Changes from the T-ITS reference:
     decoupling the mean-fitting gradient from the variance-scaling
     pathology; BETA_NLL=0 recovers plain NLL, BETA_NLL=1 weights samples
     close to how plain MSE would.
+  - VAR_REG_WEIGHT (a flat 1/variance penalty against collapse) REMOVED
+    2026-08-02. It was error-unaware — the same fixed penalty applied
+    whether real error was large or (after the position-representation fix)
+    tiny. Found live: once position error dropped from 2.56m to 0.11m,
+    this term's constant pull toward larger variance dominated relative to
+    the now-much-smaller NLL signal, making position/steering calibration
+    MORE underconfident than before the fixes, not less (predicted std
+    0.02-0.28x actual error spread, worse than the pre-fix 0.6-0.7x).
+    VAR_FLOOR already provides a hard floor against literal collapse
+    (log(0)); beta-NLL already addresses the gradient-scaling pathology
+    this term was a blunt-instrument defense against. Kept as a git-history
+    note, not a live-but-zeroed knob — re-add deliberately, with a value
+    tied to actual error scale, if collapse reappears without it.
 """
 
 import torch
@@ -56,8 +69,6 @@ DEFAULT_WEIGHTS = {
     'traffic_light_state':       0.2,   # Gaussian NLL — perception color x confidence
     'traffic_light_discrepancy': 0.2,   # sigmoid output — BCE loss (perception channel)
 }
-
-VAR_REG_WEIGHT = 0.001   # prevents variance from collapsing to the floor
 
 
 class CombinedLoss(nn.Module):
@@ -101,10 +112,6 @@ class CombinedLoss(nn.Module):
             beta_weight = var.detach().pow(BETA_NLL)
             nll = nll * beta_weight
             nll = nll.sum(dim=tuple(range(1, nll.dim()))).mean()
-
-            # Mild penalty if variance collapses toward the floor
-            var_reg = VAR_REG_WEIGHT * (1.0 / var).mean()
-            nll = nll + var_reg
 
             w = self.weights.get(key, 1.0)
             losses[f'{key}_loss'] = (nll * w).item()
