@@ -17,14 +17,28 @@ class GraphBuilder:
         return Point(centerline[mid_index].x, centerline[mid_index].y)
 
     def _get_sorted_lanelets(self, center_position):
+        # Route-aware fill order (fixed 2026-08-05 — see
+        # docs/research_notes/ablation_study_2026.md §2): this used to sort
+        # purely by distance from center_position, with no preference for
+        # whether a lanelet is actually on the planned route. build_graph()
+        # fills the MAX_GRAPH_NODES budget greedily in this order and stops,
+        # so in a dense intersection (many nearby parallel/cross lanelets)
+        # the route -- one thread among many -- routinely lost the budget
+        # race entirely: measured directly on 200 real sequences, mean 5.6%
+        # (median 3.3%, min 0%) of a graph's nodes ended up on-route.
+        # Sorting on-route lanelets first (still nearest-first within each
+        # group) guarantees route nodes are never crowded out by off-route
+        # ones as long as the local route segment fits in the node budget --
+        # true for any single 3-second window's worth of route on this map.
         lanelets = []
         for ll in self.map_data.laneletLayer:
             if ll.attributes["subtype"] == "road":
                 mid_point = self._get_lanelet_mid_point(ll)
                 distance = Point.distance(center_position, mid_point)
-                lanelets.append((ll.id, ll, distance))
+                on_route = ll.id in self.route
+                lanelets.append((ll.id, ll, distance, on_route))
 
-        return sorted(lanelets, key=lambda x: x[2])
+        return sorted(lanelets, key=lambda x: (not x[3], x[2]))
 
     def _create_lanelet_nodes(self, lanelet, lanelet_id):
         nodes = []
@@ -43,6 +57,12 @@ class GraphBuilder:
         return nodes
 
     def clip_graph(self, G, center_position):
+        # Distance-only trim, same route-blindness build_graph()'s fill order
+        # just got fixed for -- currently a no-op in practice since
+        # cfg.MIN_GRAPH_NODES == cfg.MAX_GRAPH_NODES (150 == 150), so the
+        # fill loop's own cap means this early return always fires. Flagging
+        # so it isn't silently route-unaware if the two constants are ever
+        # decoupled later.
         if G.number_of_nodes() <= self.min_nodes:
             return G
 
@@ -102,7 +122,7 @@ class GraphBuilder:
         lanelets = self._get_sorted_lanelets(center_position)
 
         added_nodes = 0
-        for lanelet_id, lanelet, _ in lanelets:
+        for lanelet_id, lanelet, _distance, _on_route in lanelets:
             nodes = self._create_lanelet_nodes(lanelet, lanelet_id)
 
             for i, node_data in enumerate(nodes):

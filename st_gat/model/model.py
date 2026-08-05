@@ -60,15 +60,26 @@ class _GCNLayer(nn.Module):
 
 class GraphEncoder(nn.Module):
     """
-    Two GCN layers → mean-pool over nodes → d_g-dim context vector.
-    Operates on a single graph at a time; called inside a batch loop.
+    Two GCN layers → learned attention-weighted pool over nodes → d_g-dim
+    context vector. Operates on a single graph at a time; called inside a
+    batch loop.
+
+    Was a uniform mean-pool (fixed 2026-08-05 — see
+    docs/research_notes/ablation_study_2026.md §3): even with
+    GraphBuilder.build_graph()'s route-aware node selection (§2, also fixed
+    2026-08-05) putting route nodes in the graph, a uniform mean over ~150
+    nodes still gives each node the same 1/N weight regardless of relevance.
+    A learned per-node attention score lets the model itself decide which
+    nodes matter for the weighted sum, instead of the architecture forcing
+    uniform weight by construction.
     """
 
     def __init__(self, node_feat_dim: int = 4, d_g: int = 128, dropout: float = 0.15):
         super().__init__()
-        self.gc1     = _GCNLayer(node_feat_dim, d_g)
-        self.gc2     = _GCNLayer(d_g, d_g)
-        self.dropout = nn.Dropout(dropout)
+        self.gc1        = _GCNLayer(node_feat_dim, d_g)
+        self.gc2        = _GCNLayer(d_g, d_g)
+        self.dropout    = nn.Dropout(dropout)
+        self.attn_score = nn.Linear(d_g, 1)
 
     def forward(self, node_features: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
         """
@@ -82,8 +93,10 @@ class GraphEncoder(nn.Module):
             h = F.gelu(self.gc1(node_features[i], adj[i]))
             h = self.dropout(h)
             h = F.gelu(self.gc2(h, adj[i]))
-            h = self.dropout(h)
-            ctx_list.append(h.mean(dim=0))   # mean-pool over nodes
+            h = self.dropout(h)                              # (N, d_g)
+            scores  = self.attn_score(h).squeeze(-1)          # (N,)
+            weights = F.softmax(scores, dim=0)                # (N,)
+            ctx_list.append((h * weights.unsqueeze(-1)).sum(dim=0))  # weighted sum, (d_g,)
         return torch.stack(ctx_list)          # (B, d_g)
 
 
@@ -97,10 +110,18 @@ class ObjectSetEncoder(nn.Module):
     "nearest object" heuristic BEFORE the model ever saw the data — exactly
     the entity-collapse pattern docs/stgat_pipeline_plan.md's Stage 0 warns
     against (already found and fixed once for traffic lights, §1.11). Here,
-    each object keeps its own feature vector; a masked mean-pool over a
-    per-object embedding (DeepSets-style) lets the pooling itself be learned
-    rather than hand-picked, and the mask means padding slots (fewer than K
-    objects tracked) contribute nothing.
+    each object keeps its own feature vector; a masked ATTENTION-weighted
+    pool over a per-object embedding (DeepSets-style) lets the pooling
+    itself be learned rather than hand-picked, and the mask means padding
+    slots (fewer than K objects tracked) contribute nothing.
+
+    Was a masked mean-pool (fixed 2026-08-05 — see
+    docs/research_notes/ablation_study_2026.md §3, same underlying pattern
+    as GraphEncoder's node-pooling fix): a stationary parked car far from
+    the route used to count exactly the same as a pedestrian about to
+    cross. A learned per-object attention score (masked to -inf on padding
+    slots before softmax, so padding gets ~0 weight rather than diluting
+    the average) lets the model weight objects by learned relevance.
 
     Objects are inherently per-timestep (they move within a window,
     independent of whatever cadence the map-node graph uses — see
@@ -116,18 +137,24 @@ class ObjectSetEncoder(nn.Module):
             nn.LayerNorm(d_obj),
             nn.Dropout(dropout),
         )
+        self.attn_score = nn.Linear(d_obj, 1)
 
     def forward(self, objects: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
         objects: (B, T, K, F)   mask: (B, T, K) — 1.0 for real objects, 0.0 padding.
-        returns: (B, T, d_obj) — masked mean-pooled object context per timestep.
+        returns: (B, T, d_obj) — attention-weighted object context per timestep.
         """
         B, T, K, Fdim = objects.shape
-        h = self.embed(objects.view(B * T * K, Fdim)).view(B, T, K, -1)
-        mask_f  = mask.unsqueeze(-1)                          # (B, T, K, 1)
-        summed  = (h * mask_f).sum(dim=2)                     # (B, T, d_obj)
-        counts  = mask_f.sum(dim=2).clamp(min=1.0)             # (B, T, 1) — avoid /0 when no objects
-        return summed / counts
+        h = self.embed(objects.view(B * T * K, Fdim)).view(B, T, K, -1)   # (B, T, K, d_obj)
+        scores  = self.attn_score(h).squeeze(-1)                          # (B, T, K)
+        scores  = scores.masked_fill(mask < 0.5, float('-inf'))
+        weights = F.softmax(scores, dim=2)                                # (B, T, K)
+        # All-padding timesteps (no tracked objects at all) give softmax
+        # over all -inf -> NaN; zero those out rather than propagating NaN
+        # (same "no objects -> zero context" behavior the old mean-pool's
+        # counts.clamp(min=1.0) gave for that case).
+        weights = torch.nan_to_num(weights, nan=0.0)
+        return (h * weights.unsqueeze(-1)).sum(dim=2)                     # (B, T, d_obj)
 
 
 # ── Main model ─────────────────────────────────────────────────────────────
@@ -326,6 +353,12 @@ class STGAT(nn.Module):
             'traffic_light_state_mean': tl_state[..., 0],
             'traffic_light_state_var':  F.softplus(tl_state[..., 1]) + VAR_FLOOR,
             'traffic_light_discrepancy': torch.sigmoid(tl_disc),
+            # Raw pre-sigmoid logit, also returned (added 2026-08-05) so
+            # temperature scaling (Guo et al. 2017 — calibrated_prob =
+            # sigmoid(logit / T)) can be fit post-hoc without needing to
+            # invert the sigmoid on the probability above. No effect on
+            # training/loss, which still uses the probability key.
+            'traffic_light_discrepancy_logit': tl_disc,
         }
 
     def count_parameters(self) -> int:
