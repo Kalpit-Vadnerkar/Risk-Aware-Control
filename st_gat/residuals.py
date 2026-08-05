@@ -232,6 +232,42 @@ def _sigmoid_residual(key: str, preds: dict, future: dict, t: int = 0) -> dict:
     }
 
 
+# Temperature scaling (Guo et al. 2017 — see calibrate_tl_discrepancy.py's
+# module docstring for the full reasoning): traffic_light_discrepancy is a
+# Bernoulli head with no predicted-variance notion of confidence, so its raw
+# residual above isn't calibrated the way the Gaussian features' NLL is.
+# Loaded once at import time rather than per-row; falls back to T=1.0
+# (no-op) if calibrate_tl_discrepancy.py hasn't been run yet against the
+# current model -- this column is then identical to the uncalibrated one
+# until it has been, not an error.
+_TL_CALIBRATION_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'experiments', 'analysis', 'tl_calibration', 'temperature.json')
+_TL_DISCREPANCY_TEMPERATURE = 1.0
+if os.path.exists(_TL_CALIBRATION_FILE):
+    with open(_TL_CALIBRATION_FILE) as _f:
+        _TL_DISCREPANCY_TEMPERATURE = json.load(_f)['temperature']
+    print(f"[residuals] traffic_light_discrepancy temperature scaling: T={_TL_DISCREPANCY_TEMPERATURE:.2f}")
+else:
+    print(f"[residuals] {_TL_CALIBRATION_FILE} not found -- traffic_light_discrepancy_calibrated_* "
+          f"columns will be identical to the uncalibrated ones (T=1.0) until calibrate_tl_discrepancy.py is run")
+
+
+def _calibrated_tl_discrepancy_residual(preds: dict, future: dict, t: int = 0) -> dict:
+    """Same as _sigmoid_residual('traffic_light_discrepancy', ...) but using
+    the temperature-scaled probability (sigmoid(logit / T)) instead of the
+    model's raw, uncalibrated sigmoid output."""
+    logit = preds['traffic_light_discrepancy_logit'][:, t]
+    pred = torch.sigmoid(logit / _TL_DISCREPANCY_TEMPERATURE)
+    actual = future['traffic_light_discrepancy'][:, t]
+    if actual.dim() == 2 and actual.size(-1) == 1:
+        actual = actual.squeeze(-1)
+    return {
+        'traffic_light_discrepancy_calibrated_pred':     pred,
+        'traffic_light_discrepancy_calibrated_residual': torch.abs(pred - actual),
+    }
+
+
 def _compute_row(preds: dict, future: dict) -> dict:
     """One row of the divergence trace, at 1-step-ahead prediction (t=0)."""
     row = {}
@@ -239,6 +275,7 @@ def _compute_row(preds: dict, future: dict) -> dict:
         row.update(_gaussian_residual(key, dims, preds, future))
     for key in _SIGMOID_FEATURES:
         row.update(_sigmoid_residual(key, preds, future))
+    row.update(_calibrated_tl_discrepancy_residual(preds, future))
 
     # Scene-context passthrough (ground truth only — no output head for
     # these; see docs/stgat_pipeline_plan.md's Stage 0/2 notes on
