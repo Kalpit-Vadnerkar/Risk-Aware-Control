@@ -11,12 +11,12 @@ tried are listed at the end, cross-referenced to `TODO.md` P1.6.
 | # | Change | Level | Status | Key before → after | Verdict |
 |---|---|---|---|---|---|
 | 1 | Frame-gap contiguity gate (`sequence_builder.py`) | data pipeline | **done, retrained** | velocity std(z) 1.174→**0.978**; steering 1.101→0.927; tl_state 1.332→1.266 | Real, measured improvement — see §1 |
-| 2 | Route-aware graph node selection (`GraphBuilder.build_graph`) | data pipeline | **found, not yet implemented** | path_node fraction currently 5.6% mean (median 3.3%, min 0%) of 150-node budget | High-confidence candidate — see §2 |
-| 3 | Attention-weighted graph/object pooling (vs. uniform mean) | model architecture | proposed, not implemented | n/a | See §3 — likely secondary to #2 |
-| 4 | TL-discrepancy calibration (temperature scaling / conformal classification) | analysis layer | in progress | 0 detections before AND after retrain (§1 confirms retrain didn't touch this) | Structural fix needed regardless of model quality |
-| 5 | Graph cadence (re-pool per-timestep vs. once per window) | model architecture | not started (`TODO.md` P1.6) | — | — |
-| 6 | Capacity sweep (`d_model`/`hidden_size`/`num_layers`/`nhead`) | model architecture | not started (`TODO.md` P1.6) | — | — |
-| 7 | `MAX_GRAPH_NODES=150` sweep | model architecture | not started (`TODO.md` P1.6) | — | — |
+| 2 | Route-aware graph node selection (`GraphBuilder.build_graph`) | data pipeline | **done, retrained** | path_node fraction 5.6%→**22.0%** (and stable, not just higher) | Real, measured fix — see §2 |
+| 3 | Attention-weighted graph/object pooling (vs. uniform mean) | model architecture | **done, retrained (bundled with #2)** | `imu_fault_s3` lead time 12.6s→**62.0s** (same detection rate); calibration MIXED (position/accel improved, velocity/steering/tl_state worse) | Real fault-detection win, real calibration cost — see §3 |
+| 4 | TL-discrepancy temperature scaling (Guo et al. 2017) | analysis layer | **done** | ECE 0.0292→**0.0085** (3.4x tighter); TL fault detection **unchanged, still 0/12** | Fixed the calibration metric, not the detection problem — see §4 |
+| 5 | Graph cadence (re-pool per-timestep vs. once per window) | model architecture | **TBD** | — | Independent of #2/#3 — even a perfectly-selected, attention-pooled graph context is still one static vector broadcast across all 30 input timesteps; see §"Candidates not yet started" |
+| 6 | Capacity sweep (`d_model`/`hidden_size`/`num_layers`/`nhead`) | model architecture | **TBD** | — | — |
+| 7 | `MAX_GRAPH_NODES=150` sweep | model architecture | **TBD** | — | — |
 
 ---
 
@@ -82,36 +82,91 @@ nearest off-route lanelets for context, same as today. Cheap: a data-pipeline
 change (like §1), not a model-architecture change — testable with
 re-extraction + retrain, no new model code.
 
-**Not yet measured — this is the next candidate to test**, likely alongside
-the object-pooling change in §3 so both fixes get one retrain cycle instead
-of two.
+**Fix implemented 2026-08-05:** `_get_sorted_lanelets` now sorts on-route
+lanelets first (still nearest-first within each group) via
+`sorted(lanelets, key=lambda x: (not x[3], x[2]))`. `clip_graph()` was left
+alone — it's a no-op in the current config since `MIN_GRAPH_NODES ==
+MAX_GRAPH_NODES == 150`, so the fill loop's own cap always short-circuits
+it; flagged in a comment in case the two constants are ever decoupled.
+
+**Measured:** re-extracted and checked the same 200-sequence sample from the
+same file as the original finding — path_node fraction went from a highly
+variable 0–18.7% (mean 5.6%) to a **stable ~22.0%** across all 200 windows.
+Bundled with §3's attention-pooling change for one retrain cycle (see §3 for
+the downstream fault-detection and calibration effect — the two changes were
+trained together, not measured in isolation).
 
 ---
 
 ## 3. Attention-weighted pooling (graph nodes + object set)
 
-Same underlying architectural pattern shows up in two places:
+Same underlying architectural pattern showed up in two places:
 
 - `GraphEncoder.forward()`: `h.mean(dim=0)` — uniform mean over all graph
-  nodes, no matter how sparse the important ones are (compounds §2's
+  nodes, no matter how sparse the important ones are (compounded §2's
   selection problem).
 - `ObjectSetEncoder.forward()`: masked mean-pool over up to 8 tracked
-  objects — a stationary parked car far from the route counts the same as a
+  objects — a stationary parked car far from the route counted the same as a
   pedestrian about to cross (already flagged in
-  `model_improvement_notes_2026.md` §5, now understood as the same pattern
-  as the graph case, not an isolated concern).
+  `model_improvement_notes_2026.md` §5, understood as the same pattern as
+  the graph case, not an isolated concern).
 
-**Recommendation:** fix §2 (graph node selection) first and measure — if
-route nodes are reliably present in the graph, a uniform mean over a
-mostly-route-relevant node set is a much smaller problem than a uniform mean
-over a mostly-irrelevant one. Attention-pooling is still likely worth doing
-for the object set (K=8, no selection-level fix available there the way §2
-fixes the graph case), but treat it as a secondary change, not the first
-lever to pull.
+**Fix implemented 2026-08-05, bundled with §2 in one retrain:** both encoders
+now compute a learned per-node/per-object attention score (`nn.Linear(d, 1)`),
+masked to `-inf` on padding before softmax for the object case, and take a
+weighted sum instead of a plain mean. Smoke-tested against synthetic tensors
+first (no NaN, correct shapes, all-padding case still gives a clean zero
+vector) before the full retrain.
+
+**Baseline preserved** at `st_gat/models/h30_30_baseline_meanpool/` and
+`st_gat/checkpoints/h30_30_baseline_meanpool/` for future ablation
+comparison, per Kalpit's standing preference (2026-08-05: "next time we
+should keep the trained models for ablation studies") — not deleted this
+round.
+
+**Measured (§2+§3 combined, since trained together):**
+
+Retraining converged faster (early stop epoch 48 vs. 80) to a *slightly
+worse* raw validation error (0.0218 vs. 0.0207, ~5% relative) — flagged
+honestly rather than glossed over; raw position/velocity tracking error was
+never the actual target metric, just the checkpoint-selection proxy.
+
+z-score calibration, mean-pool baseline → route-aware + attention:
+
+| feature | before | after | direction |
+|---|---|---|---|
+| position | 0.837 | 0.928 | improved |
+| velocity | **0.978** (near-perfect) | 0.833 | **worse** — now underconfident |
+| steering | 0.927 | 0.835 | **worse** — now underconfident |
+| acceleration | 1.178 | 1.114 | improved |
+| traffic_light_state | 1.266 | **1.444** | **worse** — most overconfident yet |
+
+Mixed, not a clean win on calibration. Plausible explanation (not confirmed):
+new attention parameters need more training than early stopping allowed —
+epoch 48 is much earlier than the previous run's 80.
+
+Fault-reaction effect (`conformal_lead_time.py --statistic velocity_nll`,
+mean-pool baseline → route-aware + attention, same 2 valid trials/campaign
+after the goal_026 exclusions):
+
+| campaign | detection rate | lead time |
+|---|---|---|
+| `imu_fault_s1` (negative control) | 0/2 → 0/2 | — (correctly stayed at zero) |
+| `imu_fault_s3` | 1/2 → 1/2 | 12.6s → **62.0s** |
+| `imu_fault_scale` | 0/2 → 0/2 | — |
+| `imu_fault_stuck` | 1/2 → 1/2 | 21.1s → 21.4s (~unchanged) |
+
+**Verdict:** a real, substantial win for `imu_fault_s3`'s lead time (5x
+larger), no change in which trials get detected at all, and a real
+calibration cost on 3 of 5 Gaussian features. Net positive for the stated
+goal (IMU fault detection) but not free — worth revisiting once graph
+cadence (still TBD) is also addressed, since the mixed calibration result
+could partly be a symptom of the same static-broadcast problem rather than
+the attention mechanism itself.
 
 ---
 
-## 4. TL-discrepancy calibration (in progress)
+## 4. TL-discrepancy calibration (done — fixed the metric, not the detection problem)
 
 `traffic_light_discrepancy` is a Bernoulli/sigmoid head (BCE loss), not a
 Gaussian mean/variance head — no notion of a confidence interval the way
@@ -119,11 +174,37 @@ position/velocity have one. Confirmed (§1's retrain) that this is a
 *structural* mismatch, not a training-noise problem: the frame-gap fix
 measurably improved every Gaussian-headed feature but left
 `traffic_light_discrepancy_residual`'s conformal detection at 0/8 fault
-trials, unchanged, before and after. Literature grounding downloaded
-(`docs/papers/2017_guo_temperature_scaling_calibration.pdf`,
-`2016_sadinle_conformal_classification_sets.pdf`,
-`2021_angelopoulos_bates_conformal_prediction_intro.pdf`,
-`2002_zadrozny_elkan_isotonic_calibration.pdf`) — implementation next.
+trials, unchanged, before and after.
+
+**Implemented:** temperature scaling (Guo, Pleiss, Sun & Weinberger, ICML
+2017 — `docs/papers/2017_guo_temperature_scaling_calibration.pdf`). Model now
+also returns the pre-sigmoid logit (`traffic_light_discrepancy_logit`, no
+effect on training/loss). `experiments/scripts/calibrate_tl_discrepancy.py`
+grid-searches a single scalar T minimizing BCE on the held-out calibration
+split; `st_gat/residuals.py` uses the fitted T to add a
+`traffic_light_discrepancy_calibrated_residual` column alongside the
+original.
+
+**Measured:** T=0.80 (mild sharpening — the model was mildly
+underconfident overall). **ECE (10-bin) 0.0292 → 0.0085**, a real ~3.4x
+tighter probability calibration; reliability bins visibly track the
+diagonal much more closely after scaling.
+
+**But: zero effect on fault detection.** Ran `conformal_lead_time.py
+--statistic traffic_light_discrepancy_calibrated_residual` against the
+retrained (route-aware + attention) model and got numbers **identical to
+three decimal places** to the uncalibrated version — TL campaigns stayed at
+0/12 detections either way. Explanation: most predicted probabilities sit
+in the [0, 0.1) reliability bin (5759/8074 examples), where a T=0.80 rescale
+barely moves the actual value — temperature scaling corrects calibration in
+aggregate but doesn't change which specific examples cross a threshold when
+the underlying signal magnitude for genuine TL faults is this small to
+begin with. Calibration and detection strength are genuinely separate axes;
+fixing one doesn't fix the other. `traffic_light_discrepancy` conformal
+classification (Sadinle et al. 2016) is still worth trying since it changes
+*how* the threshold itself is built, not just the probability feeding it —
+but the honest expectation now is that it may not move detection either if
+the signal itself is this weak for these campaigns.
 
 ---
 
