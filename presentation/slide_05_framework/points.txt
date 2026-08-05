@@ -19,10 +19,21 @@ The strong form — negative-evidence detection:
     it's specifically "the system stopped reporting something it should
     have known about"
 
-Epistemic stance:
-  → This is introspection/self-assessment, not interpretability
-  → Non-circular because it's anchored against the map — an independent,
-    externally-licensed ground truth, not the model grading its own homework
+Epistemic stance — scoped precisely, not a blanket claim:
+  → Applies specifically to the TWO map-anchored channels (traffic_light_
+    detected as a map fact, traffic_light_discrepancy as the map-vs-
+    perception mismatch) — NOT a description of the whole model
+  → For those two channels: this is introspection/self-assessment, non-
+    circular because the check is against the map, an independent,
+    externally-licensed ground truth — not the model grading its own homework
+  → Every OTHER predicted feature (position, velocity, steering,
+    acceleration) is checked against real ground-truth vehicle state, not
+    the map — the map only contributes as route/geometry CONTEXT there, not
+    as the verification anchor
+  → What's actually novel is not "using an HD map" (common in AV perception/
+    planning) — it's using one of its categorical assertions as an
+    INDEPENDENT CROSS-CHECK oracle for a single perception channel, not just
+    as input context
 
 Divergence-trace schema (what's logged, per timestep, per trial):
   → predicted mean/variance/actual/residual, per feature, uncollapsed

@@ -1,6 +1,6 @@
-Calibrated Confidence and Lead Time for Belief-Divergence Fault Detection in Autonomous Vehicles
+A Probabilistic Framework for Safe and Reliable Autonomous Vehicles as Digital Twins
 
-A Digital Twin Verification Layer over Autoware, Grounded in HD Map Priors
+Calibrated Confidence and Lead Time for Belief-Divergence Fault Detection
 
 Kalpit Vadnerkar — PhD Candidate
 Advisor: Dr. Pierluigi Pisu
