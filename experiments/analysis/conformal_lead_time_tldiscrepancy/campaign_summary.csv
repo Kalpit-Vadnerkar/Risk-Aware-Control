@@ -1,0 +1,9 @@
+campaign,n_trials,detection_rate,mean_lead_time_s,median_lead_time_s,n_with_fatal_moment
+imu_fault_s1,2.0,0.0,,,0.0
+imu_fault_s3,2.0,0.0,,,0.0
+imu_fault_scale,2.0,0.0,,,0.0
+imu_fault_stuck,2.0,0.0,,,0.0
+tl_fault_ramp,3.0,0.0,,,0.0
+tl_fault_s2,3.0,0.0,,,0.0
+tl_fault_s3,3.0,0.0,,,0.0
+tl_fault_s4,3.0,0.0,,,0.0
