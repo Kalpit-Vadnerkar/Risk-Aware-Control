@@ -158,9 +158,6 @@ def main():
             run_name = os.path.splitext(os.path.basename(f))[0]
             goal_id = _goal_from_run_name(run_name)
             trial_dirname = run_name[len(goal_id) + 1:]
-            if (campaign, goal_id, trial_dirname) in cfg.EXCLUDED_TRIALS:
-                print(f'  EXCLUDED {campaign}/{goal_id}/{trial_dirname}')
-                continue
             print(f'  analyzing {campaign}/{run_name}')
             row = analyze_trial(campaign, goal_id, trial_dirname, f, baselines)
             if row:

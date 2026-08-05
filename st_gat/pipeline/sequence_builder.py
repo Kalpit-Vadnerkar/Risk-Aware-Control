@@ -416,6 +416,14 @@ class SequenceBuilder:
     # one stride = ~0.3 m — so we rebuild roughly every 10 strides.
     _GRAPH_CACHE_DIST = 5.0   # metres
 
+    # Nominal frame cadence is 10Hz (0.1s); allow some jitter (observed p99
+    # inter-frame gap ~120ms on the master-clock topic) but reject anything
+    # that indicates a real hole in the frame stream from a dropped/stale
+    # topic — see build()'s temporal-contiguity gate comment for the finding
+    # this guards against (up to 31s gaps observed, silently spliced before
+    # this fix).
+    _MAX_FRAME_GAP_SEC = 0.20
+
     def build(self, frames: List[dict], verbose: bool = False,
               filter_mrm: bool = False) -> List[dict]:
         """
@@ -442,9 +450,30 @@ class SequenceBuilder:
                 print(f"  [seq_builder] too few frames ({n} < {total}), skipping")
             return []
 
+        # Temporal-contiguity gate (added 2026-08-05 — found via direct
+        # inspection that bag_reader.py's per-topic staleness check drops
+        # individual frames when a topic goes stale (correct), but the
+        # dropped frames leave a HOLE in the returned list — this loop used
+        # to slice `frames[i:i+total]` as if array-adjacency implied ~0.1s
+        # real-time adjacency. Confirmed concretely on one ordinary nominal
+        # trial: gaps up to 31.4s between array-adjacent frames (e.g. a
+        # control_cmd outage), meaning ~12% of that trial's windows silently
+        # spliced together frames from tens of seconds apart and fed the
+        # model a "3s past / 3s future" window that was actually spanning a
+        # large, arbitrary real-time jump — corrupting training data AND
+        # every residual/discriminability/lead-time analysis built on top of
+        # it, silently. Window is now rejected outright if any consecutive
+        # frame pair inside it exceeds _MAX_FRAME_GAP_SEC (an intra-window
+        # check, independent of and stricter than bag_reader's own
+        # per-topic MAX_STALENESS_SEC=0.3, which only bounds one topic's
+        # staleness relative to the master clock, not frame-to-frame gaps
+        # in the resulting sequence).
+        frame_gaps = [frames[j + 1]['t_sim'] - frames[j]['t_sim'] for j in range(n - 1)]
+
         sequences   = []
         n_windows   = 0
         n_rebuilds  = 0
+        n_gap_rejected = 0
 
         # Graph cache
         G_cached     = None
@@ -454,6 +483,10 @@ class SequenceBuilder:
 
         for i in range(0, n - total + 1, cfg.STRIDE):
             window = frames[i : i + total]
+
+            if max(frame_gaps[i : i + total - 1]) > self._MAX_FRAME_GAP_SEC:
+                n_gap_rejected += 1
+                continue
 
             if filter_mrm and any(f.get('mrm_active', False) for f in window):
                 continue
@@ -524,7 +557,8 @@ class SequenceBuilder:
             })
             n_windows += 1
 
-        if verbose:
-            print(f"  [seq_builder] {n_windows} sequences, {n_rebuilds} graph builds")
+        if verbose or n_gap_rejected:
+            print(f"  [seq_builder] {n_windows} sequences, {n_rebuilds} graph builds, "
+                  f"{n_gap_rejected} windows rejected for a >{self._MAX_FRAME_GAP_SEC}s frame gap")
 
         return sequences

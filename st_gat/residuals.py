@@ -431,11 +431,6 @@ def main():
                 trial_dir = os.path.join(goal_dir, trial_entry)
                 if not (os.path.isdir(trial_dir) and os.path.isdir(os.path.join(trial_dir, 'rosbag'))):
                     continue
-                exclusion_key = (dataset, goal_entry, trial_entry)
-                if exclusion_key in cfg.EXCLUDED_TRIALS:
-                    print(f"  [residuals] EXCLUDED {goal_entry}/{trial_entry}: "
-                          f"{cfg.EXCLUDED_TRIALS[exclusion_key]}")
-                    continue
                 run_dirs.append((goal_entry, trial_dir))
 
         print(f"\n[residuals] Dataset: {dataset}  ({len(run_dirs)} runs)")
