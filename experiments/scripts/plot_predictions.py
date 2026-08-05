@@ -84,7 +84,7 @@ def _unscale_position(scaled_xy: np.ndarray, ref_xy) -> np.ndarray:
     return out
 
 
-def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, margin: float = 40.0):
+def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, margin: float = 3.0):
     """One figure: map panel (position, tied to real map geometry) + a
     column of other-feature panels (predicted vs actual over the horizon)."""
     past_t   = TrajectoryDataset._build_feature_tensors(seq['past'])
@@ -126,11 +126,23 @@ def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, mar
     # would zoom out until the window shrinks to an invisible dot.
     all_x = np.concatenate([past_xy[:, 0], actual_xy[:, 0], pred_xy[:, 0]])
     all_y = np.concatenate([past_xy[:, 1], actual_xy[:, 1], pred_xy[:, 1]])
-    xmin, xmax, ymin, ymax = bbox_with_margin(all_x, all_y, margin)
+    # Margin scales with the window's OWN extent instead of a flat metres
+    # value (found 2026-08-04): a fixed 40m margin is sized for a FULL-TRIAL
+    # trajectory (hundreds of metres, plot_fault_impact.py's use case) — for
+    # a single 3s+3s window, especially a slow/near-stationary one, 40m on
+    # each side dwarfs the actual movement and shrinks the trajectory (and
+    # the uncertainty circles on it) to an unreadable sliver in the middle of
+    # a mostly-empty map. `margin` (default 3m, see --margin) is now just the
+    # floor for a near-stationary window; 0.4x the window's own span is what
+    # actually drives the zoom level for any window with real movement in it,
+    # so a longer/faster horizon naturally gets more map shown around it.
+    span = max(all_x.max() - all_x.min(), all_y.max() - all_y.min())
+    dyn_margin = max(margin, 0.4 * span)
+    xmin, xmax, ymin, ymax = bbox_with_margin(all_x, all_y, dyn_margin)
     draw_map_background(ax_map, map_data, xmin, xmax, ymin, ymax)
 
-    ax_map.plot(past_xy[:, 0], past_xy[:, 1], color='#555555', linewidth=1.8,
-                alpha=0.8, zorder=3, label='past (input, 3s)')
+    ax_map.plot(past_xy[:, 0], past_xy[:, 1], color='#000000', linewidth=2.2,
+                alpha=0.85, zorder=3, label='past (input, 3s)')
     ax_map.plot(actual_xy[:, 0], actual_xy[:, 1], color='#1f77b4', linewidth=1.8,
                 alpha=0.85, zorder=4, label='actual future (3s)')
     ax_map.plot(pred_xy[:, 0], pred_xy[:, 1], color='#d62728', linewidth=1.6,
@@ -196,7 +208,9 @@ def main():
     ap.add_argument('--goals-file', default=os.path.join(REPO_DIR, 'experiments', 'configs', 'captured_goals.json'))
     ap.add_argument('--map-file', default=cfg.MAP_FILE)
     ap.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR)
-    ap.add_argument('--margin', type=float, default=40.0)
+    ap.add_argument('--margin', type=float, default=3.0,
+                    help='floor, in metres, for a near-stationary window — the actual margin used is '
+                         'max(this, 0.4 * the window\'s own trajectory span), see plot_example()')
     args = ap.parse_args()
 
     import json
