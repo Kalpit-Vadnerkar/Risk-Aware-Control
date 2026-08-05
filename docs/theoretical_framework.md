@@ -114,6 +114,37 @@ about the world that the map and nominal behavior contradict). That is the
 foundation for a safety-verification claim rather than a machine-learning accuracy
 claim.
 
+### 3.3 Why Autoware's Own Internal Validators Can't Do This Instead
+
+A natural objection: Autoware already ships runtime validators
+(`autoware_control_validator`, `autoware_planning_validator`) that check
+trajectory tracking against explicit numeric thresholds (e.g.
+`max_distance_deviation=1.0m`, staged `yaw_deviation_warn`/`_error` levels) —
+why build a separate map-grounded belief-divergence layer at all?
+
+Checked directly, not assumed (2026-08-04): these validators were live and
+recording throughout this project's own Arm A trials (confirmed present in
+every bag's `/diagnostics` topic), and stayed at OK/`validated.` even during
+IMU faults that produced a confirmed, real EKF-vs-ground-truth divergence and
+eventual stuck/collision outcome. The reason is structural, not a
+configuration gap: these validators check **self-consistency** — is the
+controller tracking the trajectory the PLANNER produced, from the planner's
+OWN belief about where the vehicle is. An IMU/localization fault corrupts
+that belief for perception, planning, AND control simultaneously, so all
+three stay perfectly consistent with each other while collectively diverging
+from reality. A validator built on "does the stack agree with itself" is
+structurally blind to a fault that makes the whole stack wrong together.
+
+This is the concrete, evidenced version of the epistemic-failure argument
+above: detecting this fault class requires a check anchored against
+something the stack did NOT produce and cannot corrupt in step with
+itself — the HD map's independently-licensed assertions, not another
+internal consistency check. It is also why Autoware's own MRM escalation
+(`COMFORTABLE_STOP`→`PULL_OVER`→`EMERGENCY_STOP`, staged by these same
+validators' diagnostics) is not a reliable ground truth for this class of
+fault either, and cannot substitute for the map-grounded signal this
+framework builds.
+
 ---
 
 ## 4. Horizon Is a Variable to Study, Not a Constant to Fix
