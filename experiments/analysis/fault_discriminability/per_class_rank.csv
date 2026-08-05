@@ -1,3 +1,3 @@
 fault_class,position_nll_delta,velocity_nll_delta,steering_nll_delta,acceleration_nll_delta,traffic_light_state_nll_delta,traffic_light_detected_residual_delta,traffic_light_discrepancy_residual_delta
-IMU,4,2,1,3,7,6,5
-TL/camera,6,1,5,2,7,4,3
+IMU,3,2,1,4,7,6,5
+TL/camera,5,1,2,6,7,4,3
