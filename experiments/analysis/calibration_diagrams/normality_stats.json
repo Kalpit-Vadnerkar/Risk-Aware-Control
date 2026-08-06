@@ -1,0 +1,44 @@
+[
+  {
+    "feature": "position",
+    "excess_kurtosis": 4.972297527054694,
+    "anderson_darling_stat": 297.03333671596556,
+    "anderson_darling_crit_5pct": 0.787,
+    "n": 23368
+  },
+  {
+    "feature": "velocity",
+    "excess_kurtosis": 6.033314005288421,
+    "anderson_darling_stat": 555.190356504856,
+    "anderson_darling_crit_5pct": 0.787,
+    "n": 23368
+  },
+  {
+    "feature": "steering",
+    "excess_kurtosis": 4.828413749903174,
+    "anderson_darling_stat": 93.98008438729994,
+    "anderson_darling_crit_5pct": 0.787,
+    "n": 11684
+  },
+  {
+    "feature": "acceleration",
+    "excess_kurtosis": 7.9875480118262345,
+    "anderson_darling_stat": 436.3331265617635,
+    "anderson_darling_crit_5pct": 0.787,
+    "n": 11684
+  },
+  {
+    "feature": "traffic_light_color",
+    "excess_kurtosis": 115.82884864774346,
+    "anderson_darling_stat": 742.3203133076477,
+    "anderson_darling_crit_5pct": 0.787,
+    "n": 11684
+  },
+  {
+    "feature": "traffic_light_confidence",
+    "excess_kurtosis": 44.245558018154306,
+    "anderson_darling_stat": 738.0283264565896,
+    "anderson_darling_crit_5pct": 0.787,
+    "n": 11684
+  }
+]
