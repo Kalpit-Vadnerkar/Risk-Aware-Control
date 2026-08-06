@@ -17,6 +17,11 @@ Selects up to --n-examples windows spread evenly across the trial (not just
 the first N) so a single run shows the model's behavior at different points
 along the route, not just near the start.
 
+Updated 2026-08-06 for the Gaussian -> Student-t head redesign (see
+model.py's docstring): every "±1 std" band below is now the Student-t
+IMPLIED std (sqrt(scale^2 * dof/(dof-2))), not a raw predicted variance —
+model.py no longer emits a `_var` key at all, only `_mean`/`_scale`/`_dof`.
+
 Usage (must source ROS/Autoware, then the repo venv):
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
@@ -108,7 +113,11 @@ def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, mar
     past_pos_scaled   = np.array([s['position'] for s in seq['past']])
     future_pos_scaled = np.array([s['position'] for s in seq['future']])
     pred_mean_scaled  = preds['position_mean'][0].cpu().numpy()          # (T_out, 2)
-    pred_var_scaled   = preds['position_var'][0].cpu().numpy()           # (T_out, 2)
+    pred_scale_scaled = preds['position_scale'][0].cpu().numpy()         # (T_out, 2)
+    pred_dof          = preds['position_dof'][0].cpu().numpy()           # (T_out,) -- shared across x/y
+    # Student-t implied variance (2026-08-06 redesign): scale^2 * dof/(dof-2),
+    # not the raw scale parameter directly -- see model.py's docstring.
+    pred_var_scaled = pred_scale_scaled ** 2 * (pred_dof / (pred_dof - 2))[:, None]
 
     past_xy   = _unscale_position(past_pos_scaled, ref_xy)
     actual_xy = _unscale_position(future_pos_scaled, ref_xy)
@@ -177,8 +186,10 @@ def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, mar
         if dims == 1:
             actual = np.array([s[key] for s in seq['future']], dtype=float)
             if f'{key}_mean' in preds:
-                mean = preds[f'{key}_mean'][0].cpu().numpy()
-                var  = preds[f'{key}_var'][0].cpu().numpy()
+                mean  = preds[f'{key}_mean'][0].cpu().numpy()
+                scale = preds[f'{key}_scale'][0].cpu().numpy()
+                dof   = preds[f'{key}_dof'][0].cpu().numpy()
+                var   = scale ** 2 * (dof / (dof - 2))   # Student-t implied variance
                 plot_mean_variance_band(ax, t, mean, var, actual=actual)
             else:
                 pred = preds[key][0].cpu().numpy()
@@ -188,8 +199,10 @@ def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, mar
             # velocity: plot longitudinal component only (dim 0) to keep the
             # panel readable — lateral is usually near-zero on this map.
             actual = np.array([s[key][0] for s in seq['future']], dtype=float)
-            mean = preds[f'{key}_mean'][0, :, 0].cpu().numpy()
-            var  = preds[f'{key}_var'][0, :, 0].cpu().numpy()
+            mean  = preds[f'{key}_mean'][0, :, 0].cpu().numpy()
+            scale = preds[f'{key}_scale'][0, :, 0].cpu().numpy()
+            dof   = preds[f'{key}_dof'][0].cpu().numpy()   # shared across dims
+            var   = scale ** 2 * (dof / (dof - 2))
             plot_mean_variance_band(ax, t, mean, var, actual=actual)
         ax.set_ylabel(label, fontsize=8)
         ax.tick_params(labelsize=8)

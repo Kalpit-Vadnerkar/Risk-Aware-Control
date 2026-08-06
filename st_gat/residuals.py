@@ -164,9 +164,8 @@ def _load_fatal_moment_markers(run_dir: str, frames: list) -> dict:
 
 # ── Residual computation ───────────────────────────────────────────────────
 
-_LOG2PI = math.log(2 * math.pi)
-
-# Output features with a Gaussian (mean/var) head. dims: number of
+# Output features with a Student-t (mean/scale/dof) head (Gaussian ->
+# Student-t 2026-08-06, see model.py's docstring). dims: number of
 # dimensions the feature carries (2 for position/velocity, 1 for scalars).
 _GAUSSIAN_FEATURES = {
     'position':                  2,
@@ -193,13 +192,32 @@ _SIGMOID_FEATURES = (
 )
 
 
-def _gaussian_residual(key: str, dims: int, preds: dict, future: dict, t: int = 0) -> dict:
-    """Predicted mean/var + actual + raw residual + NLL for one Gaussian
-    feature at prediction step t, per-dimension (not collapsed — see
-    docs/theoretical_framework.md §5's 'log full traces' mantra)."""
-    mu  = preds[f'{key}_mean'][:, t]     # (B,) or (B, dims)
-    var = preds[f'{key}_var'][:, t]      # (B,) or (B, dims)
-    actual = future[key][:, t]           # (B, 1) or (B, dims)
+def _student_t_residual(key: str, dims: int, preds: dict, future: dict, t: int = 0) -> dict:
+    """Predicted mean/scale/dof + actual + raw residual + NLL for one
+    Student-t feature at prediction step t, per-dimension (not collapsed —
+    see docs/theoretical_framework.md §5's 'log full traces' mantra).
+
+    Redesigned 2026-08-06 (Gaussian -> Student-t, see model.py/loss.py
+    docstrings for the calibration findings that drove this): `_pred_var`
+    is retired as a raw model output — replaced by `_pred_scale` (the
+    Student-t scale parameter) and a new `_pred_dof` column (shared across
+    a feature's own dims, same as model.py's heads) — plus a derived
+    `_pred_implied_var` (= scale^2 * dof/(dof-2), the actual Student-t
+    variance) for any downstream consumer that specifically wants a
+    variance-like number. `_nll`/`_residual`/`_residual_l2` column NAMES
+    are unchanged from the old Gaussian-head trace schema (so
+    compare_fault_vs_nominal.py, analyze_fault_discriminability.py,
+    conformal_lead_time.py etc. keep working without changes) but `_nll`'s
+    VALUES now come from the real Student-t density, not a Gaussian one —
+    re-run any script that cites absolute NLL magnitudes rather than just
+    relative ranking after retraining, since the scale changed."""
+    from st_gat.model.loss import _student_t_nll   # local import: avoid a
+    # module-level torch.nn dependency in what's otherwise a pure-tensor file
+
+    mu    = preds[f'{key}_mean'][:, t]      # (B,) or (B, dims)
+    scale = preds[f'{key}_scale'][:, t]     # (B,) or (B, dims)
+    dof   = preds[f'{key}_dof'][:, t]       # (B,) always — shared across dims
+    actual = future[key][:, t]              # (B, 1) or (B, dims)
 
     if dims == 1 and actual.dim() == 2 and actual.size(-1) == 1:
         actual = actual.squeeze(-1)
@@ -207,19 +225,26 @@ def _gaussian_residual(key: str, dims: int, preds: dict, future: dict, t: int = 
     cols = {}
     if dims == 1:
         residual = torch.abs(mu - actual)
-        nll = 0.5 * (torch.log(var) + _LOG2PI + (actual - mu) ** 2 / var)
-        cols[f'{key}_pred_mean'] = mu
-        cols[f'{key}_pred_var']  = var
-        cols[f'{key}_actual']    = actual
-        cols[f'{key}_residual']  = residual
-        cols[f'{key}_nll']       = nll
+        nll = _student_t_nll(actual, mu, scale, dof)
+        implied_var = scale.pow(2) * dof / (dof - 2)
+        cols[f'{key}_pred_mean']       = mu
+        cols[f'{key}_pred_scale']      = scale
+        cols[f'{key}_pred_dof']        = dof
+        cols[f'{key}_pred_implied_var'] = implied_var
+        cols[f'{key}_actual']          = actual
+        cols[f'{key}_residual']        = residual
+        cols[f'{key}_nll']             = nll
     else:
         residual_l2 = torch.norm(mu - actual, dim=-1)
-        nll = (0.5 * (torch.log(var) + _LOG2PI + (actual - mu) ** 2 / var)).sum(dim=-1)
+        dof_b = dof.unsqueeze(-1)   # (B,) -> (B,1), broadcast across dims
+        nll = _student_t_nll(actual, mu, scale, dof_b).sum(dim=-1)
+        implied_var = scale.pow(2) * dof_b / (dof_b - 2)
         for d in range(dims):
-            cols[f'{key}_pred_mean_{d}'] = mu[:, d]
-            cols[f'{key}_pred_var_{d}']  = var[:, d]
-            cols[f'{key}_actual_{d}']    = actual[:, d]
+            cols[f'{key}_pred_mean_{d}']        = mu[:, d]
+            cols[f'{key}_pred_scale_{d}']       = scale[:, d]
+            cols[f'{key}_pred_implied_var_{d}'] = implied_var[:, d]
+            cols[f'{key}_actual_{d}']           = actual[:, d]
+        cols[f'{key}_pred_dof']    = dof   # shared across dims, one column
         cols[f'{key}_residual_l2'] = residual_l2
         cols[f'{key}_nll']         = nll
     return cols
@@ -277,13 +302,30 @@ def _gaussian_llr(key: str, dims: int, preds: dict, future: dict,
         llr = -dims*log(c) + 0.5*(1 - 1/c^2) * sum_d(z_d^2)
     E[llr|H0] < 0 and E[llr|H1] > 0 for any c > 1 and any number of
     dimensions (verified numerically), unlike a naive |z|-based two-sided
-    mean-shift shortcut (see module comment above)."""
-    mu  = preds[f'{key}_mean'][:, t]
-    var = preds[f'{key}_var'][:, t]
+    mean-shift shortcut (see module comment above).
+
+    KNOWN STOPGAP as of the 2026-08-06 Gaussian->Student-t redesign (see
+    model.py/loss.py docstrings): this is still literally a Gaussian
+    variance-inflation LLR, now fed z = (actual-mean)/scale using the
+    Student-t head's scale parameter in place of a Gaussian std. That
+    standardization is reasonable on its own, but the LLR formula's own
+    derivation (H0/H1 both Gaussian) no longer matches the model's actual
+    predictive family, and the traced 2026-08-06 finding (p_fault_*
+    saturating under nominal noise, see docs/research_notes/
+    trust_and_signal_behavior_2026-08-06.md) was specifically caused by
+    this kind of family mismatch. Deliberately NOT re-derived this session
+    -- per Kalpit, SPRT gets revisited only after the calibration fix is
+    validated. Re-running plot_sprt_signal_behavior.py after retraining
+    will show whether standardizing by the (now correctly-shaped) Student-t
+    scale alone was enough to fix the saturation, or whether a proper
+    Student-t LLR derivation is still needed -- treat that as an open
+    question, not resolved by this change."""
+    mu    = preds[f'{key}_mean'][:, t]
+    scale = preds[f'{key}_scale'][:, t]
     actual = future[key][:, t]
     if dims == 1 and actual.dim() == 2 and actual.size(-1) == 1:
         actual = actual.squeeze(-1)
-    z = (actual - mu) / torch.sqrt(var)
+    z = (actual - mu) / scale
     z_sq_sum = (z ** 2).sum(dim=-1) if dims > 1 else z ** 2
     return -dims * math.log(c) + 0.5 * (1 - 1 / c ** 2) * z_sq_sum
 
@@ -364,7 +406,7 @@ def _compute_row(preds: dict, future: dict) -> dict:
     """One row of the divergence trace, at 1-step-ahead prediction (t=0)."""
     row = {}
     for key, dims in _GAUSSIAN_FEATURES.items():
-        row.update(_gaussian_residual(key, dims, preds, future))
+        row.update(_student_t_residual(key, dims, preds, future))
         row[f'{key}_llr'] = _gaussian_llr(key, dims, preds, future)
     for key in _SIGMOID_FEATURES:
         row.update(_sigmoid_residual(key, preds, future))

@@ -16,21 +16,45 @@ Key improvements over the T-ITS paper's GraphAttentionLSTM:
     position_uncertainty which sits near 0.006 vs position in [0, 1])
   - LayerNorm after each GCN layer stabilises graph feature magnitudes
   - Built-in gradient clipping in the Trainer (not in this module)
-  - softplus(var) + VAR_FLOOR in loss prevents NLL from collapsing to -inf
-  - VAR_FLOOR lowered 1e-4 -> 1e-8 (2026-08-02): one global floor applies to
-    every Gaussian-headed feature (position, velocity, steering,
-    acceleration, traffic_light_state), but their natural error scales
-    differ a lot. Found live: after the position-representation fix,
-    real position error is ~0.09m out of a +-100m range (~0.0009 scaled,
-    squared ~8e-7) — far below the old 1e-4 floor, so predicted position
-    variance was pinned AT the floor (sqrt(1e-4)*100m = 1.0m predicted std,
-    exactly the observed value) regardless of how accurate the mean
-    prediction became. Velocity/steering/traffic_light_state already sat
-    comfortably above 1e-4 (their calibration was fine or improving at that
-    floor), so lowering it doesn't force them lower — it just stops being
-    the binding constraint for position specifically.
+  - softplus(scale) + SCALE_FLOOR in loss prevents NLL from collapsing to -inf
 
 Total parameters: ~1.2M  (vs ~9M original)
+
+Distribution family and decoder redesigned 2026-08-06 (see
+docs/research_notes/trust_and_signal_behavior_2026-08-06.md for the
+findings that drove this, and CLAUDE.md's "Direction reframe" for the
+priority ordering that put this ahead of resuming SPRT/detection work):
+
+1. Gaussian -> Student-t heads. Coverage-curve/z-score diagnostics on the
+   Gaussian-headed model showed all 6 continuous features decisively fail
+   an Anderson-Darling normality test (statistic 94-742 against a 5%
+   critical value of 0.787) with large positive excess kurtosis (4.8-8.0
+   for position/velocity/steering/acceleration; 44-116 for the two TL
+   heads) — the real residual distribution is leptokurtic, not Gaussian,
+   even though the aggregate std(z) looked fine. Matching only the first
+   two moments (mean, variance) under a forced-Gaussian NLL cannot fix a
+   shape mismatch; it can only ever get the variance right on average. A
+   Student-t predictive distribution has a free degrees-of-freedom (dof)
+   parameter controlling tail weight (dof->inf recovers Gaussian; low dof,
+   as low as the >2 floor below, gives arbitrarily heavy tails) — the
+   model now predicts dof per feature per horizon step alongside mean and
+   scale, so it can represent the leptokurtosis directly instead of being
+   structurally forced into a bell curve regardless of what the data looks
+   like.
+2. Flat per-head Linear(d_h, dim*T_out) -> per-horizon-step conditioned
+   decoder. The old heads had NO architectural mechanism for horizon step
+   t's prediction to differ systematically from step t+1's — each was
+   just a disjoint slice of one flat weight matrix, so "does predicted
+   uncertainty widen with horizon" had to be learned as an incidental
+   pattern in that matrix rather than being structurally supported.
+   Measured effect: only `position` (which has an unusually strong,
+   ubiquitous training signal for this — position error compounds through
+   literal kinematic integration in every window) learned real horizon
+   widening; velocity/steering/acceleration/both TL heads' predicted std
+   stayed nearly flat across the 3s horizon while actual RMSE grew 2-4x.
+   Every head is now a small MLP conditioned on [h_last ; a learned
+   per-step horizon embedding] instead of one flat projection — see
+   `_StepConditionedHead` below.
 """
 
 import torch
@@ -38,8 +62,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# Variance floor applied when computing NLL loss (not in model — see loss.py)
-VAR_FLOOR = 1e-8
+# Scale floor applied when computing NLL loss (not in model — see loss.py).
+# Analogous to the old VAR_FLOOR (1e-8) but in scale (sigma), not variance,
+# units now that heads predict scale directly: sqrt(1e-8) = 1e-4.
+SCALE_FLOOR = 1e-4
+# Degrees-of-freedom floor for Student-t heads — keeps variance finite
+# (requires dof > 2) with a small safety margin against the dof/(dof-2)
+# blowup right at the boundary. Deliberately close to 2, not e.g. 5+: the
+# leptokurtosis finding above showed some features (traffic_light_color/
+# confidence) may genuinely want very heavy tails, and constraining dof
+# away from that would just reintroduce a softer version of the same
+# forced-Gaussian-ish shape problem this redesign exists to fix.
+DOF_FLOOR = 2.1
+# Dim of the learned per-horizon-step positional embedding fed into every
+# output head (see _StepConditionedHead) — small on purpose, it only needs
+# to encode "which of the 30 future steps is this," not carry any of the
+# actual predictive signal (that's still h_last's job).
+HORIZON_EMBED_DIM = 16
 
 
 # ── Graph Encoder ──────────────────────────────────────────────────────────
@@ -176,6 +215,33 @@ class ObjectSetEncoder(nn.Module):
         return (h * weights.unsqueeze(-1)).sum(dim=2)                     # (B, T, d_obj)
 
 
+# ── Step-conditioned output head ─────────────────────────────────────────────
+
+class _StepConditionedHead(nn.Module):
+    """Per-horizon-step decoder head (added 2026-08-06 — see module
+    docstring point 2). Replaces a single nn.Linear(d_h, out_dim*T_out)
+    with a small shared MLP applied independently at each of the T_out
+    future steps, taking [h_last ; horizon_embedding[t]] as input instead
+    of h_last alone. This is what gives the model actual architectural
+    capacity for horizon-dependent behavior (e.g. widening variance)
+    instead of requiring it be learned incidentally inside one flat
+    weight matrix's otherwise-unrelated rows.
+    """
+
+    def __init__(self, d_h: int, d_pos: int, out_dim: int, hidden: int = 64, dropout: float = 0.1):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d_h + d_pos, hidden),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, out_dim),
+        )
+
+    def forward(self, h_expanded: torch.Tensor) -> torch.Tensor:
+        """h_expanded: (B, T_out, d_h + d_pos) -> (B, T_out, out_dim)."""
+        return self.net(h_expanded)
+
+
 # ── Main model ─────────────────────────────────────────────────────────────
 
 class STGAT(nn.Module):
@@ -189,23 +255,30 @@ class STGAT(nn.Module):
         has_adjacent_lane (B, T, 1), uncertainty (B, T, 2),
         objects_set (B, T, K, OBJECT_FEATURE_DIM), objects_mask (B, T, K)
 
-    Output dict:
-        position_mean/var  (B, T_out, 2)
-        velocity_mean/var  (B, T_out, 2)
-        steering_mean/var  (B, T_out)
-        acceleration_mean/var (B, T_out)
-        traffic_light_color_mean/var (B, T_out) — Gaussian. Perception's
-            reported color, most-restrictive element (redesigned 2026-08-05,
-            replacing the old collapsed traffic_light_state head — see
-            config.py's FEATURE_SIZES doc / docs/research_notes/
-            ablation_study_2026.md). A Gaussian head, not a deterministic
-            sigmoid, so the predicted variance can itself widen under a
-            camera/TL fault.
-        traffic_light_confidence_mean/var (B, T_out) — Gaussian. That SAME
-            element's confidence, as its own head — split out from color so a
-            pure confidence-degradation fault (tl_confidence) and a
-            color-changing fault produce distinguishable signal, which the
-            old multiplied-scalar traffic_light_state could not.
+    Output dict (Student-t heads, redesigned 2026-08-06 — see module
+    docstring point 1 for why Gaussian mean/var was replaced):
+        position_mean/scale/dof  (B, T_out, 2) / (B, T_out, 2) / (B, T_out)
+        velocity_mean/scale/dof  (B, T_out, 2) / (B, T_out, 2) / (B, T_out)
+        steering_mean/scale/dof  (B, T_out)
+        acceleration_mean/scale/dof (B, T_out)
+        traffic_light_color_mean/scale/dof (B, T_out) — Student-t.
+            Perception's reported color, most-restrictive element
+            (redesigned 2026-08-05, replacing the old collapsed
+            traffic_light_state head — see config.py's FEATURE_SIZES doc /
+            docs/research_notes/ablation_study_2026.md). Not a deterministic
+            sigmoid, so the predicted scale can itself widen under a
+            camera/TL fault; the dof term lets this specific head (measured
+            excess kurtosis 44-116 under the old Gaussian assumption — by
+            far the most leptokurtic of the 6) predict very heavy tails
+            instead of being forced into a bell curve it demonstrably isn't.
+        traffic_light_confidence_mean/scale/dof (B, T_out) — Student-t. That
+            SAME element's confidence, as its own head — split out from
+            color so a pure confidence-degradation fault (tl_confidence)
+            and a color-changing fault produce distinguishable signal,
+            which the old multiplied-scalar traffic_light_state could not.
+        Each feature's dof is shared across its own dims (e.g. position's x
+        and y share one dof value per timestep) but predicted per horizon
+        step, not a single global constant — see _StepConditionedHead.
         traffic_light_discrepancy (B, T_out) — sigmoid-bounded (added
             2026-08-01): binary map-vs-perception mismatch flag, BCE loss.
             traffic_light_detected (the old "map expects a TL here" head) was
@@ -289,19 +362,26 @@ class STGAT(nn.Module):
         )
         self.lstm_drop = nn.Dropout(dropout)
 
-        # ── Output heads (all share the single LSTM's final hidden state) ────
-        # Each head maps d_h → output_dim * T_out then reshapes
-        self.head_position    = nn.Linear(d_h, 4  * self.T_out)   # mean(2) + var(2)
-        self.head_velocity    = nn.Linear(d_h, 4  * self.T_out)
-        self.head_steering    = nn.Linear(d_h, 2  * self.T_out)   # mean(1) + var(1)
-        self.head_accel       = nn.Linear(d_h, 2  * self.T_out)
+        # ── Output heads (2026-08-06: per-horizon-step conditioned, Student-t
+        # -- see module docstring points 1/2 and _StepConditionedHead) ──────
+        # Each continuous head outputs mean(dims) + scale(dims) + dof(1,
+        # shared across dims) per step; traffic_light_discrepancy is
+        # unchanged (Bernoulli/sigmoid, no distribution-family question).
+        d_pos = HORIZON_EMBED_DIM
+        self.horizon_embed = nn.Embedding(self.T_out, d_pos)
+        self.register_buffer('_horizon_idx', torch.arange(self.T_out), persistent=False)
+
+        self.head_position    = _StepConditionedHead(d_h, d_pos, 5)   # mean(2) + scale(2) + dof(1)
+        self.head_velocity    = _StepConditionedHead(d_h, d_pos, 5)
+        self.head_steering    = _StepConditionedHead(d_h, d_pos, 3)   # mean(1) + scale(1) + dof(1)
+        self.head_accel       = _StepConditionedHead(d_h, d_pos, 3)
         # traffic_light_color/confidence (redesigned 2026-08-05, replacing
         # the single collapsed head_tl_state — see config.py's FEATURE_SIZES
         # doc). head_traffic (the old traffic_light_detected head) removed
         # entirely at the same time — see the class docstring above.
-        self.head_tl_color       = nn.Linear(d_h, 2 * self.T_out)   # mean(1) + var(1)
-        self.head_tl_confidence  = nn.Linear(d_h, 2 * self.T_out)   # mean(1) + var(1)
-        self.head_tl_discrepancy = nn.Linear(d_h, self.T_out)
+        self.head_tl_color       = _StepConditionedHead(d_h, d_pos, 3)
+        self.head_tl_confidence  = _StepConditionedHead(d_h, d_pos, 3)
+        self.head_tl_discrepancy = _StepConditionedHead(d_h, d_pos, 1)
 
         self._init_weights()
 
@@ -359,30 +439,44 @@ class STGAT(nn.Module):
         lstm_out, _ = self.lstm(seq)       # (B, T, d_h)
         h_last = self.lstm_drop(lstm_out[:, -1])   # (B, d_h) — last hidden state
 
-        # ── 7. Output heads ──────────────────────────────────────────────────
+        # ── 7. Output heads — per-horizon-step conditioned (2026-08-06) ──────
         T_o = self.T_out
+        h_expanded = h_last.unsqueeze(1).expand(-1, T_o, -1)             # (B, T_o, d_h)
+        pos_embed  = self.horizon_embed(self._horizon_idx)               # (T_o, d_pos)
+        pos_embed  = pos_embed.unsqueeze(0).expand(B, -1, -1)            # (B, T_o, d_pos)
+        h_cond     = torch.cat([h_expanded, pos_embed], dim=-1)          # (B, T_o, d_h + d_pos)
 
-        pos   = self.head_position(h_last).view(B, T_o, 4)
-        vel   = self.head_velocity(h_last).view(B, T_o, 4)
-        steer = self.head_steering(h_last).view(B, T_o, 2)
-        accel = self.head_accel(h_last).view(B, T_o, 2)
-        tl_color = self.head_tl_color(h_last).view(B, T_o, 2)
-        tl_conf  = self.head_tl_confidence(h_last).view(B, T_o, 2)
-        tl_disc  = self.head_tl_discrepancy(h_last).view(B, T_o)
+        pos   = self.head_position(h_cond)       # (B, T_o, 5): mean(2)+scale(2)+dof(1)
+        vel   = self.head_velocity(h_cond)        # (B, T_o, 5)
+        steer = self.head_steering(h_cond)        # (B, T_o, 3): mean(1)+scale(1)+dof(1)
+        accel = self.head_accel(h_cond)           # (B, T_o, 3)
+        tl_color = self.head_tl_color(h_cond)      # (B, T_o, 3)
+        tl_conf  = self.head_tl_confidence(h_cond)  # (B, T_o, 3)
+        tl_disc  = self.head_tl_discrepancy(h_cond).squeeze(-1)   # (B, T_o)
+
+        def _dof(raw_dof: torch.Tensor) -> torch.Tensor:
+            # dof > DOF_FLOOR always (finite variance) — see module docstring.
+            return DOF_FLOOR + F.softplus(raw_dof)
 
         return {
             'position_mean':    pos[..., :2],
-            'position_var':     F.softplus(pos[..., 2:]) + VAR_FLOOR,
+            'position_scale':   F.softplus(pos[..., 2:4]) + SCALE_FLOOR,
+            'position_dof':     _dof(pos[..., 4]),
             'velocity_mean':    vel[..., :2],
-            'velocity_var':     F.softplus(vel[..., 2:]) + VAR_FLOOR,
+            'velocity_scale':   F.softplus(vel[..., 2:4]) + SCALE_FLOOR,
+            'velocity_dof':     _dof(vel[..., 4]),
             'steering_mean':    steer[..., 0],
-            'steering_var':     F.softplus(steer[..., 1]) + VAR_FLOOR,
-            'acceleration_mean': accel[..., 0],
-            'acceleration_var':  F.softplus(accel[..., 1]) + VAR_FLOOR,
-            'traffic_light_color_mean':      tl_color[..., 0],
-            'traffic_light_color_var':       F.softplus(tl_color[..., 1]) + VAR_FLOOR,
-            'traffic_light_confidence_mean': tl_conf[..., 0],
-            'traffic_light_confidence_var':  F.softplus(tl_conf[..., 1]) + VAR_FLOOR,
+            'steering_scale':   F.softplus(steer[..., 1]) + SCALE_FLOOR,
+            'steering_dof':     _dof(steer[..., 2]),
+            'acceleration_mean':  accel[..., 0],
+            'acceleration_scale': F.softplus(accel[..., 1]) + SCALE_FLOOR,
+            'acceleration_dof':   _dof(accel[..., 2]),
+            'traffic_light_color_mean':  tl_color[..., 0],
+            'traffic_light_color_scale': F.softplus(tl_color[..., 1]) + SCALE_FLOOR,
+            'traffic_light_color_dof':   _dof(tl_color[..., 2]),
+            'traffic_light_confidence_mean':  tl_conf[..., 0],
+            'traffic_light_confidence_scale': F.softplus(tl_conf[..., 1]) + SCALE_FLOOR,
+            'traffic_light_confidence_dof':   _dof(tl_conf[..., 2]),
             'traffic_light_discrepancy': torch.sigmoid(tl_disc),
             # Raw pre-sigmoid logit, also returned (added 2026-08-05) so
             # temperature scaling (Guo et al. 2017 — calibrated_prob =

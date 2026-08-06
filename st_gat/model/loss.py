@@ -47,17 +47,48 @@ Changes from the T-ITS reference:
     this term was a blunt-instrument defense against. Kept as a git-history
     note, not a live-but-zeroed knob — re-add deliberately, with a value
     tied to actual error scale, if collapse reappears without it.
+  - Gaussian NLL -> Student-t NLL (2026-08-06, see model.py's docstring for
+    the full reasoning): calibration diagnostics decisively rejected
+    normality for every Gaussian-headed feature (leptokurtic residuals),
+    which a Gaussian NLL can never fix regardless of training quality — it
+    can only ever match the first two moments, not the shape. _student_t_nll
+    below replaces the Gaussian NLL term; beta-NLL's motivation (don't let
+    the mean-fitting gradient get implicitly suppressed by a large spread
+    parameter) carries over using the predicted scale as the difficulty
+    proxy, same as before.
 """
+
+import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-VAR_FLOOR = 1e-8      # must match model.py — applied at prediction time. Lowered
-                       # from 1e-4 2026-08-02: it was pinning position's predicted
-                       # variance (real error ~0.09m needs var ~8e-7, below the old
-                       # floor) — see model.py's docstring for the full diagnosis.
+SCALE_FLOOR = 1e-4    # must match model.py — sqrt of the old VAR_FLOOR=1e-8,
+                       # now in scale (sigma) units since heads predict scale
+                       # directly rather than variance.
+DOF_FLOOR = 2.1        # must match model.py — see its docstring.
 BETA_NLL  = 0.5        # Seitzer et al. 2022 — see module docstring
+
+
+def _student_t_nll(target: torch.Tensor, mean: torch.Tensor, scale: torch.Tensor,
+                    dof: torch.Tensor) -> torch.Tensor:
+    """Negative log-likelihood of `target` under Student-t(mean, scale, dof),
+    elementwise (caller sums over dims/timesteps). dof must already be >
+    DOF_FLOOR (as produced by model.py's heads) — finite variance, no
+    log(dof-2) singularity risk here since this function doesn't need the
+    variance itself, only the density.
+
+    log p(x) = lgamma((dof+1)/2) - lgamma(dof/2) - 0.5*log(dof*pi) - log(scale)
+               - ((dof+1)/2) * log1p( ((x-mean)/scale)^2 / dof )
+    """
+    z2 = ((target - mean) / scale) ** 2
+    log_prob = (
+        torch.lgamma((dof + 1) / 2) - torch.lgamma(dof / 2)
+        - 0.5 * torch.log(dof * math.pi) - torch.log(scale)
+        - ((dof + 1) / 2) * torch.log1p(z2 / dof)
+    )
+    return -log_prob
 
 DEFAULT_WEIGHTS = {
     'position':               1.0,
@@ -80,11 +111,11 @@ DEFAULT_WEIGHTS = {
 
 class CombinedLoss(nn.Module):
     """
-    Gaussian NLL for continuous outputs (position, velocity, steering,
+    Student-t NLL for continuous outputs (position, velocity, steering,
     acceleration, traffic_light_color, traffic_light_confidence) + BCE for
     the one binary traffic-light output (traffic_light_discrepancy).
 
-    All variances must already have VAR_FLOOR added (as in model.py).
+    Scale/dof must already have SCALE_FLOOR/DOF_FLOOR applied (as in model.py).
     """
 
     def __init__(self, weights: dict = None):
@@ -96,27 +127,40 @@ class CombinedLoss(nn.Module):
         total  = torch.tensor(0.0, device=next(iter(pred.values())).device)
         nll_sum = torch.tensor(0.0, device=total.device)
 
-        # ── Gaussian NLL outputs ─────────────────────────────────────────────
+        # ── Student-t NLL outputs (2026-08-06, see module docstring) ─────────
         for key in ('position', 'velocity', 'steering', 'acceleration',
                     'traffic_light_color', 'traffic_light_confidence'):
-            mean_k = f'{key}_mean'
-            var_k  = f'{key}_var'
+            mean_k  = f'{key}_mean'
+            scale_k = f'{key}_scale'
+            dof_k   = f'{key}_dof'
             if mean_k not in pred:
                 continue
 
-            var    = pred[var_k]                      # already ≥ VAR_FLOOR
+            mean  = pred[mean_k]
+            scale = pred[scale_k]                     # already ≥ SCALE_FLOOR
+            dof   = pred[dof_k]                        # already > DOF_FLOOR, shape (B, T) always
             target_k = target[key]
 
             # Squeeze scalar features for matching: (B, T, 1) → (B, T)
             if target_k.dim() == 3 and target_k.size(-1) == 1:
                 target_k = target_k.squeeze(-1)
 
-            nll = 0.5 * (torch.log(var) + (target_k - pred[mean_k]).pow(2) / var)
+            # dof is shared across a multi-dim feature's own dims (e.g.
+            # position's x/y) — broadcast (B,T) -> (B,T,1) only when mean
+            # actually has an extra dim to broadcast against.
+            dof_b = dof.unsqueeze(-1) if mean.dim() == 3 else dof
+
+            nll = _student_t_nll(target_k, mean, scale, dof_b)
             # beta-NLL (Seitzer et al. 2022, see module docstring): weight each
-            # sample by its own variance (stop-gradient — the weight itself
-            # contributes no gradient, only rescales the NLL term's) so the
-            # mean-fitting gradient isn't implicitly suppressed by 1/variance.
-            beta_weight = var.detach().pow(BETA_NLL)
+            # sample by its own predicted scale (stop-gradient — the weight
+            # itself contributes no gradient, only rescales the NLL term) so
+            # the mean-fitting gradient isn't implicitly suppressed by a wide
+            # predictive spread. Uses scale^(2*beta) as the (variance-like)
+            # difficulty proxy, deliberately not scale^2 * dof/(dof-2) (the
+            # true Student-t variance) — simpler and avoids a dof-2 blowup
+            # risk near DOF_FLOOR in a term that's only a training heuristic,
+            # not part of the likelihood itself.
+            beta_weight = scale.detach().pow(2 * BETA_NLL)
             nll = nll * beta_weight
             nll = nll.sum(dim=tuple(range(1, nll.dim()))).mean()
 
