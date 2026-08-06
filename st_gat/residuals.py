@@ -19,8 +19,9 @@ offline without re-running the model. Also joins in, per trial:
     (NOT `sim_time_sec` — a different, unrelated clock; see
     compare_fault_vs_nominal.py's extract_fault_windows docstring for the
     exact bug this distinction already caused once elsewhere in this repo)
-  - the map-expectation channel (traffic_light_detected) kept separate from
-    the perception-report channel (traffic_light_state/discrepancy)
+  - the map-expectation channel (a real traffic-light graph node — see
+    GraphBuilder.py's _add_traffic_light_nodes) kept separate from the
+    perception-report channel (traffic_light_color/confidence/discrepancy)
   - fatal-moment markers: metrics.json's static_collision heuristic
     (Arm A) and the first frame where mrm_active flips True
 
@@ -168,20 +169,27 @@ _LOG2PI = math.log(2 * math.pi)
 # Output features with a Gaussian (mean/var) head. dims: number of
 # dimensions the feature carries (2 for position/velocity, 1 for scalars).
 _GAUSSIAN_FEATURES = {
-    'position':            2,
-    'velocity':             2,
-    'steering':             1,
-    'acceleration':         1,
-    'traffic_light_state':  1,   # perception-report channel (§1.12)
+    'position':                  2,
+    'velocity':                  2,
+    'steering':                  1,
+    'acceleration':               1,
+    # Replaces traffic_light_state 2026-08-05 (redesigned — see
+    # config.py's FEATURE_SIZES doc): color and confidence now have
+    # independent Gaussian heads instead of one collapsed scalar.
+    'traffic_light_color':       1,
+    'traffic_light_confidence':  1,
 }
 
 # Output features with a deterministic sigmoid head (no predicted variance).
 # object_distance removed 2026-08-02 (collapsed-scalar feature retired,
 # replaced by objects_set/objects_mask — input-only, no output head; see
 # model.py's ObjectSetEncoder and docs/theoretical_framework.md §3.1).
+# traffic_light_detected removed 2026-08-05 — retired as an output feature
+# entirely (deterministic geometric fact given position + map, redundant
+# with the graph now that real TL nodes exist there — see model.py's STGAT
+# docstring / GraphBuilder.py's _add_traffic_light_nodes).
 _SIGMOID_FEATURES = (
-    'traffic_light_detected',    # map-expectation channel — kept separate
-    'traffic_light_discrepancy', # perception-report channel (§1.12)
+    'traffic_light_discrepancy',   # perception-report channel (§1.12)
 )
 
 
@@ -217,6 +225,82 @@ def _gaussian_residual(key: str, dims: int, preds: dict, future: dict, t: int = 
     return cols
 
 
+# ── Sequential-evidence (SPRT) statistics ───────────────────────────────────
+# Replaces CUSUM as the primary detection statistic (2026-08-06, per Kalpit
+# — see docs/research_notes/ablation_study_2026.md for the full discussion).
+# CUSUM's own accumulated value has no probabilistic meaning on its own; it
+# only becomes interpretable after an externally-fit conformal threshold.
+#
+# _gaussian_llr tests a VARIANCE-INFLATION alternative (H1: the model's own
+# calibrated variance is actually too small by a factor of c^2) rather than
+# a mean-shift alternative. An earlier version of this function used a
+# mean-shift LLR (k*|z| - k^2/2, "two-sided" by taking |z|) — that is NOT a
+# valid two-sided likelihood ratio (a real two-sided mean-shift test needs
+# two SEPARATE one-sided accumulators, one per direction, same as _cusum()'s
+# C_pos/C_neg); verified numerically (500k-sample synthetic check) that the
+# |z| shortcut has POSITIVE expected drift under pure nominal noise
+# (E[llr|H0] ≈ +0.30 at k=1), meaning it would false-alarm on every trial
+# regardless of any real fault. The variance-inflation formulation doesn't
+# have this problem, is naturally two-sided (no direction to pick), and
+# generalizes cleanly to multi-dimensional and multi-feature combination by
+# summing z^2 (independent evidence sources' log-likelihoods add) — also
+# re-verified numerically: negative drift under H0, positive under H1, for
+# both 1-D and 2-D features.
+#
+# The accumulated log-likelihood-ratio directly approximates
+# log(P(fault so far) / P(nominal so far)) -- so P_t = sigmoid(S_t) is a
+# genuine running probability, not just an opaque number needing a
+# threshold to mean anything. This is the "sequential-evidence" item off
+# theoretical_framework.md's calibration-spine menu (conformal /
+# heteroscedastic-variance / sequential-evidence) -- conformal calibration
+# (already implemented, conformal_lead_time.py) still applies on TOP of
+# this, giving the same finite-sample false-alarm-rate guarantee as before;
+# only the underlying statistic being calibrated has changed.
+
+_SPRT_VAR_INFLATION = 2.0  # c: the variance-inflation factor H1 tests for
+# (i.e. "the real error scale is running at ~c times what the model itself
+# calibrated"), in units of the model's own predicted variance -- not a
+# fixed raw-magnitude constant the way CUSUM's old delta was. This is the
+# one tunable design choice in this scheme, but expressed in genuinely
+# interpretable, per-feature, per-timestep model-calibrated units.
+
+
+def _gaussian_llr(key: str, dims: int, preds: dict, future: dict,
+                   c: float = _SPRT_VAR_INFLATION, t: int = 0) -> torch.Tensor:
+    """Per-timestep log-likelihood-ratio of a variance-inflated-by-c
+    alternative vs. the model's own nominal predictive N(mean, var).
+    Derivation: for N(mu, var) vs N(mu, c^2*var), per dimension,
+        llr_d = -log(c) + 0.5*(1 - 1/c^2)*z_d^2,   z_d = (actual_d - mu_d) / sigma_d
+    summed across dims for multi-dimensional features (position, velocity)
+    -- each dimension's Gaussian is independent by construction (diagonal
+    covariance), so log-likelihoods add:
+        llr = -dims*log(c) + 0.5*(1 - 1/c^2) * sum_d(z_d^2)
+    E[llr|H0] < 0 and E[llr|H1] > 0 for any c > 1 and any number of
+    dimensions (verified numerically), unlike a naive |z|-based two-sided
+    mean-shift shortcut (see module comment above)."""
+    mu  = preds[f'{key}_mean'][:, t]
+    var = preds[f'{key}_var'][:, t]
+    actual = future[key][:, t]
+    if dims == 1 and actual.dim() == 2 and actual.size(-1) == 1:
+        actual = actual.squeeze(-1)
+    z = (actual - mu) / torch.sqrt(var)
+    z_sq_sum = (z ** 2).sum(dim=-1) if dims > 1 else z ** 2
+    return -dims * math.log(c) + 0.5 * (1 - 1 / c ** 2) * z_sq_sum
+
+
+def _bernoulli_llr(pred_prob: torch.Tensor, actual: torch.Tensor, base_rate: float) -> torch.Tensor:
+    """Log Bayes factor for a Bernoulli observation: H0 is actual ~
+    Bernoulli(base_rate) (the marginal nominal rate), H1 is actual ~
+    Bernoulli(pred_prob) (the model's own calibrated per-timestep
+    prediction). The Bernoulli-head counterpart to _gaussian_llr, for
+    traffic_light_discrepancy -- answers "does the model's own elevated
+    predicted probability this timestep get validated by the actual
+    outcome, relative to how often discrepancy happens nominally?" """
+    p1 = pred_prob.clamp(1e-6, 1 - 1e-6)
+    p0 = base_rate
+    return actual * torch.log(p1 / p0) + (1 - actual) * torch.log((1 - p1) / (1 - p0))
+
+
 def _sigmoid_residual(key: str, preds: dict, future: dict, t: int = 0) -> dict:
     """Predicted probability + actual + raw residual for one sigmoid-bounded
     feature at prediction step t (no predicted variance for these)."""
@@ -244,10 +328,18 @@ _TL_CALIBRATION_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     'experiments', 'analysis', 'tl_calibration', 'temperature.json')
 _TL_DISCREPANCY_TEMPERATURE = 1.0
+# Marginal nominal discrepancy rate (H0 for _bernoulli_llr below) -- default
+# is calibrate_tl_discrepancy.py's own last-measured value (2026-08-06 run
+# against this model), overwritten by the real value from temperature.json
+# when that file has one, same as the temperature itself.
+_TL_DISCREPANCY_BASE_RATE = 0.0932
 if os.path.exists(_TL_CALIBRATION_FILE):
     with open(_TL_CALIBRATION_FILE) as _f:
-        _TL_DISCREPANCY_TEMPERATURE = json.load(_f)['temperature']
-    print(f"[residuals] traffic_light_discrepancy temperature scaling: T={_TL_DISCREPANCY_TEMPERATURE:.2f}")
+        _tl_cal = json.load(_f)
+    _TL_DISCREPANCY_TEMPERATURE = _tl_cal['temperature']
+    _TL_DISCREPANCY_BASE_RATE   = _tl_cal.get('positive_rate', _TL_DISCREPANCY_BASE_RATE)
+    print(f"[residuals] traffic_light_discrepancy temperature scaling: T={_TL_DISCREPANCY_TEMPERATURE:.2f}, "
+          f"base_rate={_TL_DISCREPANCY_BASE_RATE:.4f}")
 else:
     print(f"[residuals] {_TL_CALIBRATION_FILE} not found -- traffic_light_discrepancy_calibrated_* "
           f"columns will be identical to the uncalibrated ones (T=1.0) until calibrate_tl_discrepancy.py is run")
@@ -273,9 +365,15 @@ def _compute_row(preds: dict, future: dict) -> dict:
     row = {}
     for key, dims in _GAUSSIAN_FEATURES.items():
         row.update(_gaussian_residual(key, dims, preds, future))
+        row[f'{key}_llr'] = _gaussian_llr(key, dims, preds, future)
     for key in _SIGMOID_FEATURES:
         row.update(_sigmoid_residual(key, preds, future))
     row.update(_calibrated_tl_discrepancy_residual(preds, future))
+    row['traffic_light_discrepancy_llr'] = _bernoulli_llr(
+        row['traffic_light_discrepancy_calibrated_pred'],
+        row['traffic_light_discrepancy_actual'],
+        _TL_DISCREPANCY_BASE_RATE,
+    )
 
     # Scene-context passthrough (ground truth only — no output head for
     # these; see docs/stgat_pipeline_plan.md's Stage 0/2 notes on
@@ -309,6 +407,34 @@ def _cusum(series: np.ndarray, delta: float = 0.5) -> np.ndarray:
         C_pos[i] = max(0.0, C_pos[i-1] + series[i] - mu - delta)
         C_neg[i] = max(0.0, C_neg[i-1] + mu - series[i] - delta)
     return np.maximum(C_pos, C_neg)
+
+
+def _sprt(llr: np.ndarray) -> np.ndarray:
+    """
+    Page/Lorden-style repeated SPRT: accumulate a per-timestep
+    log-likelihood-ratio (see _gaussian_llr/_bernoulli_llr above), resetting
+    to 0 whenever the running sum would go negative -- the "quickest change
+    detection" form (this is literally CUSUM's own update rule, just fed a
+    model-calibrated log-likelihood-ratio instead of a raw residual against
+    a fixed shift constant; CUSUM IS the SPRT-optimal test for a known-
+    magnitude Gaussian mean shift, Page 1954 -- the two are not as
+    different as "heuristic vs. probabilistic" makes them sound, the
+    difference is entirely in what feeds the accumulator).
+
+    S_t directly approximates log(P(fault so far) / P(nominal so far)), so
+    sigmoid(S_t) is a genuine running probability -- NOT "probability of
+    fault right now judged independently" (the reset-at-zero floor means
+    S_t >= 0 always, so sigmoid(S_t) >= 0.5), but "confidence a fault has
+    occurred since the last reset," which is the right question for a
+    monitoring/alarm context. A pure function over a full array per call --
+    stateless across trials by construction, same as _cusum().
+    """
+    S = np.zeros_like(llr)
+    acc = 0.0
+    for i, v in enumerate(llr):
+        acc = max(0.0, acc + v)
+        S[i] = acc
+    return S
 
 
 def _cvar(values: np.ndarray, alpha: float = 0.95) -> float:
@@ -395,10 +521,47 @@ def run_trace(
     else:
         df['t_rel_fault'] = float('nan')   # nominal trial, or fault never armed
 
-    # ── CUSUM (per relevant signal, not just one combined score) ────────────
-    df['cusum_combined']       = _cusum(df['combined_nll'].values)
-    df['cusum_tl_state']       = _cusum(df['traffic_light_state_nll'].values)
-    df['cusum_tl_discrepancy'] = _cusum(df['traffic_light_discrepancy_residual'].values)
+    # ── CUSUM (kept for comparison against the SPRT statistics below, not
+    # the primary detection signal anymore — see _sprt()'s docstring) ───────
+    df['cusum_combined']        = _cusum(df['combined_nll'].values)
+    df['cusum_tl_color']        = _cusum(df['traffic_light_color_nll'].values)
+    df['cusum_tl_confidence']   = _cusum(df['traffic_light_confidence_nll'].values)
+    df['cusum_tl_discrepancy']  = _cusum(df['traffic_light_discrepancy_residual'].values)
+
+    # ── Sequential-evidence (SPRT) — primary detection statistic (2026-08-06,
+    # per Kalpit — see _sprt()'s docstring / docs/research_notes/
+    # ablation_study_2026.md). Per-feature first (not collapsed), then
+    # fault-class combinations built by SUMMING LOG-LIKELIHOOD-RATIOS before
+    # accumulating — the mathematically correct way to combine independent
+    # evidence sources (log-likelihoods of independent observations add),
+    # unlike the old combined_nll's arbitrary fixed weights
+    # (position + 0.8*velocity + 0.5*steering).
+    df['sprt_position']         = _sprt(df['position_llr'].values)
+    df['sprt_velocity']         = _sprt(df['velocity_llr'].values)
+    df['sprt_steering']         = _sprt(df['steering_llr'].values)
+    df['sprt_acceleration']     = _sprt(df['acceleration_llr'].values)
+    df['sprt_tl_color']         = _sprt(df['traffic_light_color_llr'].values)
+    df['sprt_tl_confidence']    = _sprt(df['traffic_light_confidence_llr'].values)
+    df['sprt_tl_discrepancy']   = _sprt(df['traffic_light_discrepancy_llr'].values)
+
+    motion_llr = (df['position_llr'] + df['velocity_llr']
+                  + df['steering_llr'] + df['acceleration_llr']).values
+    tl_llr = (df['traffic_light_color_llr'] + df['traffic_light_confidence_llr']
+              + df['traffic_light_discrepancy_llr']).values
+    combined_llr = motion_llr + tl_llr
+
+    df['sprt_motion_combined']  = _sprt(motion_llr)
+    df['sprt_tl_combined']      = _sprt(tl_llr)
+    df['sprt_combined']         = _sprt(combined_llr)
+
+    # Direct probability interpretation (see _sprt()'s docstring for the
+    # "confidence since the last reset" caveat) — the headline deliverable
+    # this replaces CUSUM to get: a number a downstream safety system could
+    # read as an actual confidence, not just a value needing an external
+    # threshold to mean anything.
+    df['p_fault_motion']   = 1.0 / (1.0 + np.exp(-df['sprt_motion_combined'].values))
+    df['p_fault_tl']       = 1.0 / (1.0 + np.exp(-df['sprt_tl_combined'].values))
+    df['p_fault_combined'] = 1.0 / (1.0 + np.exp(-df['sprt_combined'].values))
 
     # ── Fatal-moment markers (constant per trial) ───────────────────────────
     markers = _load_fatal_moment_markers(run_dir, frames)
@@ -502,7 +665,8 @@ def main():
                 'n_rows':                  len(df),
                 'cvar95_combined_nll':     _cvar(df['combined_nll'].values),
                 'mean_combined_nll':       float(df['combined_nll'].mean()),
-                'cvar95_tl_state_nll':     _cvar(df['traffic_light_state_nll'].values),
+                'cvar95_tl_color_nll':      _cvar(df['traffic_light_color_nll'].values),
+                'cvar95_tl_confidence_nll': _cvar(df['traffic_light_confidence_nll'].values),
                 'mean_tl_discrepancy':     float(df['traffic_light_discrepancy_actual'].mean()),
                 'mean_tl_discrepancy_residual': float(df['traffic_light_discrepancy_residual'].mean()),
                 'permanent_stop_rel_s':    float(df['permanent_stop_rel_s'].iloc[0]) if len(df) else float('nan'),
@@ -518,8 +682,8 @@ def main():
 
     if not summary_df.empty:
         print("\n-- Per-dataset summary -----------------------------------------")
-        show_cols = [c for c in ['cvar95_combined_nll', 'cvar95_tl_state_nll',
-                                  'mean_tl_discrepancy_residual',
+        show_cols = [c for c in ['cvar95_combined_nll', 'cvar95_tl_color_nll',
+                                  'cvar95_tl_confidence_nll', 'mean_tl_discrepancy_residual',
                                   'mrm_first_trigger_rel_s', 'permanent_stop_rel_s']
                      if c in summary_df.columns]
         grp = summary_df.groupby('dataset')[show_cols].agg(['mean', 'std'])

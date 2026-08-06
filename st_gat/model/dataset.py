@@ -21,9 +21,19 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-# Graph constants (kept in sync with pipeline config)
-_MAX_GRAPH_NODES = 150
-_NODE_FEATURES   = 4     # x, y, traffic_light_detection_node, path_node
+from ..pipeline import config as _cfg
+
+# Graph constants -- imported from pipeline config instead of a separately
+# hardcoded copy (fixed 2026-08-05: this file used to hardcode its own
+# _MAX_GRAPH_NODES=150/_NODE_FEATURES=4, independent of config.py's
+# MAX_GRAPH_NODES/NODE_FEATURES, with only a "kept in sync" comment holding
+# the two in agreement -- exactly the duplicated-independently-maintained-
+# copy pattern that let the retired st_gat/infer.py drift stale. Caught when
+# raising MAX_GRAPH_NODES for the radius-gated graph redesign (see
+# docs/research_notes/ablation_study_2026.md §7/§10) would otherwise have
+# required remembering to also update this file by hand.)
+_MAX_GRAPH_NODES = _cfg.MAX_GRAPH_NODES
+_NODE_FEATURES   = _cfg.NODE_FEATURES
 
 
 class TrajectoryDataset(Dataset):
@@ -40,17 +50,23 @@ class TrajectoryDataset(Dataset):
     Each processed timestep dict has:
         position (list[2]), velocity (list[2]), steering (float),
         acceleration (float),
-        traffic_light_detected (int/float), traffic_light_state (float),
+        traffic_light_color (float), traffic_light_confidence (float),
         traffic_light_discrepancy (int/float), has_adjacent_lane (float),
         uncertainty (list[2]),
         objects_set ((K, OBJECT_FEATURE_DIM) array), objects_mask ((K,) array)
         — added 2026-08-02, replacing object_distance/closest_object_velocity
         (see sequence_builder.py's _build_object_set).
+
+        traffic_light_color/traffic_light_confidence replace the old
+        traffic_light_state (color*confidence collapsed into one scalar) and
+        traffic_light_detected (a manufactured "map expects a TL here" proxy,
+        retired as an output feature 2026-08-05 — see config.py's
+        FEATURE_SIZES doc and GraphBuilder.py's _add_traffic_light_nodes).
     """
 
     _SCALAR_KEYS = (
-        'steering', 'acceleration', 'traffic_light_detected',
-        'traffic_light_state', 'traffic_light_discrepancy', 'has_adjacent_lane',
+        'steering', 'acceleration', 'traffic_light_color',
+        'traffic_light_confidence', 'traffic_light_discrepancy', 'has_adjacent_lane',
     )
     _VECTOR_KEYS = ('position', 'velocity', 'uncertainty')
 
@@ -88,8 +104,8 @@ class TrajectoryDataset(Dataset):
             'velocity':                 [],
             'steering':                 [],
             'acceleration':             [],
-            'traffic_light_detected':   [],
-            'traffic_light_state':      [],
+            'traffic_light_color':      [],
+            'traffic_light_confidence': [],
             'traffic_light_discrepancy': [],
             'has_adjacent_lane':        [],
             'uncertainty':              [],
@@ -102,8 +118,8 @@ class TrajectoryDataset(Dataset):
             buf['velocity'].append(step['velocity'])
             buf['steering'].append([step['steering']])
             buf['acceleration'].append([step['acceleration']])
-            buf['traffic_light_detected'].append([float(step['traffic_light_detected'])])
-            buf['traffic_light_state'].append([float(step.get('traffic_light_state', 0.0))])
+            buf['traffic_light_color'].append([float(step.get('traffic_light_color', 0.0))])
+            buf['traffic_light_confidence'].append([float(step.get('traffic_light_confidence', 0.0))])
             buf['traffic_light_discrepancy'].append([float(step.get('traffic_light_discrepancy', 0.0))])
             buf['has_adjacent_lane'].append([float(step.get('has_adjacent_lane', 0.0))])
             buf['uncertainty'].append(step.get('uncertainty', [0.0, 0.0]))
@@ -114,8 +130,14 @@ class TrajectoryDataset(Dataset):
 
     @staticmethod
     def _build_graph_tensors(G) -> dict:
-        """Convert a networkx.Graph → node_features and adjacency matrix tensors."""
+        """Convert a networkx.Graph → node_features, adjacency matrix, and
+        node_mask tensors. node_mask added 2026-08-05: graphs are now
+        radius-scoped (config.py's GRAPH_RADIUS_M) rather than always padded
+        to exactly _MAX_GRAPH_NODES real nodes, so GraphEncoder needs to know
+        which rows are real vs. zero-padding — see model.py's GraphEncoder
+        for the attention-pooling mask this feeds."""
         node_features = torch.zeros((_MAX_GRAPH_NODES, _NODE_FEATURES), dtype=torch.float32)
+        node_mask     = torch.zeros((_MAX_GRAPH_NODES,), dtype=torch.float32)
         for node_id, data in G.nodes(data=True):
             if node_id < _MAX_GRAPH_NODES:
                 node_features[node_id] = torch.tensor([
@@ -124,6 +146,7 @@ class TrajectoryDataset(Dataset):
                     float(data.get('traffic_light_detection_node', 0)),
                     float(data.get('path_node', 0)),
                 ], dtype=torch.float32)
+                node_mask[node_id] = 1.0
 
         raw_adj = nx.to_numpy_array(G)
         n = min(raw_adj.shape[0], _MAX_GRAPH_NODES)
@@ -131,4 +154,4 @@ class TrajectoryDataset(Dataset):
         adj[:n, :n] = torch.tensor(raw_adj[:n, :n], dtype=torch.float32)
         adj_t = adj
 
-        return {'node_features': node_features, 'adj_matrix': adj_t}
+        return {'node_features': node_features, 'adj_matrix': adj_t, 'node_mask': node_mask}

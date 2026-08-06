@@ -64,12 +64,16 @@ DEFAULT_WEIGHTS = {
     'velocity':               0.8,
     'steering':               0.5,
     'acceleration':           0.5,
-    'traffic_light_detected': 0.2,   # sigmoid output — BCE loss (map channel)
-    # Added 2026-08-01 (docs/stgat_pipeline_plan.md §1.12) — the
-    # perception-report channel this dissertation's negative-evidence
-    # mechanism actually depends on; previously had no loss term at all
-    # since the model had no head for it.
-    'traffic_light_state':       0.2,   # Gaussian NLL — perception color x confidence
+    # Redesigned 2026-08-05 (see config.py's FEATURE_SIZES doc /
+    # docs/research_notes/ablation_study_2026.md): replaces the single
+    # collapsed traffic_light_state weight — color and confidence now have
+    # independent Gaussian heads/loss terms so a pure confidence-degradation
+    # fault (tl_confidence) produces distinguishable gradient signal from a
+    # color-changing one. traffic_light_detected's BCE term removed entirely
+    # — that head (the old "map expects a TL here" feature) was retired,
+    # see model.py's STGAT docstring.
+    'traffic_light_color':       0.2,   # Gaussian NLL — perception's reported color
+    'traffic_light_confidence':  0.2,   # Gaussian NLL — that same reading's confidence
     'traffic_light_discrepancy': 0.2,   # sigmoid output — BCE loss (perception channel)
 }
 
@@ -77,8 +81,8 @@ DEFAULT_WEIGHTS = {
 class CombinedLoss(nn.Module):
     """
     Gaussian NLL for continuous outputs (position, velocity, steering,
-    acceleration, traffic_light_state) + BCE for the two binary
-    traffic-light outputs (traffic_light_detected, traffic_light_discrepancy).
+    acceleration, traffic_light_color, traffic_light_confidence) + BCE for
+    the one binary traffic-light output (traffic_light_discrepancy).
 
     All variances must already have VAR_FLOOR added (as in model.py).
     """
@@ -94,7 +98,7 @@ class CombinedLoss(nn.Module):
 
         # ── Gaussian NLL outputs ─────────────────────────────────────────────
         for key in ('position', 'velocity', 'steering', 'acceleration',
-                    'traffic_light_state'):
+                    'traffic_light_color', 'traffic_light_confidence'):
             mean_k = f'{key}_mean'
             var_k  = f'{key}_var'
             if mean_k not in pred:
@@ -145,16 +149,6 @@ class CombinedLoss(nn.Module):
                 losses['velocity_l1_raw'] = (
                     pred['velocity_mean'] - target['velocity']
                 ).abs().mean().item()
-
-        # ── BCE output: traffic_light_detected ───────────────────────────────
-        if 'traffic_light_detected' in pred and 'traffic_light_detected' in target:
-            tgt = target['traffic_light_detected']
-            if tgt.dim() == 3:
-                tgt = tgt.squeeze(-1)
-            bce = F.binary_cross_entropy(pred['traffic_light_detected'], tgt)
-            w   = self.weights.get('traffic_light_detected', 0.2)
-            losses['traffic_light_loss'] = (bce * w).item()
-            total = total + bce * w
 
         # ── BCE output: traffic_light_discrepancy (added 2026-08-01) ─────────
         if 'traffic_light_discrepancy' in pred and 'traffic_light_discrepancy' in target:

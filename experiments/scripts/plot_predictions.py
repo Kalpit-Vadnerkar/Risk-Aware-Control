@@ -3,8 +3,8 @@
 Visualizes what the trained ST-GAT model actually predicts for a handful of
 example windows: predicted position trajectory (mean + uncertainty) overlaid
 on the HD map next to the real driven trajectory, plus predicted-vs-actual
-time series for a few other features (velocity, steering, traffic_light_state,
-traffic_light_discrepancy).
+time series for a few other features (velocity, steering, traffic_light_color,
+traffic_light_confidence, traffic_light_discrepancy).
 
 Position is the map panel because it's the one prediction that ties directly
 to the route/map plots the rest of this project already uses (plot_routes.py)
@@ -53,13 +53,17 @@ from st_gat.model.dataset import TrajectoryDataset  # noqa: E402
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'predictions')
 
 # Other-feature panels shown alongside position — (key, dims, label).
-# velocity/steering/traffic_light_state have Gaussian (mean/var) heads;
-# traffic_light_discrepancy is a sigmoid probability (no predicted variance,
-# so its panel just overlays predicted-probability vs actual 0/1).
+# velocity/steering/traffic_light_color/traffic_light_confidence have
+# Gaussian (mean/var) heads; traffic_light_discrepancy is a sigmoid
+# probability (no predicted variance, so its panel just overlays
+# predicted-probability vs actual 0/1). traffic_light_color/confidence
+# replace the old collapsed traffic_light_state (2026-08-05 redesign — see
+# config.py's FEATURE_SIZES doc).
 _SCALAR_PANELS = [
     ('velocity',                 2, 'velocity (scaled long., lat.)'),
     ('steering',                 1, 'steering (scaled)'),
-    ('traffic_light_state',      1, 'TL state (perception channel)'),
+    ('traffic_light_color',      1, 'TL color (perception channel)'),
+    ('traffic_light_confidence', 1, 'TL confidence (perception channel)'),
     ('traffic_light_discrepancy', 1, 'TL discrepancy (map vs. perception)'),
 ]
 

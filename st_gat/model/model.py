@@ -72,6 +72,14 @@ class GraphEncoder(nn.Module):
     A learned per-node attention score lets the model itself decide which
     nodes matter for the weighted sum, instead of the architecture forcing
     uniform weight by construction.
+
+    Node mask added 2026-08-05 alongside GraphBuilder's radius-based node
+    scoping (config.py's GRAPH_RADIUS_M): graphs are no longer always padded
+    to exactly _MAX_GRAPH_NODES real nodes, so the zero-feature padding rows
+    need to be masked out of the attention softmax the same way
+    ObjectSetEncoder already masks padding objects — before this, mask was
+    unnecessary because MIN_GRAPH_NODES == MAX_GRAPH_NODES guaranteed every
+    slot was real.
     """
 
     def __init__(self, node_feat_dim: int = 4, d_g: int = 128, dropout: float = 0.15):
@@ -81,10 +89,14 @@ class GraphEncoder(nn.Module):
         self.dropout    = nn.Dropout(dropout)
         self.attn_score = nn.Linear(d_g, 1)
 
-    def forward(self, node_features: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
+    def forward(self, node_features: torch.Tensor, adj: torch.Tensor,
+                mask: torch.Tensor = None) -> torch.Tensor:
         """
         node_features: (B, N, node_feat_dim)
         adj:           (B, N, N)
+        mask:          (B, N) — 1.0 for real nodes, 0.0 for padding. None
+                       treats every node as real (backward-compatible with
+                       any caller that hasn't been updated to pass one).
         returns:       (B, d_g)
         """
         B = node_features.size(0)
@@ -95,7 +107,14 @@ class GraphEncoder(nn.Module):
             h = F.gelu(self.gc2(h, adj[i]))
             h = self.dropout(h)                              # (N, d_g)
             scores  = self.attn_score(h).squeeze(-1)          # (N,)
+            if mask is not None:
+                scores = scores.masked_fill(mask[i] < 0.5, float('-inf'))
             weights = F.softmax(scores, dim=0)                # (N,)
+            # All-masked graphs (shouldn't happen -- every real graph has at
+            # least the lanelet the ego is on -- but guard the same way
+            # ObjectSetEncoder does for all-padding timesteps) give softmax
+            # over all -inf -> NaN; zero those out rather than propagating NaN.
+            weights = torch.nan_to_num(weights, nan=0.0)
             ctx_list.append((h * weights.unsqueeze(-1)).sum(dim=0))  # weighted sum, (d_g,)
         return torch.stack(ctx_list)          # (B, d_g)
 
@@ -165,28 +184,36 @@ class STGAT(nn.Module):
 
     Input dict keys expected in `x`:
         position (B, T, 2), velocity (B, T, 2), steering (B, T, 1),
-        acceleration (B, T, 1), traffic_light_detected (B, T, 1),
-        uncertainty (B, T, 2), objects_set (B, T, K, OBJECT_FEATURE_DIM),
-        objects_mask (B, T, K)
+        acceleration (B, T, 1), traffic_light_color (B, T, 1),
+        traffic_light_confidence (B, T, 1), traffic_light_discrepancy (B, T, 1),
+        has_adjacent_lane (B, T, 1), uncertainty (B, T, 2),
+        objects_set (B, T, K, OBJECT_FEATURE_DIM), objects_mask (B, T, K)
 
     Output dict:
         position_mean/var  (B, T_out, 2)
         velocity_mean/var  (B, T_out, 2)
         steering_mean/var  (B, T_out)
         acceleration_mean/var (B, T_out)
-        traffic_light_detected (B, T_out) — sigmoid-bounded (map fact — the
-            route/HD-map expectation channel; not actually uncertain, kept as
-            a head mainly for parity with the reference architecture)
-        traffic_light_state_mean/var (B, T_out) — Gaussian (added 2026-08-01,
-            docs/stgat_pipeline_plan.md §1.12): the perception-report channel
-            (color x confidence). A Gaussian head, not a deterministic sigmoid,
-            so the predicted variance can itself widen under a camera/TL
-            fault — this is what makes the negative-evidence divergence
-            between the map channel and this channel computable at all;
-            previously neither traffic_light_state nor
-            traffic_light_discrepancy had any output head.
+        traffic_light_color_mean/var (B, T_out) — Gaussian. Perception's
+            reported color, most-restrictive element (redesigned 2026-08-05,
+            replacing the old collapsed traffic_light_state head — see
+            config.py's FEATURE_SIZES doc / docs/research_notes/
+            ablation_study_2026.md). A Gaussian head, not a deterministic
+            sigmoid, so the predicted variance can itself widen under a
+            camera/TL fault.
+        traffic_light_confidence_mean/var (B, T_out) — Gaussian. That SAME
+            element's confidence, as its own head — split out from color so a
+            pure confidence-degradation fault (tl_confidence) and a
+            color-changing fault produce distinguishable signal, which the
+            old multiplied-scalar traffic_light_state could not.
         traffic_light_discrepancy (B, T_out) — sigmoid-bounded (added
             2026-08-01): binary map-vs-perception mismatch flag, BCE loss.
+            traffic_light_detected (the old "map expects a TL here" head) was
+            retired entirely 2026-08-05: it was a deterministic geometric fact
+            manufactured from ego position + map, redundant with the graph
+            itself now that real traffic-light nodes exist there (see
+            GraphBuilder.py's _add_traffic_light_nodes) — no output head
+            needed for something the GCN can see structurally.
 
     No output head for objects_set/objects_mask (added 2026-08-02) — input-
     only context via ObjectSetEncoder. Objects don't have a hard map-grounded
@@ -268,10 +295,12 @@ class STGAT(nn.Module):
         self.head_velocity    = nn.Linear(d_h, 4  * self.T_out)
         self.head_steering    = nn.Linear(d_h, 2  * self.T_out)   # mean(1) + var(1)
         self.head_accel       = nn.Linear(d_h, 2  * self.T_out)
-        self.head_traffic     = nn.Linear(d_h, self.T_out)
-        # Added 2026-08-01 (docs/stgat_pipeline_plan.md §1.12) — the
-        # perception-report channel previously had no output head at all.
-        self.head_tl_state       = nn.Linear(d_h, 2 * self.T_out)   # mean(1) + var(1)
+        # traffic_light_color/confidence (redesigned 2026-08-05, replacing
+        # the single collapsed head_tl_state — see config.py's FEATURE_SIZES
+        # doc). head_traffic (the old traffic_light_detected head) removed
+        # entirely at the same time — see the class docstring above.
+        self.head_tl_color       = nn.Linear(d_h, 2 * self.T_out)   # mean(1) + var(1)
+        self.head_tl_confidence  = nn.Linear(d_h, 2 * self.T_out)   # mean(1) + var(1)
         self.head_tl_discrepancy = nn.Linear(d_h, self.T_out)
 
         self._init_weights()
@@ -291,6 +320,7 @@ class STGAT(nn.Module):
     def forward(self, x: dict, graph: dict) -> dict:
         node_features = graph['node_features']   # (B, N, node_fdim)
         adj_matrix    = graph['adj_matrix']      # (B, N, N)
+        node_mask     = graph.get('node_mask')   # (B, N) or None (older cached data)
         B = node_features.size(0)
 
         # ── 1. Ensure all features are (B, T, dim) ──────────────────────────
@@ -318,7 +348,7 @@ class STGAT(nn.Module):
         seq = self.input_proj(x_normed)    # (B, T, d_m)
 
         # ── 4. Graph context — additive fusion over the time axis ────────────
-        graph_ctx  = self.graph_encoder(node_features, adj_matrix)  # (B, d_g)
+        graph_ctx  = self.graph_encoder(node_features, adj_matrix, node_mask)  # (B, d_g)
         graph_ctx  = self.graph_proj(graph_ctx)                      # (B, d_m)
         seq = seq + graph_ctx.unsqueeze(1)                           # broadcast over T
 
@@ -336,8 +366,8 @@ class STGAT(nn.Module):
         vel   = self.head_velocity(h_last).view(B, T_o, 4)
         steer = self.head_steering(h_last).view(B, T_o, 2)
         accel = self.head_accel(h_last).view(B, T_o, 2)
-        tl    = self.head_traffic(h_last).view(B, T_o)
-        tl_state = self.head_tl_state(h_last).view(B, T_o, 2)
+        tl_color = self.head_tl_color(h_last).view(B, T_o, 2)
+        tl_conf  = self.head_tl_confidence(h_last).view(B, T_o, 2)
         tl_disc  = self.head_tl_discrepancy(h_last).view(B, T_o)
 
         return {
@@ -349,9 +379,10 @@ class STGAT(nn.Module):
             'steering_var':     F.softplus(steer[..., 1]) + VAR_FLOOR,
             'acceleration_mean': accel[..., 0],
             'acceleration_var':  F.softplus(accel[..., 1]) + VAR_FLOOR,
-            'traffic_light_detected': torch.sigmoid(tl),
-            'traffic_light_state_mean': tl_state[..., 0],
-            'traffic_light_state_var':  F.softplus(tl_state[..., 1]) + VAR_FLOOR,
+            'traffic_light_color_mean':      tl_color[..., 0],
+            'traffic_light_color_var':       F.softplus(tl_color[..., 1]) + VAR_FLOOR,
+            'traffic_light_confidence_mean': tl_conf[..., 0],
+            'traffic_light_confidence_var':  F.softplus(tl_conf[..., 1]) + VAR_FLOOR,
             'traffic_light_discrepancy': torch.sigmoid(tl_disc),
             # Raw pre-sigmoid logit, also returned (added 2026-08-05) so
             # temperature scaling (Guo et al. 2017 — calibrated_prob =

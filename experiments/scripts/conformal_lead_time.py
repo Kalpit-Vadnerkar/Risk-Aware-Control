@@ -188,9 +188,14 @@ def main():
                     help='target false-alarm rate for the conformal threshold (default 0.2, not 0.1 — chosen to '
                          'be ACHIEVABLE given how few zone-tagged nominal trials exist right now, see module '
                          'docstring\'s data-scarcity note, not a target risk level someone picked for the claim)')
-    ap.add_argument('--statistic', default='cusum_combined',
-                    help='trace column to conformalize (default cusum_combined; try combined_nll, '
-                         'cusum_tl_state, cusum_tl_discrepancy, traffic_light_discrepancy_residual)')
+    ap.add_argument('--statistic', default='sprt_motion_combined',
+                    help='trace column to conformalize (default sprt_motion_combined -- the '
+                         'sequential-evidence/SPRT statistic, 2026-08-06, replacing CUSUM as the '
+                         'primary detection signal; see st_gat/residuals.py\'s _sprt() docstring. '
+                         'try sprt_tl_combined for TL/camera campaigns, sprt_position/velocity/'
+                         'steering/acceleration/tl_color/tl_confidence/tl_discrepancy for single-'
+                         'feature traces, or cusum_combined/cusum_tl_color/cusum_tl_confidence/'
+                         'cusum_tl_discrepancy to compare against the old CUSUM statistic)')
     ap.add_argument('--window-s', type=float, default=20.0,
                     help='seconds after zone entry to look at, both for calibration and testing (default 20s, '
                          'roughly matching the fixed 15-20s fault caps in fault_scenario_table.md)')

@@ -187,7 +187,7 @@ def plot_discriminability_rank():
     feature_labels = {
         'position_nll_delta': 'position', 'velocity_nll_delta': 'velocity',
         'steering_nll_delta': 'steering', 'acceleration_nll_delta': 'accel.',
-        'traffic_light_state_nll_delta': 'tl_state', 'traffic_light_detected_residual_delta': 'tl_detected',
+        'traffic_light_color_nll_delta': 'tl_color', 'traffic_light_confidence_nll_delta': 'tl_confidence',
         'traffic_light_discrepancy_residual_delta': 'tl_discrepancy',
     }
     negative_evidence_campaigns = {'tl_fault_s3', 'tl_fault_s4'}  # tl_unknown, tl_blackout — see fault_scenario_table.md

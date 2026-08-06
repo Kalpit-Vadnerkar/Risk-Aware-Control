@@ -8,16 +8,16 @@ Run fresh against this repo's own retrained ST-GAT model and its own
 newly-collected fault campaigns (via st_gat/residuals.py's per-timestep
 traces) — not a recomputation of the published T-ITS paper's Fig. 9/10,
 which TODO.md flags as living in a different, read-only reference repo.
-Same falsifiable prediction either way: traffic_light_state/discrepancy
-residuals should be selectively high for TL/camera faults and much lower for
-IMU faults. If they're uniformly dominant across both fault classes, that's
-a clean-signal artifact, not evidence for the map-grounded negative-evidence
-mechanism (see docs/theoretical_framework.md §3).
+Same falsifiable prediction either way: traffic_light_color/confidence/
+discrepancy residuals should be selectively high for TL/camera faults and
+much lower for IMU faults. If they're uniformly dominant across both fault
+classes, that's a clean-signal artifact, not evidence for the map-grounded
+negative-evidence mechanism (see docs/theoretical_framework.md §3).
 
 For each fault trial, compares in-fault vs. out-of-fault z-scores against
 THAT SAME GOAL's own pooled nominal baseline — not a cross-goal average.
 Some goals (nom_v11/goal_026, goal_012) show elevated
-traffic_light_state_nll even with zero fault, so a fair comparison has to
+traffic_light_color_nll even with zero fault, so a fair comparison has to
 control for per-goal baseline differences, the same principle
 compare_fault_vs_nominal.py already applies to raw signals; this script
 reuses its fault-window extraction directly rather than re-deriving it.
@@ -58,7 +58,7 @@ DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_di
 # composite combined_nll (would muddy "which single feature wins").
 CANDIDATE_FEATURES = [
     'position_nll', 'velocity_nll', 'steering_nll', 'acceleration_nll',
-    'traffic_light_state_nll', 'traffic_light_detected_residual',
+    'traffic_light_color_nll', 'traffic_light_confidence_nll',
     'traffic_light_discrepancy_residual',
 ]
 

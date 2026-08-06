@@ -22,9 +22,11 @@ Each processed_timestep (12 flat features + object set):
         'velocity':                 [scaled_vx, scaled_vy],
         'steering':                 float,
         'acceleration':             float,
-        'traffic_light_detected':   0 or 1,   # graph node: upcoming lane has TL (map)
-        'traffic_light_state':      float,    # perceived color × confidence [0, 1]
-        'traffic_light_discrepancy': 0 or 1,  # map expects a TL, perception found none
+        'traffic_light_color':      float,    # perceived color of the most-restrictive
+                                                # reported element, [0=none, 1=red]
+        'traffic_light_confidence': float,    # that SAME element's confidence [0, 1]
+        'traffic_light_discrepancy': 0 or 1,  # map (real TL graph node) expects a TL,
+                                                # perception found none
         'has_adjacent_lane':        0.0/1.0,  # lanelet2 routing graph adjacency
         'uncertainty':              [scaled_x_var, scaled_y_var],
         'objects_set':              (K, OBJECT_FEATURE_DIM) array, per-object
@@ -46,7 +48,7 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 from .Data_Curator.Point import Point
-from .State_Estimator.GraphBuilder import GraphBuilder
+from .State_Estimator.GraphBuilder import GraphBuilder, regulatory_element_position, _reg_attr
 
 from . import config as cfg
 
@@ -130,18 +132,6 @@ def _scale_uncertainty(x_var: float, y_var: float) -> List[float]:
     ]
 
 
-def _scale_position(point: Point, x_min, x_max, y_min, y_max) -> List[float]:
-    """Graph-frame-relative [0,1] position — used ONLY internally, to look
-    up the nearest graph node for traffic_light_detected/has_adjacent_lane
-    (whose coordinates come from the same per-window _scale_graph bounds).
-    NOT used for the 'position' feature/target — see _scale_position_relative
-    below for why."""
-    return [
-        _clamp01((point.x - x_min) / (x_max - x_min)),
-        _clamp01((point.y - y_min) / (y_max - y_min)),
-    ]
-
-
 def _scale_position_relative(point: Point, ref_x: float, ref_y: float, max_range: float) -> List[float]:
     """
     The 'position' feature/target: real-metre displacement from a FIXED
@@ -149,10 +139,11 @@ def _scale_position_relative(point: Point, ref_x: float, ref_y: float, max_range
     [-1, 1] by a fixed constant (cfg.POSITION_DISPLACEMENT_RANGE_M) — not the
     window's own bounding box.
 
-    Fixed 2026-08-02: the previous window-bbox-relative [0,1] scaling
-    (_scale_position, still used above for graph lookups) gave the model no
-    way to know the metric scale of its own position target — two windows
-    with identical SCALED position sequences could correspond to very
+    Fixed 2026-08-02: the previous window-bbox-relative [0,1] scaling (a
+    _scale_position helper, removed 2026-08-05 once traffic_light_detected —
+    its last remaining caller — was retired as an output feature) gave the
+    model no way to know the metric scale of its own position target — two
+    windows with identical SCALED position sequences could correspond to very
     different real displacements depending on that window's own (never
     given to the model) bbox extent. Confirmed via a baseline check: the
     trained model's 1-step position error (2.5m) was ~30x worse than a
@@ -230,35 +221,38 @@ def _build_object_set(ego_pos_raw: dict, objects_raw: list) -> Tuple['np.ndarray
 _LIGHT_COLOR_VALUE = {1: 1.0, 2: 0.67, 3: 0.33}
 
 
-def _traffic_light_state(traffic_lights: list) -> float:
-    """Most restrictive visible traffic light color, normalized to [0,1] and
-    weighted by confidence. Confidence matters here (not just color): a fault
-    that degrades confidence but leaves color untouched (e.g. tl_confidence)
-    must not look identical to an undamaged reading of the same color — a
-    plain color lookup would be blind to that fault entirely."""
+def _traffic_light_reading(traffic_lights: list) -> Tuple[float, float]:
+    """(color, confidence) of the single most-restrictive reported element,
+    kept self-consistent — both values describe the SAME physical reading,
+    not independently maxed across elements (redesigned 2026-08-05,
+    replacing the old traffic_light_state's color*confidence collapse — see
+    docs/research_notes/ablation_study_2026.md). Reporting color and
+    confidence as two separate features lets the model distinguish a pure
+    confidence-degradation fault (tl_confidence — fault_injector.py) from a
+    color-changing one, which the old multiplied scalar could not: halving
+    confidence while leaving color untouched produced the same collapsed
+    value as an undamaged reading of a more-permissive color at higher
+    confidence — the two faults were indistinguishable downstream.
+    (0.0, 0.0) if nothing reported."""
     if not traffic_lights:
-        return 0.0
-    return max(_LIGHT_COLOR_VALUE.get(tl['color'], 0.0) * tl['confidence'] for tl in traffic_lights)
+        return 0.0, 0.0
+    most_restrictive = max(traffic_lights, key=lambda tl: _LIGHT_COLOR_VALUE.get(tl['color'], 0.0))
+    return (_LIGHT_COLOR_VALUE.get(most_restrictive['color'], 0.0),
+            float(most_restrictive['confidence']))
 
 
-def _traffic_light_discrepancy(detected: int, traffic_lights: list) -> int:
-    """1 if the HD map says a traffic light should be in range right now but
+def _traffic_light_discrepancy(map_expects: int, traffic_lights: list) -> int:
+    """1 if the map (via a real traffic-light graph node — see
+    GraphBuilder._add_traffic_light_nodes / TrafficLightExpectationChecker
+    above) expects a TL to be governing ego's position right now, but
     perception reports nothing usable — complete signal loss (blackout),
     all-UNKNOWN classification, or any other detection failure collapse to
     the same empty `traffic_lights` list, so this doesn't distinguish which;
     it's the explicit map-vs-perception mismatch signal. Without it, the
-    model has to infer the same relationship implicitly from
-    traffic_light_detected and traffic_light_state alone — this makes it a
-    first-class, directly observable feature instead."""
-    return int(detected == 1 and not traffic_lights)
-
-
-def _traffic_light_detected(G, ego_pos_scaled) -> int:
-    closest = min(
-        G.nodes(data=True),
-        key=lambda n: (n[1]['x'] - ego_pos_scaled[0])**2 + (n[1]['y'] - ego_pos_scaled[1])**2
-    )
-    return int(closest[1].get('traffic_light_detection_node', 0))
+    model has to infer the same relationship implicitly from map structure
+    and the perception-report features alone — this makes it a first-class,
+    directly observable feature instead."""
+    return int(map_expects == 1 and not traffic_lights)
 
 
 # ── Lanelet adjacency ──────────────────────────────────────────────────────
@@ -266,8 +260,12 @@ def _traffic_light_detected(G, ego_pos_scaled) -> int:
 class LaneletAdjacencyChecker:
     """
     Precomputes has_adjacent_lane for all lanelets in the map using the
-    lanelet2 routing graph.  Query is O(n_lanelets) at init, O(n) per frame
-    where n is number of lanelets (979 for nishishinjuku ≈ fast enough).
+    lanelet2 routing graph. Nearest-lanelet-centroid lookup uses a KD-tree
+    (was a linear O(n_lanelets) scan via Python's min()/lambda per call --
+    audited 2026-08-05: even after fixing the ~60x per-frame call
+    redundancy from STRIDE=1 windowing, this linear scan alone was ~24s of a
+    106s trial's total extraction time, see
+    docs/research_notes/ablation_study_2026.md).
 
     Coordinate frame: this map is loaded via MGRSProjector (MapProcessor.py),
     the same bag/MGRS frame ego and object positions from the rosbag are
@@ -276,40 +274,103 @@ class LaneletAdjacencyChecker:
     conversion targets an incompatible, now-unused frame).
     """
 
-    def __init__(self, map_data):
-        self._centroids: List[Tuple[float, float, int]] = []  # (x, y, ll_id)
+    def __init__(self, map_data, routing_graph=None):
+        self._centroid_ll_ids: List[int] = []
         self._adjacency: dict = {}                            # ll_id -> bool
+        self._tree = None
         self._available = False
-        self._build(map_data)
+        self._build(map_data, routing_graph)
 
-    def _build(self, map_data):
+    def _build(self, map_data, routing_graph=None):
         try:
             import lanelet2
-            traffic_rules = lanelet2.traffic_rules.create(
-                lanelet2.traffic_rules.Locations.Germany,
-                lanelet2.traffic_rules.Participants.Vehicle,
-            )
-            graph = lanelet2.routing.RoutingGraph(map_data, traffic_rules)
+            from scipy.spatial import cKDTree
+
+            # Shared, not rebuilt: routing_graph only depends on map_data
+            # (invariant across trials), so SequenceBuilder.__init__ builds
+            # it once and passes the same object to both this class and
+            # GraphBuilder rather than each constructing its own.
+            if routing_graph is None:
+                traffic_rules = lanelet2.traffic_rules.create(
+                    lanelet2.traffic_rules.Locations.Germany,
+                    lanelet2.traffic_rules.Participants.Vehicle,
+                )
+                routing_graph = lanelet2.routing.RoutingGraph(map_data, traffic_rules)
+
+            centroids = []
             for ll in map_data.laneletLayer:
-                adj_l = graph.adjacentLeft(ll)
-                adj_r = graph.adjacentRight(ll)
+                adj_l = routing_graph.adjacentLeft(ll)
+                adj_r = routing_graph.adjacentRight(ll)
                 self._adjacency[ll.id] = (adj_l is not None) or (adj_r is not None)
                 cl = ll.centerline
                 if len(cl) > 0:
                     mid = cl[len(cl) // 2]
-                    self._centroids.append((mid.x, mid.y, ll.id))
+                    centroids.append((mid.x, mid.y))
+                    self._centroid_ll_ids.append(ll.id)
+            if centroids:
+                self._tree = cKDTree(np.array(centroids))
             self._available = True
         except Exception as exc:
             print(f"  [seq_builder] WARNING: has_adjacent_lane disabled ({exc})")
 
     def query(self, ref_x: float, ref_y: float) -> float:
-        if not self._available or not self._centroids:
+        if not self._available or self._tree is None:
             return 0.0
-        _, _, ll_id = min(
-            self._centroids,
-            key=lambda c: (c[0] - ref_x) ** 2 + (c[1] - ref_y) ** 2,
-        )
+        _, idx = self._tree.query([ref_x, ref_y])
+        ll_id = self._centroid_ll_ids[idx]
         return 1.0 if self._adjacency.get(ll_id, False) else 0.0
+
+
+class TrafficLightExpectationChecker:
+    """
+    Precomputes real-world (x, y) positions of every distinct traffic-light
+    regulatory element governing a lanelet on the route, and answers "does
+    the map expect a TL to be governing this raw position right now" via a
+    fixed real-world proximity radius.
+
+    Deliberately works in RAW map coordinates, not a per-window graph's
+    [0,1]-normalized frame: GraphBuilder._scale_graph's normalization factor
+    depends on that window's own bounding box, so a fixed proximity
+    threshold evaluated there would correspond to a different real-world
+    distance every time a graph rebuilds — this checker instead uses the
+    same raw bag/MGRS frame ego positions are already in (same convention as
+    LaneletAdjacencyChecker), so one fixed metres threshold means the same
+    thing on every call, independent of which window's graph happens to be
+    cached. Reuses GraphBuilder.regulatory_element_position (the same
+    computation compute_tl_zones.py/fault_injector.py use to pick which
+    real-world light a TL fault targets) so "the light this checker
+    considers governing" and "the light GraphBuilder adds a node for" are
+    always the same real-world entity, not two independently-derived
+    approximations of it.
+
+    Ground-truth LABEL input for traffic_light_discrepancy only — not
+    exposed as its own predicted feature (see config.py's FEATURE_SIZES doc
+    for why traffic_light_detected was retired as a model output).
+    """
+
+    _RADIUS_M = 25.0   # generous stopping-distance proximity — how far out
+                        # perception would plausibly still be reporting the
+                        # light governing an approach
+
+    def __init__(self, map_data, route):
+        self._positions: List[Tuple[float, float]] = []
+        seen_reg_ids = set()
+        for lid in route:
+            ll = map_data.laneletLayer[lid]
+            for reg in ll.regulatoryElements:
+                if _reg_attr(reg, 'subtype') != 'traffic_light' or reg.id in seen_reg_ids:
+                    continue
+                pos = regulatory_element_position(reg)
+                if pos is None:
+                    continue
+                seen_reg_ids.add(reg.id)
+                self._positions.append(pos)
+
+    def query(self, x: float, y: float) -> int:
+        if not self._positions:
+            return 0
+        nearest_sq = min((px - x) ** 2 + (py - y) ** 2 for px, py in self._positions)
+        return int(nearest_sq <= self._RADIUS_M ** 2)
 
 
 # ── Scale graph ────────────────────────────────────────────────────────────
@@ -327,20 +388,29 @@ def _scale_graph(G):
 
 # ── Per-timestep processing ────────────────────────────────────────────────
 
-def _process_frame(
+def _process_frame_static(
     frame: dict,
-    G,
-    x_min, x_max, y_min, y_max,
-    ref_x: float, ref_y: float,
     adj_checker: Optional['LaneletAdjacencyChecker'] = None,
+    tl_checker: Optional['TrafficLightExpectationChecker'] = None,
 ) -> dict:
-    """Convert one raw frame dict → scaled feature dict.
+    """Convert one raw frame dict → scaled feature dict, EXCLUDING 'position'
+    (the one feature that depends on which window is currently being built —
+    see _with_position below). Every other feature here depends only on the
+    frame itself plus two small, per-trial, position-invariant checkers, so
+    it can be computed exactly once per unique frame instead of once per
+    overlapping window.
 
-    ref_x, ref_y: this window's reference point (its last-observed/'current'
-    frame's raw position) — see _scale_position_relative. Same reference for
-    every frame in a window (past and future both), so past positions read
-    as "how far was I before now" and future positions as "how far will I be
-    after now", both anchored to the same present moment.
+    Added 2026-08-05 (see docs/research_notes/ablation_study_2026.md's
+    runtime audit): previously this all lived in one _process_frame() called
+    once per (window, frame-in-window) pair — at STRIDE=1 with a
+    60-frame window, ~60x redundant per unique frame. That redundancy used
+    to be harder to remove because traffic_light_detected's map-expectation
+    check depended on the per-window graph's [0,1]-scaled coordinates;
+    retiring traffic_light_detected as an output feature (see config.py's
+    FEATURE_SIZES doc) and moving the map-expectation check to
+    TrafficLightExpectationChecker (which works in fixed real-world
+    coordinates, not per-window graph-scaled ones) removed that dependency
+    entirely, so nothing here needs the graph or window context anymore.
     """
     ego = frame['ego']
 
@@ -351,33 +421,42 @@ def _process_frame(
     # ego positions from the rosbag are already in.
     ego_point = Point(ego['position']['x'], ego['position']['y'])
 
-    # Graph-frame-scaled position — ONLY for the nearest-graph-node lookups
-    # below (traffic_light_detected/has_adjacent_lane compare against graph
-    # node coordinates, which live in this same per-window [0,1] frame). NOT
-    # the 'position' feature/target — see _scale_position_relative's
-    # docstring for why conflating the two made the model's own position
-    # target's units inconsistent across training examples.
-    ego_pos_graph_scaled = _scale_position(ego_point, x_min, x_max, y_min, y_max)
-    position_out = _scale_position_relative(ego_point, ref_x, ref_y, cfg.POSITION_DISPLACEMENT_RANGE_M)
-
     unc = ego['position_uncertainty']
-    tl_list      = frame.get('traffic_lights', [])
-    tl_detected  = _traffic_light_detected(G, ego_pos_graph_scaled)
+    tl_list = frame.get('traffic_lights', [])
+    tl_color, tl_confidence = _traffic_light_reading(tl_list)
+    map_expects = tl_checker.query(ego_point.x, ego_point.y) if tl_checker else 0
     obj_feats, obj_mask = _build_object_set(ego['position'], frame['objects'])
 
     return {
-        'position':                 position_out,
         'velocity':                 _scale_velocity(ego['velocity']),
         'steering':                 _scale_steering(ego['steering']),
         'acceleration':             _scale_acceleration(ego['acceleration']),
-        'traffic_light_detected':   tl_detected,
-        'traffic_light_state':      _traffic_light_state(tl_list),
-        'traffic_light_discrepancy': _traffic_light_discrepancy(tl_detected, tl_list),
+        'traffic_light_color':      tl_color,
+        'traffic_light_confidence': tl_confidence,
+        'traffic_light_discrepancy': _traffic_light_discrepancy(map_expects, tl_list),
         'has_adjacent_lane':        adj_checker.query(ego_point.x, ego_point.y) if adj_checker else 0.0,
         'uncertainty':              _scale_uncertainty(unc['x_var'], unc['y_var']),
         'objects_set':              obj_feats,
         'objects_mask':             obj_mask,
     }
+
+
+def _with_position(static_feats: dict, frame: dict, ref_x: float, ref_y: float) -> dict:
+    """Add the one genuinely window-dependent feature (position, relative to
+    this window's reference frame) to an already-computed static feature
+    dict. Cheap arithmetic, no lookups — safe to redo per window even though
+    everything else in static_feats is cached.
+
+    ref_x, ref_y: this window's reference point (its last-observed/'current'
+    frame's raw position) — see _scale_position_relative. Same reference for
+    every frame in a window (past and future both), so past positions read
+    as "how far was I before now" and future positions as "how far will I be
+    after now", both anchored to the same present moment.
+    """
+    ego_point = Point(frame['ego']['position']['x'], frame['ego']['position']['y'])
+    out = dict(static_feats)
+    out['position'] = _scale_position_relative(ego_point, ref_x, ref_y, cfg.POSITION_DISPLACEMENT_RANGE_M)
+    return out
 
 
 # ── Main builder ───────────────────────────────────────────────────────────
@@ -394,15 +473,46 @@ class SequenceBuilder:
     def __init__(self, map_data, route: List[int]):
         self.map_data = map_data
         self.route = route
+
+        # Built ONCE and shared between GraphBuilder and LaneletAdjacencyChecker
+        # (added 2026-08-05) — routing_graph only depends on map_data, which
+        # never changes across trials, so constructing it twice per trial
+        # (each class used to build its own) was pure waste. See
+        # docs/research_notes/ablation_study_2026.md.
+        routing_graph = None
+        try:
+            import lanelet2
+            traffic_rules = lanelet2.traffic_rules.create(
+                lanelet2.traffic_rules.Locations.Germany,
+                lanelet2.traffic_rules.Participants.Vehicle,
+            )
+            routing_graph = lanelet2.routing.RoutingGraph(map_data, traffic_rules)
+        except Exception as exc:
+            print(f"  [seq_builder] WARNING: lanelet2 routing graph unavailable "
+                  f"({exc}) — topology-aware graph connectivity and "
+                  f"has_adjacent_lane both disabled.")
+
+        # Exposed so callers that swap route/graph_builder per trial without
+        # re-running __init__ (run_pipeline.py's shared_builder pattern) can
+        # reuse the same routing graph instead of rebuilding it, and must
+        # also rebuild _tl_checker per trial the same way — see
+        # run_pipeline.py's process_dataset() for why both are route-
+        # dependent and graph_builder-swap-only would silently leave
+        # _tl_checker (and therefore every window's traffic_light_discrepancy
+        # label) built from an empty route.
+        self.routing_graph = routing_graph
+
         self.graph_builder = GraphBuilder(
             map_data              = map_data,
             route                 = route,
             min_dist_between_node = cfg.MIN_DIST_BETWEEN_NODES,
             connection_threshold  = cfg.CONNECTION_THRESHOLD,
             max_nodes             = cfg.MAX_GRAPH_NODES,
-            min_nodes             = cfg.MIN_GRAPH_NODES,
+            radius_m              = cfg.GRAPH_RADIUS_M,
+            routing_graph         = routing_graph,
         )
-        self._adj_checker = LaneletAdjacencyChecker(map_data)
+        self._adj_checker = LaneletAdjacencyChecker(map_data, routing_graph=routing_graph)
+        self._tl_checker  = TrafficLightExpectationChecker(map_data, route)
 
     @classmethod
     def from_bag(cls, bag_dir: str) -> 'SequenceBuilder':
@@ -470,6 +580,16 @@ class SequenceBuilder:
         # in the resulting sequence).
         frame_gaps = [frames[j + 1]['t_sim'] - frames[j]['t_sim'] for j in range(n - 1)]
 
+        # Static (window-independent) per-frame features, computed ONCE per
+        # unique frame instead of once per overlapping window (added
+        # 2026-08-05 — see docs/research_notes/ablation_study_2026.md's
+        # runtime audit: at STRIDE=1 with a 60-frame window, the old
+        # per-(window, frame) call pattern recomputed every frame's features
+        # ~60x redundantly; profiled at ~31s of a 106s trial before this
+        # fix, mostly LaneletAdjacencyChecker.query()).
+        static_feats = [_process_frame_static(f, self._adj_checker, self._tl_checker)
+                        for f in frames]
+
         sequences   = []
         n_windows   = 0
         n_rebuilds  = 0
@@ -477,6 +597,8 @@ class SequenceBuilder:
 
         # Graph cache
         G_cached     = None
+        G_seq_cached = None   # deep copy of G_cached, reused for every window
+                              # sharing this rebuild (see below)
         bounds_cache = None
         last_init_pt = None
         last_last_pt = None
@@ -494,11 +616,11 @@ class SequenceBuilder:
             init_frame = window[0]['ego']
             last_frame  = window[-1]['ego']
 
-            # Raw bag-frame Points (see _process_frame's fix comment) — this
-            # center_position feeds GraphBuilder._get_sorted_lanelets, which
-            # measures distance against raw (bag-frame) lanelet centerline
-            # points, so it must be in the same frame or every lanelet
-            # "distance" is meaningless.
+            # Raw bag-frame Points (see _process_frame_static's fix comment) —
+            # this center_position feeds GraphBuilder._get_sorted_lanelets,
+            # which measures distance against raw (bag-frame) lanelet
+            # centerline points, so it must be in the same frame or every
+            # lanelet "distance" is meaningless.
             init_pt = Point(init_frame['position']['x'], init_frame['position']['y'])
             last_pt = Point(last_frame['position']['x'], last_frame['position']['y'])
 
@@ -519,13 +641,16 @@ class SequenceBuilder:
                 last_init_pt  = init_pt
                 last_last_pt  = last_pt
                 n_rebuilds   += 1
+                # Deep-copy once per rebuild, not once per window (added
+                # 2026-08-05 — was ~6s of a 106s trial). Every window sharing
+                # this rebuild period gets the SAME graph object reference;
+                # safe because nothing downstream (dataset.py's
+                # _build_graph_tensors, all analysis/plotting scripts) ever
+                # mutates a sequence's 'graph' in place, only reads it.
+                G_seq_cached = copy.deepcopy(G_cached)
 
             x_min, x_max, y_min, y_max = bounds_cache
-
-            # Deep-copy the cached graph so each sequence owns an independent copy
-            # (needed because pickle serialises the graph and we don't want aliasing)
-            import copy
-            G_seq = copy.deepcopy(G_cached)
+            G_seq = G_seq_cached
 
             # Reference point for the 'position' feature (see
             # _scale_position_relative): this window's last-observed/'current'
@@ -535,12 +660,10 @@ class SequenceBuilder:
             current_frame = window[cfg.INPUT_SEQ_LEN - 1]['ego']
             ref_x, ref_y = current_frame['position']['x'], current_frame['position']['y']
 
-            past_seq   = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max,
-                                         ref_x, ref_y, self._adj_checker)
-                          for f in window[:cfg.INPUT_SEQ_LEN]]
-            future_seq = [_process_frame(f, G_cached, x_min, x_max, y_min, y_max,
-                                         ref_x, ref_y, self._adj_checker)
-                          for f in window[cfg.INPUT_SEQ_LEN:]]
+            past_seq   = [_with_position(static_feats[j], frames[j], ref_x, ref_y)
+                          for j in range(i, i + cfg.INPUT_SEQ_LEN)]
+            future_seq = [_with_position(static_feats[j], frames[j], ref_x, ref_y)
+                          for j in range(i + cfg.INPUT_SEQ_LEN, i + total)]
 
             sequences.append({
                 'past':         past_seq,

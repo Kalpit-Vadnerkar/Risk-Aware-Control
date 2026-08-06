@@ -187,7 +187,7 @@ def process_dataset(
                 print(f"    WARNING: only {len(frames)} frames, skipping")
                 continue
 
-            from .sequence_builder import extract_route_from_bag
+            from .sequence_builder import extract_route_from_bag, TrafficLightExpectationChecker
             from .State_Estimator.GraphBuilder import GraphBuilder
             route = extract_route_from_bag(bag_dir)
             shared_builder.route = route
@@ -197,8 +197,15 @@ def process_dataset(
                 min_dist_between_node = cfg.MIN_DIST_BETWEEN_NODES,
                 connection_threshold  = cfg.CONNECTION_THRESHOLD,
                 max_nodes             = cfg.MAX_GRAPH_NODES,
-                min_nodes             = cfg.MIN_GRAPH_NODES,
+                radius_m              = cfg.GRAPH_RADIUS_M,
+                routing_graph         = shared_builder.routing_graph,
             )
+            # Route-dependent, same as graph_builder above — must be rebuilt
+            # per trial too, or traffic_light_discrepancy silently stays 0
+            # for every window (see sequence_builder.py's SequenceBuilder.__init__
+            # comment on routing_graph).
+            shared_builder._tl_checker = TrafficLightExpectationChecker(
+                shared_builder.map_data, route)
 
             sequences = shared_builder.build(frames, verbose=verbose,
                                              filter_mrm=filter_mrm)

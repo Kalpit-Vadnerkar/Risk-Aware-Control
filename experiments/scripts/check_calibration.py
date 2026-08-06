@@ -4,7 +4,7 @@ z-score calibration diagnostic for the trained ST-GAT model's Gaussian heads,
 on held-out CALIBRATION-split data (never seen in training).
 
 For each Gaussian-headed feature (position, velocity, steering, acceleration,
-traffic_light_state), computes z = (actual - predicted_mean) / predicted_std
+traffic_light_color, traffic_light_confidence), computes z = (actual - predicted_mean) / predicted_std
 at 1-step-ahead (t=0 of the future window — same convention st_gat/residuals.py
 uses), flattened across all dims/examples, and reports:
   std(z)      — want ~1.0. >1 = predicted band too NARROW (overconfident);
@@ -43,11 +43,12 @@ from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 
 # (key, dims) — same Gaussian-headed features st_gat/residuals.py tracks.
 _GAUSSIAN_FEATURES = {
-    'position':            2,
-    'velocity':             2,
-    'steering':             1,
-    'acceleration':         1,
-    'traffic_light_state':  1,
+    'position':                  2,
+    'velocity':                  2,
+    'steering':                  1,
+    'acceleration':               1,
+    'traffic_light_color':       1,
+    'traffic_light_confidence':  1,
 }
 
 

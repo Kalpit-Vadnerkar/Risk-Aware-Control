@@ -209,20 +209,36 @@ def gather_trial_data(campaign, goal_id, trial_dir):
     if not os.path.isdir(bag_dir):
         return None
 
+    result_path = os.path.join(trial_dir, 'result.json')
+    status = 'unknown'
+    if os.path.exists(result_path):
+        with open(result_path) as f:
+            status = json.load(f).get('status', 'unknown')
+
+    # Fault onset is a fact about the injection itself (fault_log.jsonl
+    # records a real tl_fault_start/imu_fault_activated event whenever the
+    # fault mechanism armed) — independent of whether the trial went on to
+    # fail. Compute it unconditionally, BEFORE the goal_reached skip below
+    # (fixed 2026-08-06, Kalpit: onset should always exist since every fault
+    # campaign has real injection points; confirmed via fault_log.jsonl that
+    # goal_reached trials still have real tl_fault_start events that were
+    # previously discarded along with the "skip, no fatal moment" path).
+    gt_tl = read_gt_and_tl(bag_dir, goal_id)
+    onset_s = trial_fault_onset_rel_s(trial_dir, gt_tl['bag_start_abs_sec'], gt_tl['bag_duration'])
+
     # Same guard metrics.py's own StaticCollisionMetrics uses: a trial that
     # reached its goal has no "fatal moment" by definition, no matter what a
     # stop-detection heuristic finds in its tail (arriving and idling IS a
     # >=20s stopped window). Missing this guard was a real bug in this
     # script's first pass — it fired on the ordinary post-arrival stop for
     # tl_fault_s2/goal_026 and tl_fault_s3/goal_007, both goal_reached=True.
-    result_path = os.path.join(trial_dir, 'result.json')
-    status = 'unknown'
-    if os.path.exists(result_path):
-        with open(result_path) as f:
-            status = json.load(f).get('status', 'unknown')
+    # Still applies to the FATAL-MOMENT computation below, just not to onset
+    # above — a trial can have a real fault onset and no fatal moment at the
+    # same time (that combination is itself informative: the fault fired but
+    # didn't derail the trial).
     if status == 'goal_reached':
         return {'campaign': campaign, 'goal_id': goal_id, 'trial': trial_name, 'status': status,
-                'skip': True}
+                'skip': True, 'onset_s': onset_s, 'bag_duration': gt_tl['bag_duration']}
 
     metrics_path = os.path.join(trial_dir, 'metrics.json')
     existing_stop_s = float('nan')
@@ -234,8 +250,6 @@ def gather_trial_data(campaign, goal_id, trial_dir):
 
     mc = MetricsCollector(bag_dir)
     mc.read_bag()
-    gt_tl = read_gt_and_tl(bag_dir, goal_id)
-    onset_s = trial_fault_onset_rel_s(trial_dir, gt_tl['bag_start_abs_sec'], gt_tl['bag_duration'])
     divergence = ekf_gt_divergence(mc, gt_tl['gt_positions'])
 
     return {
@@ -249,12 +263,14 @@ def process_trial(data, lane_deviation_m):
     if data is None:
         return None
     if data['skip']:
+        onset_s = data.get('onset_s')
         return {
             'campaign': data['campaign'], 'goal_id': data['goal_id'], 'trial': data['trial'],
-            'status': data['status'], 'fault_onset_s': float('nan'),
+            'status': data['status'],
+            'fault_onset_s': onset_s if onset_s is not None else float('nan'),
             'existing_backward_stop_s': float('nan'), 'first_stop_s': float('nan'),
             'lane_deviation_crossing_s': float('nan'), 'combined_earliest_s': float('nan'),
-            'bag_duration_s': float('nan'),
+            'bag_duration_s': data.get('bag_duration', float('nan')),
         }
 
     onset_s = data['onset_s']

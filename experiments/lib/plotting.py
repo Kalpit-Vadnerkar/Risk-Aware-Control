@@ -261,7 +261,7 @@ def plot_mean_variance_band(ax, t, mean, var, actual=None,
     """Shaded predicted-mean +/- n_std*sqrt(var) band, with the actual
     observed value overlaid as a line on top. This is the core panel type
     for "does the predicted distribution widen / diverge from reality under
-    a fault" — reusable across every feature (traffic_light_state, position,
+    a fault" — reusable across every feature (traffic_light_color, position,
     ...) rather than each future plot re-deriving its own fill_between call.
     """
     mean = np.asarray(mean, dtype=float)

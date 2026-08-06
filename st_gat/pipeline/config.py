@@ -33,22 +33,37 @@ FEATURE VECTOR (per timestep, 10 Hz)
     velocity (2): longitudinal, lateral
     steering (1): actual tire angle  [/vehicle/status/steering_status]
     acceleration (1): commanded accel [/control/command/control_cmd]
-    traffic_light_detected (1): 1 if upcoming lane node has traffic light (map channel)
     position_uncertainty (2): x_var, y_var from EKF covariance
-    traffic_light_state (1): perceived color × confidence [0=none/UNKNOWN,
-      0.33=green, 0.67=amber, 1.0=red, scaled down toward 0 as confidence drops]
     has_adjacent_lane (1): 1 if lanelet2 routing graph has adjacent lane (HD map)
-    traffic_light_discrepancy (1): 1 if traffic_light_detected==1 (map expects
-      a TL here) but perception found nothing usable — blackout, all-UNKNOWN,
-      or any other detection failure, regardless of which. Added because the
-      goal_007 fault campaigns showed the perception-only traffic_light_state
-      feature can't distinguish "genuinely no TL nearby" from "TL nearby but
-      undetected due to a fault" — exactly the discrepancy this project needs
-      to detect, made an explicit first-class signal instead of something the
-      model must infer from two other features. Also fixed traffic_light_state
-      itself to fold in confidence (previously color-only, so a confidence-
-      degradation fault like tl_confidence was invisible to it entirely even
-      though color stayed correct).
+
+  Traffic-light features (redesigned 2026-08-05 — the old traffic_light_detected/
+  traffic_light_state pair mangled the TL fault signature two separate ways,
+  see docs/research_notes/ablation_study_2026.md for the audit this fixes):
+    traffic_light_color (1): the most-restrictive reported element's color,
+      normalized [0=none reported, 0.33=green, 0.67=amber, 1.0=red].
+    traffic_light_confidence (1): that SAME element's confidence, as its own
+      feature — not multiplied into color. Old traffic_light_state collapsed
+      color x confidence into one scalar, so a pure confidence-degradation
+      fault (tl_confidence — see fault_injector.py) and a color-changing fault
+      produced indistinguishable signal; the fault-injection design already
+      has a dedicated tl_confidence fault type that this feature vector had no
+      corresponding feature for. Kept self-consistent (both describing the
+      SAME reported element, not independently maxed across elements) so the
+      pairing itself doesn't reintroduce the same kind of manufactured mixing.
+    traffic_light_discrepancy (1): 1 if the map (via a real traffic-light graph
+      node — see NODE_FEATURES below) expects a TL to govern ego's position
+      right now, but perception reported nothing usable — blackout, all-
+      UNKNOWN, or any other failure, regardless of which.
+      traffic_light_detected (the old "map expects a TL here" scalar,
+      computed by flagging the nearest LANE node within 10m of a TL) was
+      retired as an output feature entirely: it was a deterministic geometric
+      fact manufactured from ego position + map, redundant with the graph
+      itself once real traffic-light nodes exist there (see NODE_FEATURES) —
+      the model can learn the real map-adjacency pattern structurally instead
+      of being handed a manufactured proxy target to predict. The map-expects
+      check itself still exists internally (sequence_builder.py), only as the
+      ground-truth label input for traffic_light_discrepancy, not as its own
+      predicted feature.
 
   Object detection (objects_set/objects_mask, NOT part of FEATURE_SIZES —
   handled separately in model.py via a permutation-invariant set encoder,
@@ -78,11 +93,20 @@ SEQUENCE PARAMETERS (same as T-ITS paper)
   output_seq_len = 30 timesteps = 3 seconds of prediction
   stride         = 1 (maximum sequence density — dataset augmentation via overlap)
 
-STOPPED-PERIOD FILTERING
-─────────────────────────
-  Periods where vehicle speed < 0.05 m/s for > 3 consecutive seconds are removed.
-  Short stops (red lights, momentary yielding) are kept.
-  This matches the original MessageCleaner.process_velocity_data() logic.
+STOPPED-PERIOD FILTERING — REMOVED (2026-08-05)
+──────────────────────────────────────────────
+  Used to delete any >3s continuous near-zero-speed segment from every bag
+  (nominal AND fault), inherited verbatim from the old reference repo's
+  MessageCleaner.process_velocity_data(). Audited and removed: it applied
+  unconditionally to fault-trial extraction too, meaning it could silently
+  delete the exact "stuck" fault signature (imu_fault_stuck) or an MRM-
+  triggered emergency stop before the model/residual pipeline ever saw it —
+  and it also corrupted the mrm_first_trigger_rel_s marker (residuals.py),
+  which scans the post-filter frame list for the first MRM-active frame.
+  It was designed before traffic_light_state existed as a way to keep long
+  idle/parked segments out of nominal training data; the nominal dataset
+  doesn't actually contain idle/parked segments, so it had no remaining
+  upside once that original motivation no longer applied.
 """
 
 import os
@@ -175,12 +199,6 @@ MAX_STALENESS_SEC = 0.30
 TL_ZONES_FILE      = os.path.join(REPO_ROOT, 'experiments', 'configs', 'tl_zones.json')
 TL_ZONE_RADIUS_M   = 40.0
 
-# Minimum speed before we consider the vehicle "stopped" (m/s)
-STOPPED_THRESHOLD_MS = 0.05
-
-# Maximum consecutive stopped duration to keep (seconds)
-MAX_STOPPED_DURATION_SEC = 3.0
-
 # ── Feature scaling ────────────────────────────────────────────────────────
 # Scales raw values into [0, 1] for model input
 
@@ -243,13 +261,41 @@ OBJECT_CLASS_GROUP = {
 OBJECT_CLASS_GROUPS = 4
 OBJECT_FEATURE_DIM = 2 + 1 + OBJECT_CLASS_GROUPS   # rel_x, rel_y, speed, class one-hot
 
-# ── Graph parameters (unchanged from T-ITS paper) ─────────────────────────
+# ── Graph parameters ───────────────────────────────────────────────────────
+# (150-node cap and 5m spacing were inherited from the T-ITS paper's original
+# resource-constrained setup — audited 2026-08-05, see
+# docs/research_notes/ablation_study_2026.md §7. MAX_GRAPH_NODES=150 was kept
+# as a "safety cap" when the radius gate (GRAPH_RADIUS_M below) was first
+# added, on the assumption it would rarely bind — checked directly and that
+# assumption was wrong: at the 150m radius, uncapped candidate node counts
+# measured 700-990 across real sample windows, meaning the 150 cap was still
+# discarding ~80% of the locally-relevant road network the radius fix was
+# meant to include. Raised to 1024 (comfortable headroom above the observed
+# max) so the radius, not an arbitrary node cap, is what actually determines
+# graph scope — per Kalpit's explicit choice to accept the resulting GCN
+# compute cost (GraphEncoder's per-graph GCN matmul scales ~N^2) rather than
+# coarsen node spacing or shrink the radius below what the horizon formula
+# calls for.
 
 NODE_FEATURES          = 4       # x, y, traffic_light_node, path_node
-MAX_GRAPH_NODES        = 150
-MIN_GRAPH_NODES        = 150
-MIN_DIST_BETWEEN_NODES = 5       # metres
-CONNECTION_THRESHOLD   = 5       # metres
+MAX_GRAPH_NODES        = 1024
+MIN_DIST_BETWEEN_NODES = 5       # metres, lanelet centerline node spacing
+
+# Fallback-only distance cap for bridging any graph fragment topology-aware
+# connectivity (GraphBuilder._ensure_graph_connectivity) can't reach via real
+# lanelet2 routing relations (successor/adjacent) — added 2026-08-05.
+# Previously named the same but never actually read anywhere in
+# GraphBuilder — a graph could get an edge connecting two arbitrarily distant
+# nodes with no cap at all, just to satisfy nx.is_connected(). Now enforced:
+# if the closest remaining cross-component pair is farther than this, that's
+# a real map/route disconnect worth knowing about (logged), not silently
+# bridged.
+CONNECTION_THRESHOLD   = 100     # metres. Bumped from 75 (2026-08-05) after
+# raising MAX_GRAPH_NODES to 1024: fuller, radius-scoped graphs surface more
+# small dangling fragments (short/dead-end lanelets whose only path back to
+# the main cluster exits the radius window), several of which measured
+# 75-88m to their nearest connection — routine, not a sign of a real
+# map/route gap, so 75m was generating warning noise on ordinary graphs.
 
 # ── Sequence parameters ────────────────────────────────────────────────────
 
@@ -262,6 +308,25 @@ STRIDE         = 1
 # INPUT_SEQ_LEN/OUTPUT_SEQ_LEN combinations' extracted sequences and
 # checkpoints to coexist without one silently overwriting another's cache.
 HORIZON_TAG = f"h{INPUT_SEQ_LEN}_{OUTPUT_SEQ_LEN}"
+
+# Candidate lanelets are scoped to this radius around each graph rebuild's
+# centre position before applying route-first sorting (added 2026-08-05 —
+# see docs/research_notes/ablation_study_2026.md). Without a radius cap, an
+# on-route lanelet arbitrarily far away (measured up to 656m in one real
+# trial) always wins the sort over any off-route lanelet no matter how
+# close, so the whole node budget could go to one long, mostly-irrelevant
+# route ribbon while genuinely local off-route context (a cross-traffic
+# lanelet at an intersection, an adjacent lane) was excluded entirely.
+# Deliberately tied to the horizon rather than hand-picked, so a future
+# horizon sweep (TODO.md P1.3) gets a correctly-scaled radius automatically:
+# distance a vehicle could plausibly cover across the full input+output
+# window at a generous speed, plus a fixed margin for lateral/intersection
+# context beyond straight-line travel.
+_GRAPH_RADIUS_ASSUMED_MAX_SPEED_MPS = 15.0   # > VELOCITY_X_RANGE's 12.0 m/s cap
+_GRAPH_RADIUS_MARGIN_M              = 60.0
+GRAPH_RADIUS_M = (_GRAPH_RADIUS_ASSUMED_MAX_SPEED_MPS
+                  * (INPUT_SEQ_LEN + OUTPUT_SEQ_LEN) * 0.1   # seconds, at 10 Hz
+                  + _GRAPH_RADIUS_MARGIN_M)
 
 EXTRACTED_DIR  = os.path.join(OUTPUT_ROOT, HORIZON_TAG, 'extracted')    # Stage 1: per-run 10Hz dicts
 SEQUENCES_DIR  = os.path.join(OUTPUT_ROOT, HORIZON_TAG, 'sequences')    # Stage 2: pkl sequence files
@@ -295,9 +360,9 @@ FEATURE_SIZES = {
     'velocity':                 2,   # longitudinal, lateral
     'steering':                 1,
     'acceleration':             1,
-    'traffic_light_detected':   1,   # graph node: upcoming lane has traffic light (map)
-    'traffic_light_state':      1,   # perception: most restrictive color × confidence
-    'traffic_light_discrepancy': 1,  # map expects a TL, perception found none (added 2026-07-23)
+    'traffic_light_color':      1,   # perception: most-restrictive reported color
+    'traffic_light_confidence': 1,   # perception: that same element's confidence
+    'traffic_light_discrepancy': 1,  # map (graph TL node) expects a TL, perception found none
     'has_adjacent_lane':        1,   # lanelet2 routing graph: adjacent lane exists
     'uncertainty':              2,   # EKF x_var, y_var
 }

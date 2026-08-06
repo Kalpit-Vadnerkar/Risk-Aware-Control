@@ -197,43 +197,6 @@ def _nearest_group_id(x: float, y: float,
     return best_gid
 
 
-def _filter_stopped_periods(frames: List[dict]) -> List[dict]:
-    """
-    Remove sequences of consecutive frames where vehicle speed is below
-    STOPPED_THRESHOLD_MS for longer than MAX_STOPPED_DURATION_SEC.
-    Short stops (red lights) are kept; long stops (stuck) are removed.
-    Mirrors the original MessageCleaner.process_velocity_data() logic.
-    """
-    if not frames:
-        return frames
-
-    keep = [True] * len(frames)
-    stopped_start_idx = None
-
-    for i, frame in enumerate(frames):
-        speed = abs(frame['ego']['velocity']['longitudinal'])
-        if speed < cfg.STOPPED_THRESHOLD_MS:
-            if stopped_start_idx is None:
-                stopped_start_idx = i
-        else:
-            if stopped_start_idx is not None:
-                # How long was the stop? Each frame is ~0.1s
-                stop_duration = (i - stopped_start_idx) * 0.1
-                if stop_duration > cfg.MAX_STOPPED_DURATION_SEC:
-                    for j in range(stopped_start_idx, i):
-                        keep[j] = False
-                stopped_start_idx = None
-
-    # Handle stop extending to end of run
-    if stopped_start_idx is not None:
-        stop_duration = (len(frames) - stopped_start_idx) * 0.1
-        if stop_duration > cfg.MAX_STOPPED_DURATION_SEC:
-            for j in range(stopped_start_idx, len(frames)):
-                keep[j] = False
-
-    return [f for f, k in zip(frames, keep) if k]
-
-
 def read_bag(bag_dir: str, goal_id: Optional[str] = None,
              verbose: bool = False) -> List[dict]:
     """
@@ -251,7 +214,13 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
     (e.g. 'goal_007') whenever it's known; leave None only when it genuinely
     isn't (falls back to the old pooled behavior).
 
-    Returns list of frame dicts in chronological order with stopped periods removed.
+    Returns list of frame dicts in chronological order. Stopped/idle periods
+    are NOT filtered out (removed 2026-08-05 — the old MessageCleaner-derived
+    filter deleted any >3s continuous near-zero-speed segment unconditionally,
+    including fault-induced stuck periods and MRM-triggered stops, which are
+    exactly the behavior the fault-detection pipeline needs to observe; the
+    nominal dataset has no idle/parked segments to begin with, so the filter
+    had no remaining upside once traffic_light_state stopped needing it).
     """
     storage_options   = StorageOptions(uri=bag_dir, storage_id='sqlite3')
     converter_options = ConverterOptions(
@@ -400,10 +369,5 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
 
     if verbose:
         print(f"  [bag_reader] raw frames: {len(frames)}")
-
-    frames = _filter_stopped_periods(frames)
-
-    if verbose:
-        print(f"  [bag_reader] after stop-filtering: {len(frames)}")
 
     return frames
