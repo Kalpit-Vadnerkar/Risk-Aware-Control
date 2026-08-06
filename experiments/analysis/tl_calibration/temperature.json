@@ -1,9 +1,9 @@
 {
-  "temperature": 0.7999999999999998,
-  "bce_before": 0.18605254590511322,
-  "bce_after": 0.1817687451839447,
-  "ece_before": 0.02916929449361018,
-  "ece_after": 0.008506362578133295,
-  "n_calibration_examples": 8074,
-  "positive_rate": 0.08694574981927872
+  "temperature": 1.2000000000000002,
+  "bce_before": 0.12298638373613358,
+  "bce_after": 0.12027699500322342,
+  "ece_before": 0.029458273262201906,
+  "ece_after": 0.025242828125391092,
+  "n_calibration_examples": 11684,
+  "positive_rate": 0.09320437908172607
 }
