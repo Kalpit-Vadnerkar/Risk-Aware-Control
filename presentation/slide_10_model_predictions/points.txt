@@ -15,12 +15,22 @@ Input/output sequence math:
 
 What the plot shows working:
   → Predicted trajectory tracks the actual future closely under nominal
-    driving, with uncertainty widening sensibly at longer horizons
-  → traffic_light_state and traffic_light_discrepancy — the two heads
-    added this session — now produce an actual predicted distribution,
-    where before this signal was only ever an input, never predicted
+    driving
+  → traffic_light_color and traffic_light_confidence (split from the old
+    collapsed traffic_light_state) and traffic_light_discrepancy — all
+    heads added/redesigned this project phase — now produce actual
+    predicted distributions, where before this signal was only ever an
+    input or a single conflated scalar
 
-Calibration is real but imperfect (verified via z-score diagnostics on held-
-out data, not assumed): position mildly underconfident, velocity/steering/
-tl_state mildly-to-moderately overconfident — see slide 6 for the numbers
-and the fixes already applied this session.
+UPDATED 2026-08-06 — calibration is measurably NOT where we assumed
+(new plots: coverage_curves.png, horizon_widening.png; full numbers in
+docs/research_notes/trust_and_signal_behavior_2026-08-06.md):
+  → std(z) near 1.0 (slide 6) was hiding a real problem — all 6 Gaussian
+    heads are leptokurtic, not Gaussian (Anderson-Darling test decisively
+    rejects normality for every one), so predicted intervals systematically
+    overshoot their nominal confidence level
+  → Predicted uncertainty only widens sensibly with prediction horizon for
+    POSITION — velocity/steering/acceleration/both TL heads stay flat while
+    actual error grows 2-4x by 3 seconds out
+  → This is now the acknowledged blocking priority, ahead of resuming any
+    SPRT/detection work or Autoware integration research — see slide 11

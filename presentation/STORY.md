@@ -92,3 +92,29 @@ plan. Ends on two real questions for you, not rhetorical ones.
 - Whether lead time is paper-shaped on its own, and whether "closing the loop"
   should shape the current experimental design: see the separate answer to
   your question 3 — recommend NOT redesigning the current setup for it.
+
+---
+
+## 2026-08-06 update — direction reframe + a real calibration finding
+
+Bigger than a slide tweak, flagging here rather than silently editing the
+walkthrough above. Direction reframed away from binary fault detection
+toward a continuous decision-support signal ("operational under
+degradation" — see CLAUDE.md/TODO.md). Following that reframe's own
+prescribed order (ground the model's credibility before anything else)
+surfaced a real, traced problem: the model's predicted uncertainty is
+measurably miscalibrated (leptokurtic residuals — Anderson-Darling
+decisively rejects normality for all 6 Gaussian heads — and non-widening
+variance across the prediction horizon for 5 of 6), and that's the direct
+mechanistic cause of the new SPRT signal saturating under pure nominal
+noise. Full writeup: `docs/research_notes/trust_and_signal_behavior_2026-08-06.md`.
+
+Slides 10 and 11's notes.txt/points.txt are updated in place with the new
+figures and the corrected story — 10 gets the calibration finding, 11 gets
+both the SPRT-replaces-CUSUM code change and an explicit "don't present the
+old detection-rate/lead-time numbers as current" flag. Slide 11 in
+particular reads as two different stories stitched together now (the old
+discriminability/lead-time payload + the new calibration-cascade story) —
+worth deciding whether it should split into two slides once the
+calibration fix is in, not attempted here since that's a real editorial
+call, not a mechanical update.

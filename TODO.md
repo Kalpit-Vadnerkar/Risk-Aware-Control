@@ -1,13 +1,78 @@
 # Risk-Aware Control — Task List
 
-**Last Updated:** 2026-07-24 — major reframe. The dissertation's core contribution
-is now **belief-divergence fault detection under a map-grounded prior**, reported
-with **calibrated confidence** and measured **lead time** — not active risk-aware
-control. This sharpens, rather than discards, the 2026-07-22 pivot to an
-exploratory IMU/Camera fault-reaction study; that study now feeds directly into
-the mechanism experiments below. See "Research Direction" for the full claim and
-"Priority 0" for the two experiments that establish or kill it — those are
-blocking and outrank everything else in this file.
+**Last Updated:** 2026-08-06 — see the status block immediately below for
+what's actually current. The "Research Direction" section further down is
+last-revised 2026-07-24 and still describes the right underlying claim
+(belief divergence, calibrated confidence, lead time); it has NOT been
+rewritten to match the 2026-08-06 reframe's change in *emphasis* (continuous
+decision-support signal over binary detection) or its finding that the
+model's own calibration doesn't hold up yet — read the status block first.
+
+---
+
+## Status block (2026-08-06 reframe — read this first)
+
+**Direction reframe.** Stop optimizing toward "detect and classify a
+specific fault type" — collapsing a fault into a named category only
+licenses whatever canned contingency response was pre-planned for that
+category, which is explicitly not the goal. Instead: provide a continuous,
+digestible signal to the modules that actually own the vehicle's
+decision-making (planning/control), so it can keep operating sensibly under
+degraded/uncertain conditions without needing to know which specific fault
+is occurring. Motto: **"operational under degradation."** This does not
+discard the belief-divergence/calibrated-confidence/lead-time claim below —
+it changes what "done" looks like: a well-behaved continuous confidence
+trace consumed by planning, not a tuned binary alarm chasing a detection
+rate inside a fixed window.
+
+**Explicit order, do not skip ahead:** (1) ground the belief-divergence
+mechanism's own credibility (calibration/trust plots) before anything else;
+(2) check the SPRT/sequential-evidence signal behaves as an interpretable
+continuous trace (not "does it cross a threshold"); (3) only then look at
+Autoware planning/control interfaces (MRM's staged escalation, velocity/
+safety-envelope constraints) as candidate consumers of the signal.
+
+**Where (1) and (2) currently stand — they do NOT hold up cleanly.** Full
+writeup: `docs/research_notes/trust_and_signal_behavior_2026-08-06.md`.
+Summary:
+- All 6 Gaussian-headed features (position, velocity, steering,
+  acceleration, traffic_light_color, traffic_light_confidence) are
+  **leptokurtic, not Gaussian** — excess kurtosis 4.8–115.8, Anderson-
+  Darling statistic 94–742 against a critical value of 0.79 (normality
+  decisively rejected) — even though `check_calibration.py`'s std(z)
+  summary (0.85–1.13) looks fine. That single number can't distinguish
+  "right variance, right shape" from "right variance, wrong shape."
+- **Predicted uncertainty doesn't widen with prediction horizon** for 5 of
+  6 Gaussian heads (only `position` does) — by 3s ahead, actual RMSE is
+  2–4x the model's own claimed std for velocity/steering/acceleration/both
+  TL heads. Any confidence claim beyond 1-step-ahead is currently
+  unfounded for those features.
+- **The SPRT `p_fault_*` signal is not quiet under nominal driving** — it
+  saturates to >0.99 roughly every 9 seconds during ordinary nominal
+  trials, traced to the `traffic_light_discrepancy` Bernoulli branch alone
+  (96% of nominal time above p=0.99, from a ~9.3%-per-10Hz-step nominal
+  base rate too high for a memoryless sequential accumulator to treat as
+  rare evidence).
+
+**Current blocking priority: fix the model's uncertainty calibration.**
+This outranks resuming SPRT/detection work (Priority 0/1 below) and is
+well ahead of any Autoware planning/control integration research — the
+leptokurtic-residual finding is the direct mechanistic explanation for the
+SPRT saturation finding, so fixing calibration is expected to fix (or at
+least substantially clarify) the SPRT behavior too, not just the coverage
+curves. Not yet root-caused to a specific architectural fix as of this
+writing — candidates to investigate (not yet decided): whether the
+variance heads' horizon-step conditioning is structurally broken (an
+architecture question) vs. a loss-weighting/training issue; whether a
+proper scoring-rule loss or per-horizon-step variance supervision would
+help; whether the `traffic_light_discrepancy` branch specifically needs a
+different base-rate treatment (accounting for autocorrelation/clustering)
+rather than a flat per-step Bernoulli rate.
+
+Tooling for this: `experiments/scripts/plot_calibration_diagrams.py`
+(step 1, needs ROS+model) and `experiments/scripts/plot_sprt_signal_behavior.py`
+(step 2, pure pandas over `st_gat/results/h30_30/traces/*.csv`, no ROS
+needed) — see CLAUDE.md's "Trusting the model itself" section.
 
 ---
 

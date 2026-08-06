@@ -1,10 +1,18 @@
 HOW THE MODEL REACTS TO FAULTS
 
+STALE AS OF 2026-08-06 — see notes.txt before presenting this slide as-is.
+The detection-rate/lead-time numbers below were computed under the old
+CUSUM/binary-alarm framing this project has since walked back from as the
+wrong lens (docs/research_notes/project reframe, CLAUDE.md "Direction
+reframe"). Kept here for the record, not as current claims.
+
 (Plot: representative_cusum_trace.png — one imu_fault_s3 trial: the model's
 residual signal (CUSUM) crossing a calibrated threshold ~102s before the
-vehicle's actual permanent stop)
+vehicle's actual permanent stop. CUSUM has since been replaced by an SPRT/
+sequential-evidence statistic in the codebase — see notes.txt.)
 
-Discriminability (Plot: discriminability_rank_table.png):
+Discriminability (Plot: discriminability_rank_table.png) — this part still
+holds, unaffected by the calibration finding:
   → Tests whether TL-related residuals are selectively dominant for TL
     faults vs. IMU faults (the mechanistic prediction from slide 5)
   → Result: NOT uniform dominance — velocity/steering residuals dominate
@@ -15,16 +23,26 @@ Discriminability (Plot: discriminability_rank_table.png):
   → A sharper, more defensible claim than "TL faults in general": the
     mechanism holds for the negative-evidence subtype specifically
 
-Calibration tightening (Plot: calibration_tightening_table.png):
-  → Conformal calibration needs a held-out nominal calibration sample
-  → Extending zone coverage from 3 to 26 goals (analysis-only, no new
-    experiments) grew n_calib from 6 to 35-39 per zone kind
-  → Achievable guarantee tightened from ~86% one-sided coverage to ~97%
+Calibration tightening (Plot: calibration_tightening_table.png) — this was
+conformal-threshold tightening, a different (now de-emphasized) calibration
+axis than slide 10's coverage-curve finding; both are real, don't conflate.
 
-Detection rate + lead time (Plot: campaign_lead_time_table.png):
-  → imu_fault_s3, imu_fault_stuck: 100% detection, every genuinely dangerous
-    trial flagged ~50-120s before the fatal moment
-  → imu_fault_s1 (negative control): low detection rate — correctly so
-  → TL fault campaigns: zero trials have reached a real fatal moment yet in
-    this dataset — lead time is undefined for TL faults right now, a data
-    gap, not a detector failure
+Detection rate + lead time (Plot: campaign_lead_time_table.png) — DO NOT
+present as current results, see the stale-as-of note above.
+
+NEW 2026-08-06 (Plots: nominal_floor.png, fault_reaction_grid.png) — what
+the SPRT signal actually does, checked the way the reframe asks (is it
+quiet under nominal noise, does its shape react sensibly to a fault):
+  → p_fault_* saturates to >0.99 confidence roughly every 9 seconds during
+    PURE NOMINAL driving with no fault present (92% of time at floor, but
+    17.6 full reset-to-saturation events per trial on average)
+  → Root cause traced, not just observed: 96% of that is the
+    traffic_light_discrepancy branch alone — a ~9.3%-per-step nominal
+    positive rate is too high for a memoryless sequential test to treat as
+    rare evidence
+  → Direct downstream consequence of slide 10's calibration finding, not a
+    separate bug — fixing calibration is expected to fix this too
+  → Fault-onset-aligned view (fault_reaction_grid.png) shows no clearly
+    visible step-change at onset yet, as expected given the above — not
+    evidence the underlying discriminability result (above) is wrong, just
+    currently drowned out by this specific branch's noise floor
