@@ -23,11 +23,33 @@ to fine-tune at a low learning rate. ReduceLROnPlateau ties LR reduction to
 the same val-loss-plateau signal already driving early stopping, so it
 adapts to however long training actually runs instead of assuming a duration
 upfront.
+
+Two-phase training added 2026-08-07 (see
+docs/research_notes/calibration_training_literature_2026-08-07.md and
+loss.py's module docstring point 1): the Gaussian->Student-t retrain gave a
+MIXED calibration result, traced to joint mean+scale+dof optimization from a
+cold start being fragile (Stirn et al., AISTATS 2023) -- fixing the mean
+first, THEN fine-tuning the full distribution, is their prescribed fix.
+  - Phase 1 ("warmup"): CombinedLoss.mean_only_forward() -- point-error on
+    every head's mean only, fixed duration (config['warmup_epochs'], no
+    early stopping -- we WANT this phase to run to completion so scale/dof
+    get a stable mean to condition on, not stop the moment point-error
+    noisily plateaus).
+  - Phase 2 ("finetune"): CombinedLoss.forward() -- full Student-t NLL +
+    Kendall et al. 2018 learned task weighting, with a FRESH optimizer/
+    scheduler/early-stopping state (config['phase2_lr'], defaulting to the
+    same starting LR as Phase 1) so this phase gets real optimization
+    budget instead of inheriting whatever LR decay Phase 1's very different
+    loss scale left it at. Selection metric is validation total_nll (raw,
+    unweighted -- see loss.py), safe to use now that Phase 1 already solved
+    the "NLL prefers an undertrained mean" pathology that used to make
+    NLL-based selection unusable (see the pre-2026-08-07 version of this
+    docstring / v_raw's own comment history).
 """
 
 import os
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
@@ -68,41 +90,49 @@ class Trainer:
         self.train_loader   = train_loader
         self.val_loader     = val_loader
         self.checkpoint_dir = checkpoint_dir
-        self.num_epochs     = config['num_epochs']
+        self.num_epochs     = config['num_epochs']       # Phase 2 ceiling
+        self.warmup_epochs  = config.get('warmup_epochs', 25)   # Phase 1, fixed duration
         self.max_grad_norm  = config.get('max_grad_norm', 1.0)
         self.log_every      = log_every
+        self.config         = config
 
         os.makedirs(checkpoint_dir, exist_ok=True)
 
         self.criterion = CombinedLoss().to(self.device)
 
+        # Phase 1 optimizer/scheduler/early-stop -- _start_phase() rebuilds
+        # all three fresh when Phase 2 begins (see module docstring).
+        # Includes self.criterion.parameters() (the learned task-uncertainty
+        # weights) as well as the model's -- those otherwise never train,
+        # since CombinedLoss is a separate nn.Module from `model`. Harmless
+        # in Phase 1 (mean_only_forward doesn't reference them, so they get
+        # zero gradient and stay at their neutral init until Phase 2).
+        self._build_optimizer_and_schedule(config['learning_rate'])
+
+        self.history = {'warmup': {'train': [], 'val': []}, 'finetune': {'train': [], 'val': []}}
+
+    def _build_optimizer_and_schedule(self, lr: float):
+        params = list(self.model.parameters()) + list(self.criterion.parameters())
         self.optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr           = config['learning_rate'],
-            weight_decay = config.get('weight_decay', 1e-4),
+            params, lr=lr, weight_decay=self.config.get('weight_decay', 1e-4),
         )
-
-        # Reduction patience shorter than early-stopping patience (default 20)
-        # so LR actually drops — giving the model a chance to improve at the
-        # lower LR — before early stopping gives up entirely.
+        # Reduction patience shorter than early-stopping patience so LR
+        # actually drops -- giving the model a chance to improve at the
+        # lower LR -- before early stopping gives up entirely.
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer,
-            mode     = 'min',
-            factor   = config.get('lr_factor', 0.5),
-            patience = config.get('lr_patience', 7),
-            min_lr   = config.get('min_lr', 1e-6),
+            self.optimizer, mode='min',
+            factor=self.config.get('lr_factor', 0.5),
+            patience=self.config.get('lr_patience', 7),
+            min_lr=self.config.get('min_lr', 1e-6),
         )
-
         self.early_stop = EarlyStopping(
-            patience  = config.get('patience', 20),
-            min_delta = config.get('min_delta', 1e-4),
+            patience=self.config.get('patience', 20),
+            min_delta=self.config.get('min_delta', 1e-4),
         )
-
-        self.history = {'train': [], 'val': []}
 
     # ── Training / validation loops ────────────────────────────────────────
 
-    def _run_epoch(self, loader: DataLoader, train: bool, epoch_bar=None) -> dict:
+    def _run_epoch(self, loader: DataLoader, train: bool, loss_fn: Callable) -> dict:
         self.model.train(train)
         totals: dict = {}
         n_batches = 0
@@ -110,16 +140,9 @@ class Trainer:
 
         ctx = torch.enable_grad() if train else torch.no_grad()
         with ctx:
-            batch_bar = tqdm(
-                loader,
-                desc      = f'  {tag}',
-                leave     = False,
-                unit      = 'batch',
-                dynamic_ncols = True,
-            )
+            batch_bar = tqdm(loader, desc=f'  {tag}', leave=False, unit='batch', dynamic_ncols=True)
             for batch in batch_bar:
                 past, future, graph, _bounds = batch
-
                 past   = {k: v.to(self.device) for k, v in past.items()}
                 future = {k: v.to(self.device) for k, v in future.items()}
                 graph  = {k: v.to(self.device) for k, v in graph.items()}
@@ -128,131 +151,143 @@ class Trainer:
                     self.optimizer.zero_grad()
 
                 preds = self.model(past, graph)
-                losses, loss = self.criterion(preds, future)
+                losses, loss = loss_fn(preds, future)
 
                 if train:
                     loss.backward()
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                     self.optimizer.step()
-                    # ReduceLROnPlateau steps once per epoch (on val loss),
-                    # not per batch — see train()'s main loop.
 
                 for k, v in losses.items():
                     totals[k] = totals.get(k, 0.0) + v
                 n_batches += 1
-
-                # Live running loss on the batch bar
                 batch_bar.set_postfix(loss=f"{totals.get('total_loss', 0) / n_batches:.4f}")
 
         return {k: v / n_batches for k, v in totals.items()}
 
-    # ── Public API ─────────────────────────────────────────────────────────
+    # ── One phase (warmup or finetune) ──────────────────────────────────────
 
-    def train(self) -> nn.Module:
-        best_val  = float('inf')
-        best_path = os.path.join(self.checkpoint_dir, 'best_model.pth')
+    def _run_phase(
+        self, phase_name: str, loss_fn: Callable, num_epochs: int,
+        selection_key: str, use_early_stopping: bool, checkpoint_name: str,
+        breakdown_keys: list,
+    ) -> float:
+        """Runs `num_epochs` of train/val, selecting/checkpointing on
+        val_losses[selection_key]. Returns the best value reached (for the
+        caller to print / decide phase transitions)."""
+        best_val = float('inf')
+        best_path = os.path.join(self.checkpoint_dir, checkpoint_name)
 
-        n_params = self.model.count_parameters()
-        print(f"\n{'='*60}")
-        print(f"  STGAT Training")
-        print(f"{'='*60}")
-        print(f"  Parameters : {n_params:,}")
-        print(f"  Device     : {self.device}")
-        print(f"  Max epochs : {self.num_epochs}")
-        print(f"  Patience   : {self.early_stop.patience}")
-        print(f"  Train batches: {len(self.train_loader)}")
-        print(f"  Val   batches: {len(self.val_loader)}")
-        print(f"  Checkpoint : {self.checkpoint_dir}")
+        print(f"\n{'='*60}\n  STGAT Training -- Phase: {phase_name}\n{'='*60}")
+        print(f"  Epochs (fixed)" if not use_early_stopping else "  Max epochs", f": {num_epochs}")
+        if use_early_stopping:
+            print(f"  Patience   : {self.early_stop.patience}")
+        print(f"  Selection  : {selection_key}")
+        print(f"  Checkpoint : {best_path}")
         print(f"{'='*60}\n")
 
-        epoch_bar = tqdm(
-            range(1, self.num_epochs + 1),
-            desc       = 'Epochs',
-            unit       = 'ep',
-            dynamic_ncols = True,
-        )
-
+        epoch_bar = tqdm(range(1, num_epochs + 1), desc=f'{phase_name} epochs', unit='ep', dynamic_ncols=True)
         epoch_times = []
 
         for epoch in epoch_bar:
             t0 = time.time()
-
-            train_losses = self._run_epoch(self.train_loader, train=True,  epoch_bar=epoch_bar)
-            val_losses   = self._run_epoch(self.val_loader,   train=False, epoch_bar=epoch_bar)
-
+            train_losses = self._run_epoch(self.train_loader, train=True,  loss_fn=loss_fn)
+            val_losses   = self._run_epoch(self.val_loader,   train=False, loss_fn=loss_fn)
             elapsed = time.time() - t0
             epoch_times.append(elapsed)
 
-            self.history['train'].append(train_losses)
-            self.history['val'].append(val_losses)
+            self.history[phase_name]['train'].append(train_losses)
+            self.history[phase_name]['val'].append(val_losses)
 
-            tr_loss   = train_losses['total_loss']
-            v_loss    = val_losses['total_loss']
-            # Checkpoint/early-stop/LR-schedule criterion: raw position+velocity
-            # error, NOT the NLL total_loss — see loss.py's position_l2_raw/
-            # velocity_l1_raw docstring. NLL can get worse while real accuracy
-            # improves (variance correctly widening for longer-horizon
-            # uncertainty), which made "best total_loss" pick an
-            # undertrained checkpoint in practice. Weighted 1:0.8 to match
-            # DEFAULT_WEIGHTS' position:velocity ratio.
-            v_raw = val_losses.get('position_l2_raw', 0.0) + 0.8 * val_losses.get('velocity_l1_raw', 0.0)
-            self.scheduler.step(v_raw)   # ReduceLROnPlateau: once per epoch
-            lr        = self.optimizer.param_groups[0]['lr']
-            improved  = '★' if v_raw < best_val else ' '
-            patience_left = self.early_stop.patience - self.early_stop.counter
+            v_sel = val_losses.get(selection_key, val_losses.get('total_loss', 0.0))
+            self.scheduler.step(v_sel)
+            lr = self.optimizer.param_groups[0]['lr']
+            improved = '★' if v_sel < best_val else ' '
+            patience_left = self.early_stop.patience - self.early_stop.counter if use_early_stopping else '-'
 
-            # ETA from mean epoch time
-            remaining = self.num_epochs - epoch
-            avg_t     = sum(epoch_times[-10:]) / len(epoch_times[-10:])
-            eta_s     = avg_t * remaining
-            eta_str   = f"{int(eta_s//3600):02d}:{int((eta_s%3600)//60):02d}:{int(eta_s%60):02d}"
+            remaining = num_epochs - epoch
+            avg_t = sum(epoch_times[-10:]) / len(epoch_times[-10:])
+            eta_s = avg_t * remaining
+            eta_str = f"{int(eta_s//3600):02d}:{int((eta_s%3600)//60):02d}:{int(eta_s%60):02d}"
 
             epoch_bar.set_postfix(
-                tr    = f"{tr_loss:.4f}",
-                val   = f"{v_loss:.4f}",
-                raw   = f"{v_raw:.4f}",
-                lr    = f"{lr:.1e}",
-                pat   = patience_left,
-                eta   = eta_str,
+                tr=f"{train_losses.get('total_loss', 0):.4f}",
+                val=f"{val_losses.get('total_loss', 0):.4f}",
+                sel=f"{v_sel:.4f}", lr=f"{lr:.1e}", pat=patience_left, eta=eta_str,
             )
 
-            # Checkpoint
-            if v_raw < best_val:
-                best_val = v_raw
+            if v_sel < best_val:
+                best_val = v_sel
                 torch.save(self.model.state_dict(), best_path)
 
-            # Periodic per-feature breakdown
             if epoch % self.log_every == 0 or epoch == 1:
-                keys = ['position_loss', 'velocity_loss', 'steering_loss',
-                        'acceleration_loss', 'traffic_light_color_loss',
-                        'traffic_light_confidence_loss', 'traffic_light_discrepancy_loss']
-                breakdown = '  '.join(
-                    f"{k.replace('_loss','')[:5]}={val_losses.get(k, 0):.3f}"
-                    for k in keys
-                )
-                raw_str = (f"pos_raw={val_losses.get('position_l2_raw', 0):.4f}  "
-                           f"vel_raw={val_losses.get('velocity_l1_raw', 0):.4f}")
+                breakdown = '  '.join(f"{k.replace('_loss','').replace('_raw','')[:5]}="
+                                       f"{val_losses.get(k, 0):.4f}" for k in breakdown_keys)
+                extra = ''
+                if phase_name == 'finetune':
+                    w = self.criterion.task_weights()
+                    extra = '  task_w[' + ' '.join(f"{k[:4]}={v:.2f}" for k, v in w.items()) + ']'
                 tqdm.write(
-                    f"  ep {epoch:4d}  "
-                    f"train={tr_loss:.4f}  val={v_loss:.4f}  raw={v_raw:.4f}  {improved}  "
-                    f"| {breakdown}  | {raw_str}  "
-                    f"lr={lr:.1e}  ({elapsed:.1f}s)"
+                    f"  [{phase_name}] ep {epoch:4d}  sel={v_sel:.4f}  {improved}  "
+                    f"| {breakdown}{extra}  lr={lr:.1e}  ({elapsed:.1f}s)"
                 )
 
-            if self.early_stop.step(v_raw):
-                tqdm.write(f"\n[trainer] Early stopping at epoch {epoch} — best val={best_val:.4f}")
+            if use_early_stopping and self.early_stop.step(v_sel):
+                tqdm.write(f"\n[trainer] {phase_name}: early stopping at epoch {epoch} — best {selection_key}={best_val:.4f}")
                 break
 
         epoch_bar.close()
-        tqdm.write(f"\n[trainer] Best val raw error (position_l2 + 0.8*velocity_l1): "
-                   f"{best_val:.4f} — model at {best_path}")
+        tqdm.write(f"\n[trainer] {phase_name} complete — best {selection_key}={best_val:.4f} — model at {best_path}")
         self.model.load_state_dict(torch.load(best_path, map_location=self.device, weights_only=True))
+        return best_val
+
+    # ── Public API ─────────────────────────────────────────────────────────
+
+    def train(self) -> nn.Module:
+        n_params = self.model.count_parameters()
+        print(f"\nSTGAT total parameters: {n_params:,}  |  device: {self.device}")
+        print(f"Train batches: {len(self.train_loader)}  |  Val batches: {len(self.val_loader)}")
+
+        # ── Phase 1: mean-only warmup (fixed duration, no early stopping) ──
+        warmup_keys = ['position_raw', 'velocity_raw', 'steering_raw', 'acceleration_raw',
+                       'traffic_light_color_raw', 'traffic_light_confidence_raw',
+                       'traffic_light_discrepancy_loss']
+        self._run_phase(
+            phase_name='warmup', loss_fn=self.criterion.mean_only_forward,
+            num_epochs=self.warmup_epochs, selection_key='total_loss',
+            use_early_stopping=False, checkpoint_name='mean_warmup.pth',
+            breakdown_keys=warmup_keys,
+        )
+
+        # ── Phase transition: fresh optimizer/scheduler/early-stop, so Phase
+        # 2 gets its own real LR budget instead of inheriting Phase 1's decay
+        # (Phase 1 optimizes a completely different loss scale) ────────────
+        phase2_lr = self.config.get('phase2_lr', self.config['learning_rate'])
+        tqdm.write(f"\n[trainer] Phase transition: resetting optimizer/scheduler/early-stop, phase2_lr={phase2_lr:.1e}")
+        self._build_optimizer_and_schedule(phase2_lr)
+
+        # ── Phase 2: full Student-t NLL + learned task weighting ───────────
+        finetune_keys = ['position_loss', 'velocity_loss', 'steering_loss',
+                          'acceleration_loss', 'traffic_light_color_loss',
+                          'traffic_light_confidence_loss', 'traffic_light_discrepancy_loss']
+        self._run_phase(
+            phase_name='finetune', loss_fn=self.criterion,
+            num_epochs=self.num_epochs, selection_key='total_nll',
+            use_early_stopping=True, checkpoint_name='best_model.pth',
+            breakdown_keys=finetune_keys,
+        )
+
+        tqdm.write(f"\n[trainer] Final learned task weights: {self.criterion.task_weights()}")
         self._save_history()
         return self.model
 
     def _save_history(self):
         import pandas as pd
-        for split in ('train', 'val'):
-            pd.DataFrame(self.history[split]).to_csv(
-                os.path.join(self.checkpoint_dir, f'{split}_losses.csv'), index=False
-            )
+        for phase in ('warmup', 'finetune'):
+            for split in ('train', 'val'):
+                rows = self.history[phase][split]
+                if not rows:
+                    continue
+                pd.DataFrame(rows).to_csv(
+                    os.path.join(self.checkpoint_dir, f'{phase}_{split}_losses.csv'), index=False
+                )

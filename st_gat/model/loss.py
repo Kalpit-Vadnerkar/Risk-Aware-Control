@@ -56,6 +56,39 @@ Changes from the T-ITS reference:
     the mean-fitting gradient get implicitly suppressed by a large spread
     parameter) carries over using the predicted scale as the difficulty
     proxy, same as before.
+  - Two-phase training + learned task weighting (2026-08-07, see
+    docs/research_notes/calibration_training_literature_2026-08-07.md):
+    the first Student-t retrain gave a MIXED result (better for
+    position/steering, worse for acceleration/both TL heads, horizon
+    widening still broken for 5/6 heads) — traced to two literature-
+    documented causes, not just "needs more training":
+      1. Joint mean+scale+dof optimization from a cold start is fragile
+         (Stirn et al., "Faithful Heteroscedastic Regression with Neural
+         Networks," AISTATS 2023) — the NLL objective can yield BOTH a
+         worse mean AND uncalibrated variance vs. an equivalent mean-only
+         model, because NLL implicitly down-weights gradient for samples
+         already assigned high predicted spread. Fix: mean_only_forward()
+         below is Phase 1 (fit the mean via plain point-error, no
+         scale/dof gradient at all); forward() below is Phase 2 (full
+         Student-t NLL, all parameters), run only after Phase 1 — see
+         trainer.py for the two-phase loop this implements.
+      2. DEFAULT_WEIGHTS were fixed, hand-picked constants, never adjusted
+         for how each feature's training was actually progressing — a
+         real instance of the multi-task "loss imbalance" problem
+         (notably, the three features that got worse in the mixed retrain
+         were exactly the three with the lowest fixed weights). Replaced
+         with Kendall, Gal & Cipolla's learned per-task homoscedastic
+         uncertainty weighting ("Multi-Task Learning Using Uncertainty to
+         Weigh Losses," CVPR 2018): each task gets one learned scalar
+         log_task_var, loss_task_weighted = exp(-log_task_var)*loss_task +
+         log_task_var — the precision term scales the task's gradient
+         contribution, the log term is what stops the trivial "inflate
+         log_task_var to zero out this task" collapse. Only active in
+         Phase 2 (mean_only_forward doesn't use it) since the mechanism is
+         specifically about balancing heterogeneous NLL/BCE tasks, not
+         point-errors. Trainer.py MUST include this module's own
+         parameters (self.criterion.parameters(), not just the model's) in
+         the optimizer for these to actually learn.
 """
 
 import math
@@ -109,6 +142,11 @@ DEFAULT_WEIGHTS = {
 }
 
 
+_TASK_KEYS = ('position', 'velocity', 'steering', 'acceleration',
+              'traffic_light_color', 'traffic_light_confidence',
+              'traffic_light_discrepancy')
+
+
 class CombinedLoss(nn.Module):
     """
     Student-t NLL for continuous outputs (position, velocity, steering,
@@ -116,11 +154,72 @@ class CombinedLoss(nn.Module):
     the one binary traffic-light output (traffic_light_discrepancy).
 
     Scale/dof must already have SCALE_FLOOR/DOF_FLOOR applied (as in model.py).
+
+    Two entry points (2026-08-07, see module docstring): mean_only_forward()
+    for Phase 1 (mean-only warmup), forward() for Phase 2 (full NLL +
+    learned Kendall-et-al. task weighting) -- trainer.py's two-phase loop
+    calls each in turn, not this module deciding which phase it's in.
     """
 
-    def __init__(self, weights: dict = None):
+    def __init__(self, weights: dict = None, task_keys=_TASK_KEYS):
         super().__init__()
         self.weights = weights if weights is not None else DEFAULT_WEIGHTS
+        # Kendall et al. 2018 learned per-task uncertainty (see module
+        # docstring point 2) -- starts at log_var=0 (weight exp(0)=1.0,
+        # neutral) for every task, replacing DEFAULT_WEIGHTS' fixed
+        # constants once Phase 2 is active. `weights`/DEFAULT_WEIGHTS above
+        # are kept only as Phase 1's implicit equal-ish starting point (Phase
+        # 1 doesn't use either -- see mean_only_forward) and as a documented
+        # historical reference for what was hand-picked before this fix.
+        self.log_task_var = nn.ParameterDict({
+            k: nn.Parameter(torch.zeros(1)) for k in task_keys
+        })
+
+    def task_weights(self) -> dict:
+        """Current learned precision (exp(-log_task_var)) per task -- for
+        logging/diagnostics, so the actual learned weighting is visible,
+        not just assumed to be doing something reasonable."""
+        return {k: float(torch.exp(-v).item()) for k, v in self.log_task_var.items()}
+
+    def mean_only_forward(self, pred: dict, target: dict):
+        """Phase 1 ('mean warmup', see module docstring point 1): plain
+        point-error on each continuous head's MEAN only -- no scale/dof
+        gradient at all, no Student-t NLL, no learned task weighting
+        (that mechanism is specifically for balancing heterogeneous NLL/BCE
+        losses in Phase 2, not point-errors). Unweighted sum across
+        features -- config.py already scales every feature into
+        comparable [0,1]-ish ranges, so this is a reasonable simplification
+        for a warmup phase, not the final calibration-sensitive objective.
+        traffic_light_discrepancy's BCE is included unchanged (that head
+        has no mean/variance split to warm up separately)."""
+        losses = {}
+        total = torch.tensor(0.0, device=next(iter(pred.values())).device)
+
+        for key in ('position', 'velocity', 'steering', 'acceleration',
+                    'traffic_light_color', 'traffic_light_confidence'):
+            mean_k = f'{key}_mean'
+            if mean_k not in pred:
+                continue
+            target_k = target[key]
+            if target_k.dim() == 3 and target_k.size(-1) == 1:
+                target_k = target_k.squeeze(-1)
+            err = pred[mean_k] - target_k
+            # L2 across feature dims (matches position_l2_raw's convention)
+            # for multi-dim features, plain L1 for scalars.
+            point_err = torch.norm(err, dim=-1).mean() if err.dim() == 3 else err.abs().mean()
+            losses[f'{key}_raw'] = point_err.item()
+            total = total + point_err
+
+        if 'traffic_light_discrepancy' in pred and 'traffic_light_discrepancy' in target:
+            tgt = target['traffic_light_discrepancy']
+            if tgt.dim() == 3:
+                tgt = tgt.squeeze(-1)
+            bce = F.binary_cross_entropy(pred['traffic_light_discrepancy'], tgt)
+            losses['traffic_light_discrepancy_loss'] = bce.item()
+            total = total + bce
+
+        losses['total_loss'] = total.item()
+        return losses, total
 
     def forward(self, pred: dict, target: dict):
         losses = {}
@@ -164,10 +263,24 @@ class CombinedLoss(nn.Module):
             nll = nll * beta_weight
             nll = nll.sum(dim=tuple(range(1, nll.dim()))).mean()
 
-            w = self.weights.get(key, 1.0)
-            losses[f'{key}_loss'] = (nll * w).item()
-            total    = total    + nll * w
-            nll_sum  = nll_sum  + nll * w
+            # Kendall et al. 2018 learned task weighting (2026-08-07, see
+            # module docstring point 2) replaces the old fixed
+            # self.weights.get(key, 1.0) constant. precision = exp(-log_var)
+            # scales this task's gradient contribution; the +log_var term is
+            # what stops the trivial "inflate log_var to zero out this
+            # task" collapse -- both ARE differentiated through (unlike
+            # beta_weight above, which is a detached heuristic).
+            log_var   = self.log_task_var[key]
+            precision = torch.exp(-log_var)
+            weighted  = precision * nll + log_var.squeeze()
+            losses[f'{key}_loss'] = weighted.item()
+            total    = total    + weighted
+            # nll_sum/total_nll stays the RAW (unweighted) sum -- this is
+            # what Phase 2 checkpoint selection tracks (see trainer.py),
+            # deliberately NOT the learned-weighted objective, so the
+            # selection metric doesn't move every time the learned weights
+            # shift scale.
+            nll_sum  = nll_sum  + nll
 
         losses['total_nll'] = nll_sum.item()
 
@@ -200,9 +313,12 @@ class CombinedLoss(nn.Module):
             if tgt.dim() == 3:
                 tgt = tgt.squeeze(-1)
             bce = F.binary_cross_entropy(pred['traffic_light_discrepancy'], tgt)
-            w   = self.weights.get('traffic_light_discrepancy', 0.2)
-            losses['traffic_light_discrepancy_loss'] = (bce * w).item()
-            total = total + bce * w
+            log_var   = self.log_task_var['traffic_light_discrepancy']
+            precision = torch.exp(-log_var)
+            weighted  = precision * bce + log_var.squeeze()
+            losses['traffic_light_discrepancy_loss'] = weighted.item()
+            losses['traffic_light_discrepancy_bce_raw'] = bce.item()
+            total = total + weighted
 
         losses['total_loss'] = total.item()
         return losses, total

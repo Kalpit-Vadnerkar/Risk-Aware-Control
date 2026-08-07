@@ -8,9 +8,18 @@ resolve from the system site-packages the venv was built with --system-site-pack
     cd /home/kvadner/Desktop/Dissertation/Risk-Aware-Control
     source .venv/bin/activate
     python3 -m st_gat.train [--epochs 200] [--batch 128] [--lr 4e-4]
+        [--warmup-epochs 25] [--phase2-lr 4e-4]
 
 Expects pkl files already produced by:
     python3 -m st_gat.pipeline.run_pipeline
+
+Two-phase training (2026-08-07, see Trainer's own docstring and
+docs/research_notes/calibration_training_literature_2026-08-07.md):
+--warmup-epochs controls Phase 1 (mean-only warmup, fixed duration, no
+early stopping); --epochs/--patience control Phase 2's ceiling (full
+Student-t NLL + learned task weighting, early-stopped as before);
+--phase2-lr sets Phase 2's own starting LR (defaults to --lr) rather than
+inheriting whatever LR decay Phase 1 leaves the optimizer at.
 """
 
 import argparse
@@ -27,8 +36,10 @@ def build_model_config(args) -> dict:
     base = cfg.MODEL_CONFIG.copy()
     base.update({
         'num_epochs':    args.epochs,
+        'warmup_epochs': args.warmup_epochs,
         'batch_size':    args.batch,
         'learning_rate': args.lr,
+        'phase2_lr':     args.phase2_lr if args.phase2_lr is not None else args.lr,
         'dropout_rate':  args.dropout,
         'd_model':       128,
         'd_graph':       128,
@@ -45,9 +56,13 @@ def build_model_config(args) -> dict:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs',  type=int,   default=200)
+    parser.add_argument('--epochs',  type=int,   default=200, help='Phase 2 (finetune) epoch ceiling')
+    parser.add_argument('--warmup-epochs', type=int, default=25,
+                        help='Phase 1 (mean-only warmup) fixed duration, no early stopping')
     parser.add_argument('--batch',   type=int,   default=128)
-    parser.add_argument('--lr',      type=float, default=4e-4)
+    parser.add_argument('--lr',      type=float, default=4e-4, help='Phase 1 starting LR')
+    parser.add_argument('--phase2-lr', type=float, default=None,
+                        help='Phase 2 starting LR (default: same as --lr)')
     parser.add_argument('--dropout', type=float, default=0.15)
     parser.add_argument('--workers', type=int,   default=4)
     parser.add_argument('--out',     type=str,   default=cfg.CHECKPOINT_DIR,
