@@ -147,6 +147,11 @@ def process_dataset(
     Sequences are saved to EXTRACTED_DIR/<dataset>/<run_name>.pkl.
     """
     os.makedirs(cfg.EXTRACTED_DIR, exist_ok=True)
+    # Schema-versioning guard (2026-08-07, see config.py's check_schema_manifest
+    # docstring) -- verifies (or, on a fresh/empty dir, creates) a manifest
+    # BEFORE the cache-skip check below can silently reuse a stale .pkl written
+    # under an old feature vector/graph schema.
+    cfg.check_schema_manifest(cfg.EXTRACTED_DIR, write_if_missing=True)
     out_dir = os.path.join(cfg.EXTRACTED_DIR, dataset)
     os.makedirs(out_dir, exist_ok=True)
 
@@ -245,6 +250,11 @@ def assemble_splits(
     """
     os.makedirs(cfg.TRAIN_DIR, exist_ok=True)
     os.makedirs(cfg.CAL_DIR, exist_ok=True)
+    # Schema-versioning guard (2026-08-07) -- TrajectoryDataset checks
+    # SEQUENCES_DIR's manifest (the parent of TRAIN_DIR/CAL_DIR) before
+    # loading, regardless of how the .pkl files it finds there got there;
+    # this is what actually makes that check meaningful, not just EXTRACTED_DIR's.
+    cfg.check_schema_manifest(cfg.SEQUENCES_DIR, write_if_missing=True)
 
     def _link(run_dirs: List[str], dest_dir: str, tag: str):
         count = 0

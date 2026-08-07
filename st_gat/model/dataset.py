@@ -9,8 +9,15 @@ Changes from the T-ITS reference TrajectoryDataset:
     The model's BatchNorm1d layer handles any residual scale differences.
   - Graph node features stored without the 10× position multiplier for the
     same reason — GCN's LayerNorm handles scale.
-  - Accepts both old-format sequences (no 'uncertainty' key) and new-format
-    sequences, so the dataset can be used even with partially processed data.
+  - Old-vs-new-format tolerance REMOVED 2026-08-07 (audit finding): used to
+    read every TL/uncertainty/adjacent-lane key via step.get(key, 0.0), so a
+    stale pre-redesign sequence would silently load with those features
+    zeroed out instead of erroring. Now that config.py's schema-versioning
+    check (see check_schema_manifest) refuses to load a cache built under a
+    different schema at all, this fallback no longer serves its original
+    purpose and was actively hiding the exact bug class it was flagged for
+    -- these keys are now read with direct (KeyError-on-miss) access, same
+    as position/velocity/steering.
 """
 
 import os
@@ -71,6 +78,15 @@ class TrajectoryDataset(Dataset):
     _VECTOR_KEYS = ('position', 'velocity', 'uncertainty')
 
     def __init__(self, data_folder: str):
+        # Schema-versioning guard (2026-08-07, see config.py's
+        # check_schema_manifest docstring) -- data_folder (TRAIN_DIR/CAL_DIR)
+        # is a subdir of SEQUENCES_DIR, which is where run_pipeline.py's
+        # assemble_splits() writes the manifest; check the PARENT dir, not
+        # data_folder itself, since that's the manifest's actual location.
+        # write_if_missing=False deliberately: a cache with .pkl content but
+        # no manifest predates this fix and must not be silently trusted,
+        # even by a caller that isn't run_pipeline.py itself.
+        _cfg.check_schema_manifest(os.path.dirname(os.path.normpath(data_folder)), write_if_missing=False)
         self.sequences = []
         pkl_files = sorted(f for f in os.listdir(data_folder) if f.endswith('.pkl'))
         for fname in pkl_files:
@@ -118,11 +134,11 @@ class TrajectoryDataset(Dataset):
             buf['velocity'].append(step['velocity'])
             buf['steering'].append([step['steering']])
             buf['acceleration'].append([step['acceleration']])
-            buf['traffic_light_color'].append([float(step.get('traffic_light_color', 0.0))])
-            buf['traffic_light_confidence'].append([float(step.get('traffic_light_confidence', 0.0))])
-            buf['traffic_light_discrepancy'].append([float(step.get('traffic_light_discrepancy', 0.0))])
-            buf['has_adjacent_lane'].append([float(step.get('has_adjacent_lane', 0.0))])
-            buf['uncertainty'].append(step.get('uncertainty', [0.0, 0.0]))
+            buf['traffic_light_color'].append([float(step['traffic_light_color'])])
+            buf['traffic_light_confidence'].append([float(step['traffic_light_confidence'])])
+            buf['traffic_light_discrepancy'].append([float(step['traffic_light_discrepancy'])])
+            buf['has_adjacent_lane'].append([float(step['has_adjacent_lane'])])
+            buf['uncertainty'].append(step['uncertainty'])
             buf['objects_set'].append(step['objects_set'])
             buf['objects_mask'].append(step['objects_mask'])
 

@@ -367,6 +367,140 @@ FEATURE_SIZES = {
     'uncertainty':              2,   # EKF x_var, y_var
 }
 
+# ── Schema versioning (added 2026-08-07 — see the ST-GAT pipeline audit in
+# docs/research_notes/) ─────────────────────────────────────────────────────
+# The extracted-sequence cache (EXTRACTED_DIR/SEQUENCES_DIR) previously had
+# NO enforced invalidation: run_pipeline.py's cache-skip check
+# (`if os.path.exists(out_pkl): skip`) and TrajectoryDataset's loader would
+# both happily reuse/load a .pkl written under an OLD feature vector or
+# graph schema, silently -- the only protection was a human remembering to
+# re-run extraction after a pipeline change (config.py's docstring said
+# "must re-extract" in three places, which is a note to a human, not a
+# check). Checked live 2026-08-07 after the redesign audit found this risk:
+# by luck, not enforcement, this repo's actual extracted cache WAS
+# regenerated after the last schema-affecting edit (file mtimes confirmed:
+# extraction pipeline last touched 2026-08-05 21:33, cache regenerated
+# 21:39, six minutes later) -- so no results were actually corrupted, but
+# nothing would have caught it if that timing hadn't lined up. This
+# automatic hash-based check replaces "remember to re-extract" with
+# "impossible to silently forget."
+_SCHEMA_MANIFEST_NAME = 'schema_manifest.json'
+
+
+def compute_schema_hash() -> str:
+    """Hash of every constant that determines what's stored in an extracted
+    sequence .pkl -- the flat feature vector shape, graph sizing/radius, and
+    windowing. Nothing here is bumped manually; this changes automatically
+    whenever any of these values do, which is the point."""
+    import hashlib
+    import json
+    payload = {
+        'FEATURE_SIZES':        FEATURE_SIZES,
+        'NODE_FEATURES':        NODE_FEATURES,
+        'MAX_GRAPH_NODES':      MAX_GRAPH_NODES,
+        'GRAPH_RADIUS_M':       GRAPH_RADIUS_M,
+        'INPUT_SEQ_LEN':        INPUT_SEQ_LEN,
+        'OUTPUT_SEQ_LEN':       OUTPUT_SEQ_LEN,
+        'STRIDE':               STRIDE,
+        'OBJECT_FEATURE_DIM':   OBJECT_FEATURE_DIM,
+        'MAX_TRACKED_OBJECTS':  MAX_TRACKED_OBJECTS,
+    }
+    s = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(s.encode()).hexdigest()[:16]
+
+
+def check_schema_manifest(cache_dir: str, write_if_missing: bool = False) -> None:
+    """Verify (or, if write_if_missing, create) cache_dir/schema_manifest.json
+    against compute_schema_hash(). Raises RuntimeError on mismatch -- a loud
+    failure demanding re-extraction, not a silent stale-cache reuse.
+
+    write_if_missing=True is only for the extraction pipeline itself
+    (run_pipeline.py), which is allowed to create a fresh manifest the first
+    time it runs against an empty/new cache_dir. Every OTHER caller
+    (TrajectoryDataset, any inference/analysis script) MUST use
+    write_if_missing=False, so that a cache_dir with existing .pkl content
+    but no manifest (i.e. it predates this schema-versioning fix, added
+    2026-08-07) is treated as suspicious and rejected rather than silently
+    trusted -- the whole point is that older caches can't sneak past this
+    check just because they were written before it existed."""
+    import json
+    manifest_path = os.path.join(cache_dir, _SCHEMA_MANIFEST_NAME)
+    current_hash = compute_schema_hash()
+
+    if not os.path.exists(manifest_path):
+        if write_if_missing:
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(manifest_path, 'w') as f:
+                json.dump({'schema_hash': current_hash}, f, indent=2)
+            return
+        # Recursive, not a flat os.listdir(cache_dir) -- SEQUENCES_DIR's real
+        # .pkl content lives one level down (train/, calibration/), not
+        # directly in cache_dir itself; a flat check would silently miss an
+        # existing unversioned cache entirely and skip straight to "nothing
+        # to check yet" (caught live: this was the actual bug on first test).
+        has_pkls = False
+        if os.path.isdir(cache_dir):
+            for _root, _dirs, files in os.walk(cache_dir):
+                if any(fn.endswith('.pkl') for fn in files):
+                    has_pkls = True
+                    break
+        if has_pkls:
+            raise RuntimeError(
+                f"{cache_dir} has cached .pkl sequences but no {_SCHEMA_MANIFEST_NAME} "
+                f"(this cache predates schema versioning, added 2026-08-07) -- cannot "
+                f"verify it matches the current pipeline schema and must not be silently "
+                f"trusted. Re-run extraction (python3 -m st_gat.pipeline.run_pipeline) to "
+                f"regenerate it with a manifest."
+            )
+        return  # empty/nonexistent cache_dir, nothing to check yet
+
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    if manifest.get('schema_hash') != current_hash:
+        raise RuntimeError(
+            f"{manifest_path} was written under schema_hash={manifest.get('schema_hash')}, "
+            f"which does NOT match the current pipeline's schema_hash={current_hash} -- "
+            f"the extracted-sequence cache in {cache_dir} was built under a different "
+            f"feature vector / graph config and must be regenerated before training or "
+            f"inference against it (python3 -m st_gat.pipeline.run_pipeline; you'll likely "
+            f"need to clear the stale .pkl files in {cache_dir} first)."
+        )
+
+
+# Architecture dims (added here 2026-08-07 -- see the ST-GAT pipeline audit
+# in docs/research_notes/): previously every inference/analysis script
+# (residuals.py, check_calibration.py, plot_calibration_diagrams.py,
+# plot_predictions.py, calibrate_tl_discrepancy.py, train.py) re-typed an
+# identical literal dict for these five values instead of importing them
+# from one place -- currently in sync by luck, not by construction; a future
+# capacity change means hand-editing 6 files and hoping none are missed.
+# These are now the single source of truth; MODEL_CONFIG below no longer
+# carries the STALE hidden_size=256/dropout_rate=0.2 values that nothing
+# actually used (every call site already overrode both to 128/0.15).
+D_MODEL       = 128   # model / attention dim
+D_GRAPH       = 128   # graph encoder output dim
+HIDDEN_SIZE   = 128   # LSTM hidden dim
+NUM_LAYERS    = 2
+NHEAD         = 4
+DROPOUT_RATE  = 0.15
+
+
+def build_inference_model_cfg(device=None) -> dict:
+    """MODEL_CONFIG merged with the architecture dims + a resolved device --
+    what every inference/analysis script that just needs to load a trained
+    model should call, instead of retyping the same literal dict. train.py
+    still builds its own config (it legitimately needs CLI overrides for
+    epochs/lr/batch/etc.) but sources these same architecture constants
+    rather than its own copies."""
+    cfg = MODEL_CONFIG.copy()
+    cfg.update({
+        'd_model': D_MODEL, 'd_graph': D_GRAPH, 'hidden_size': HIDDEN_SIZE,
+        'num_layers': NUM_LAYERS, 'nhead': NHEAD, 'dropout_rate': DROPOUT_RATE,
+        'device': device if device is not None else MODEL_CONFIG['device'],
+    })
+    return cfg
+
+
 MODEL_CONFIG = {
     'graph_sizes':   {'node_features': NODE_FEATURES, 'number_of_nodes': MAX_GRAPH_NODES},
     'feature_sizes': FEATURE_SIZES,
@@ -374,16 +508,20 @@ MODEL_CONFIG = {
     'max_tracked_objects':   MAX_TRACKED_OBJECTS,
     'num_epochs':    200,
     'batch_size':    128,
-    'hidden_size':   256,
-    'num_layers':    2,
+    'hidden_size':   HIDDEN_SIZE,
+    'num_layers':    NUM_LAYERS,
     'learning_rate': 0.0004,
     'input_seq_len': INPUT_SEQ_LEN,
     'output_seq_len': OUTPUT_SEQ_LEN,
-    'dropout_rate':  0.2,
-    'position_scaling_factor':     POSITION_SCALING,
-    'velocity_scaling_factor':     VELOCITY_SCALING,
-    'steering_scaling_factor':     STEERING_SCALING,
-    'acceleration_scaling_factor': ACCEL_SCALING,
+    'dropout_rate':  DROPOUT_RATE,
+    # position_scaling_factor/velocity_/steering_/acceleration_ REMOVED
+    # 2026-08-07 (audit finding): dead since 2026-08-02 per dataset.py's own
+    # docstring ("Removes the per-feature scaling factors... All features
+    # come pre-normalised to [0,1] from sequence_builder.py") -- nothing
+    # ever read these keys. POSITION_SCALING/VELOCITY_SCALING/etc. module
+    # constants above are left in place but are equally unused; not removed
+    # outright in case something outside this repo's own scripts imports
+    # them, but don't treat them as load-bearing.
     'train_data_folder': TRAIN_DIR,
     'cal_data_folder':   CAL_DIR,
     'model_path':        os.path.join(MODEL_ROOT, HORIZON_TAG, 'st_gat_rise.pth'),

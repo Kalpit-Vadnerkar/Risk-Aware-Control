@@ -636,10 +636,7 @@ def main():
     print(f"[residuals] device: {device}")
     print(f"[residuals] model:  {args.model}")
 
-    model_cfg = cfg.MODEL_CONFIG.copy()
-    model_cfg.update({'d_model': 128, 'd_graph': 128, 'hidden_size': 128,
-                      'num_layers': 2, 'nhead': 4, 'dropout_rate': 0.15,
-                      'device': device})
+    model_cfg = cfg.build_inference_model_cfg(device)
     model = STGAT(model_cfg).to(device)
     model.load_state_dict(torch.load(args.model, map_location=device, weights_only=True))
     model.eval()

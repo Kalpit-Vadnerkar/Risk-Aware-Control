@@ -100,9 +100,7 @@ _COVERAGE_LEVELS = np.linspace(0.05, 0.99, 40)
 
 def _load_model(model_path):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_cfg = cfg.MODEL_CONFIG.copy()
-    model_cfg.update({'d_model': 128, 'd_graph': 128, 'hidden_size': 128,
-                      'num_layers': 2, 'nhead': 4, 'dropout_rate': 0.15, 'device': device})
+    model_cfg = cfg.build_inference_model_cfg(device)
     model = STGAT(model_cfg).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()

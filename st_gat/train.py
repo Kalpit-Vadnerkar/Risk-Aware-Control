@@ -33,7 +33,12 @@ from st_gat.model import STGAT, TrajectoryDataset, Trainer
 
 
 def build_model_config(args) -> dict:
-    base = cfg.MODEL_CONFIG.copy()
+    # Architecture dims (d_model/d_graph/hidden_size/num_layers/nhead) come
+    # from cfg.build_inference_model_cfg() -- the same source every
+    # inference/analysis script now uses (2026-08-07 consolidation) -- only
+    # dropout_rate is still a genuine CLI override here (--dropout), since
+    # unlike the others it's actually swept sometimes.
+    base = cfg.build_inference_model_cfg()
     base.update({
         'num_epochs':    args.epochs,
         'warmup_epochs': args.warmup_epochs,
@@ -41,11 +46,6 @@ def build_model_config(args) -> dict:
         'learning_rate': args.lr,
         'phase2_lr':     args.phase2_lr if args.phase2_lr is not None else args.lr,
         'dropout_rate':  args.dropout,
-        'd_model':       128,
-        'd_graph':       128,
-        'hidden_size':   128,
-        'num_layers':    2,
-        'nhead':         4,
         'patience':      20,
         'max_grad_norm': 1.0,
         'weight_decay':  1e-4,
