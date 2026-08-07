@@ -21,22 +21,22 @@ that the SPRT/sequential-evidence signal (`p_fault_motion`/`p_fault_tl`/
 `p_fault_combined` in `st_gat/residuals.py`) behaves as an interpretable
 continuous trace, not "does it cross a threshold," and only then (3) look
 at Autoware planning/control interfaces. See
-`docs/research_notes/trust_and_signal_behavior_2026-08-06.md` for where
-this currently stands — **(1) and (2) do not hold up cleanly yet**. A
-first fix (Gaussian → Student-t heads + a per-horizon-step conditioned
-decoder, retrained same day) gave a **mixed** result, documented in that
-note's §3: measurably better calibration for `position`/`steering`, worse
-for `acceleration`/both TL heads, and horizon widening still doesn't work
-for 5 of 6 heads despite the architecture now having the capacity for it.
-Leading hypothesis: `Trainer`'s checkpoint-selection criterion
-(`position_l2_raw + 0.8·velocity_l1_raw`) is blind to calibration quality
-entirely, so training/checkpoint-selection stops as soon as point-accuracy
-plateaus regardless of whether other heads' scale/dof converged. **Making
-that criterion calibration-aware and retraining again is the current
-blocking priority** — ahead of resuming SPRT/detection work (the
-`traffic_light_discrepancy` SPRT-saturation root cause is separate and
-still entirely unaddressed), and well ahead of any Autoware
-planning/control integration work.
+`docs/research_notes/trust_and_signal_behavior_2026-08-06.md` and
+`docs/research_notes/calibration_training_literature_2026-08-07.md` for
+where this currently stands — **(1) and (2) do not hold up cleanly yet**.
+Two fix attempts so far, both same-day (2026-08-07): (a) two-phase training
+(mean-only warmup, then full Student-t NLL fine-tuning with Kendall-et-al.
+learned per-task weighting) — the checkpoint-selection criterion IS now
+calibration-aware (`total_nll`, not raw point error, per Phase 2), but this
+surfaced a deeper problem: Phase 2 diverges from epoch 1 (validation NLL
+gets monotonically worse, learned task weights run away) — a textbook
+overparameterized-heteroscedastic-regression failure (Wong-Toi et al., UAI
+2023), not a training-schedule bug. (b) A variance-collapse regularizer
+(`VAR_REG_WEIGHT` in `loss.py`, tied to each batch's own empirical residual
+scale) was re-added to address this directly — a regularization-strength
+sweep is the current in-progress work, not yet concluded. **Do not assume
+calibration is fixed until that sweep's result is checked** — treat this
+section as the live status, not the two-phase-training commit alone.
 
 **Core contribution (reframed 2026-07-24 — see TODO.md "Research Direction" and
 `docs/theoretical_framework.md` for the full argument):** the digital twin detects
