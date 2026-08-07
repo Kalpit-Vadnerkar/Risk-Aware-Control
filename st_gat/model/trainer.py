@@ -84,6 +84,10 @@ class Trainer:
         config:         dict,
         checkpoint_dir: str = 'checkpoints',
         log_every:      int = 10,    # print per-feature breakdown every N epochs
+        criterion_cls   = CombinedLoss,   # added 2026-08-07 for STGATEnsemble
+        # members (ensemble_loss.GaussianMemberLoss) -- both loss classes
+        # expose the same mean_only_forward()/forward() two-phase interface,
+        # so Trainer's loop needs no other change to support either.
     ):
         self.device         = config['device']
         self.model          = model.to(self.device)
@@ -98,7 +102,7 @@ class Trainer:
 
         os.makedirs(checkpoint_dir, exist_ok=True)
 
-        self.criterion = CombinedLoss().to(self.device)
+        self.criterion = criterion_cls().to(self.device)
 
         # Phase 1 optimizer/scheduler/early-stop -- _start_phase() rebuilds
         # all three fresh when Phase 2 begins (see module docstring).
@@ -224,7 +228,13 @@ class Trainer:
                 breakdown = '  '.join(f"{k.replace('_loss','').replace('_raw','')[:5]}="
                                        f"{val_losses.get(k, 0):.4f}" for k in breakdown_keys)
                 extra = ''
-                if phase_name == 'finetune':
+                # task_weights() only exists on CombinedLoss (the Kendall et
+                # al. learned per-task weighting) -- GaussianMemberLoss
+                # (STGATEnsemble members) deliberately doesn't have it, see
+                # ensemble_loss.py's docstring. hasattr, not a phase_name
+                # check alone, so this doesn't silently assume every
+                # finetune-phase criterion has learned weights.
+                if phase_name == 'finetune' and hasattr(self.criterion, 'task_weights'):
                     w = self.criterion.task_weights()
                     extra = '  task_w[' + ' '.join(f"{k[:4]}={v:.2f}" for k, v in w.items()) + ']'
                 tqdm.write(
@@ -277,7 +287,8 @@ class Trainer:
             breakdown_keys=finetune_keys,
         )
 
-        tqdm.write(f"\n[trainer] Final learned task weights: {self.criterion.task_weights()}")
+        if hasattr(self.criterion, 'task_weights'):
+            tqdm.write(f"\n[trainer] Final learned task weights: {self.criterion.task_weights()}")
         self._save_history()
         return self.model
 

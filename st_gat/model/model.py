@@ -299,6 +299,22 @@ class STGAT(nn.Module):
     def __init__(self, config: dict):
         super().__init__()
 
+        # distribution: 'student_t' (default, unchanged from 2026-08-06) or
+        # 'gaussian' (added 2026-08-07 for STGATEnsemble -- see ensemble.py
+        # and docs/research_notes/model_redesign_literature_2026-08-07.md).
+        # Gaussian mode drops the dof parameter entirely (mean+var per head,
+        # the pre-2026-08-06 schema) -- deliberate reversion for ensemble
+        # members specifically: Lakshminarayanan et al.'s aleatoric/epistemic
+        # combination formula (law of total variance) is exact for a mixture
+        # of Gaussians, not as clean for a mixture of Student-t's, and
+        # ensemble disagreement is expected to absorb some of what the
+        # single-network Student-t redesign needed heavy tails to represent
+        # (see the design doc's falsifiable hypothesis on this). The
+        # Student-t path (still the default) is completely unaffected by
+        # this addition -- every existing script keeps working unchanged.
+        self.distribution = config.get('distribution', 'student_t')
+        assert self.distribution in ('student_t', 'gaussian'), self.distribution
+
         self.T_in  = config['input_seq_len']
         self.T_out = config['output_seq_len']
 
@@ -371,16 +387,19 @@ class STGAT(nn.Module):
         self.horizon_embed = nn.Embedding(self.T_out, d_pos)
         self.register_buffer('_horizon_idx', torch.arange(self.T_out), persistent=False)
 
-        self.head_position    = _StepConditionedHead(d_h, d_pos, 5)   # mean(2) + scale(2) + dof(1)
-        self.head_velocity    = _StepConditionedHead(d_h, d_pos, 5)
-        self.head_steering    = _StepConditionedHead(d_h, d_pos, 3)   # mean(1) + scale(1) + dof(1)
-        self.head_accel       = _StepConditionedHead(d_h, d_pos, 3)
+        # Per-dim output width: student_t = mean+scale+dof-shared (2*dims+1);
+        # gaussian = mean+var (2*dims), no dof term at all.
+        _w2 = (lambda dims: 2 * dims + 1) if self.distribution == 'student_t' else (lambda dims: 2 * dims)
+        self.head_position    = _StepConditionedHead(d_h, d_pos, _w2(2))
+        self.head_velocity    = _StepConditionedHead(d_h, d_pos, _w2(2))
+        self.head_steering    = _StepConditionedHead(d_h, d_pos, _w2(1))
+        self.head_accel       = _StepConditionedHead(d_h, d_pos, _w2(1))
         # traffic_light_color/confidence (redesigned 2026-08-05, replacing
         # the single collapsed head_tl_state — see config.py's FEATURE_SIZES
         # doc). head_traffic (the old traffic_light_detected head) removed
         # entirely at the same time — see the class docstring above.
-        self.head_tl_color       = _StepConditionedHead(d_h, d_pos, 3)
-        self.head_tl_confidence  = _StepConditionedHead(d_h, d_pos, 3)
+        self.head_tl_color       = _StepConditionedHead(d_h, d_pos, _w2(1))
+        self.head_tl_confidence  = _StepConditionedHead(d_h, d_pos, _w2(1))
         self.head_tl_discrepancy = _StepConditionedHead(d_h, d_pos, 1)
 
         self._init_weights()
@@ -458,33 +477,41 @@ class STGAT(nn.Module):
             # dof > DOF_FLOOR always (finite variance) — see module docstring.
             return DOF_FLOOR + F.softplus(raw_dof)
 
-        return {
-            'position_mean':    pos[..., :2],
-            'position_scale':   F.softplus(pos[..., 2:4]) + SCALE_FLOOR,
-            'position_dof':     _dof(pos[..., 4]),
-            'velocity_mean':    vel[..., :2],
-            'velocity_scale':   F.softplus(vel[..., 2:4]) + SCALE_FLOOR,
-            'velocity_dof':     _dof(vel[..., 4]),
-            'steering_mean':    steer[..., 0],
-            'steering_scale':   F.softplus(steer[..., 1]) + SCALE_FLOOR,
-            'steering_dof':     _dof(steer[..., 2]),
-            'acceleration_mean':  accel[..., 0],
-            'acceleration_scale': F.softplus(accel[..., 1]) + SCALE_FLOOR,
-            'acceleration_dof':   _dof(accel[..., 2]),
-            'traffic_light_color_mean':  tl_color[..., 0],
-            'traffic_light_color_scale': F.softplus(tl_color[..., 1]) + SCALE_FLOOR,
-            'traffic_light_color_dof':   _dof(tl_color[..., 2]),
-            'traffic_light_confidence_mean':  tl_conf[..., 0],
-            'traffic_light_confidence_scale': F.softplus(tl_conf[..., 1]) + SCALE_FLOOR,
-            'traffic_light_confidence_dof':   _dof(tl_conf[..., 2]),
-            'traffic_light_discrepancy': torch.sigmoid(tl_disc),
-            # Raw pre-sigmoid logit, also returned (added 2026-08-05) so
-            # temperature scaling (Guo et al. 2017 — calibrated_prob =
-            # sigmoid(logit / T)) can be fit post-hoc without needing to
-            # invert the sigmoid on the probability above. No effect on
-            # training/loss, which still uses the probability key.
-            'traffic_light_discrepancy_logit': tl_disc,
-        }
+        def _split(raw: torch.Tensor, key: str, dims: int) -> dict:
+            """Slice one head's raw (B, T_o, out_dim) output into named,
+            correctly-shaped outputs for the active distribution -- see
+            __init__'s _w2 for the matching out_dim convention. Scalar
+            features (dims=1) get squeezed to (B, T_o), matching every
+            existing consumer's convention (same as the old hand-written
+            per-feature slicing this replaces)."""
+            mean = raw[..., :dims]
+            if self.distribution == 'gaussian':
+                var = F.softplus(raw[..., dims:2 * dims]) + SCALE_FLOOR
+                if dims == 1:
+                    mean, var = mean.squeeze(-1), var.squeeze(-1)
+                return {f'{key}_mean': mean, f'{key}_var': var}
+            else:
+                scale = F.softplus(raw[..., dims:2 * dims]) + SCALE_FLOOR
+                dof   = _dof(raw[..., 2 * dims])   # already (B, T_o), one dof per step shared across dims
+                if dims == 1:
+                    mean, scale = mean.squeeze(-1), scale.squeeze(-1)
+                return {f'{key}_mean': mean, f'{key}_scale': scale, f'{key}_dof': dof}
+
+        out = {}
+        out.update(_split(pos,      'position',                  2))
+        out.update(_split(vel,      'velocity',                  2))
+        out.update(_split(steer,    'steering',                  1))
+        out.update(_split(accel,    'acceleration',               1))
+        out.update(_split(tl_color, 'traffic_light_color',       1))
+        out.update(_split(tl_conf,  'traffic_light_confidence',  1))
+        out['traffic_light_discrepancy'] = torch.sigmoid(tl_disc)
+        # Raw pre-sigmoid logit, also returned (added 2026-08-05) so
+        # temperature scaling (Guo et al. 2017 — calibrated_prob =
+        # sigmoid(logit / T)) can be fit post-hoc without needing to invert
+        # the sigmoid on the probability above. No effect on training/loss,
+        # which still uses the probability key.
+        out['traffic_light_discrepancy_logit'] = tl_disc
+        return out
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
