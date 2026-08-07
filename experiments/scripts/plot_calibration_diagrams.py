@@ -147,14 +147,16 @@ def _collect_calibration_stats(model, device, batch_size):
 
                 z = ((actual - mean) / scale).cpu().numpy()
                 u = student_t.cdf(z, df=dof_full.cpu().numpy())
-                if dims > 1:
-                    # One PIT value per SAMPLE, not per dim -- average the
-                    # per-dim PIT values (each already ~Uniform(0,1) under
-                    # correct calibration; averaging keeps that property
-                    # under the CLT for a small number of dims, same
-                    # pragmatic choice the old z-score version made by
-                    # flattening across dims).
-                    u = u.mean(axis=-1)
+                # dims>1 (position/velocity): FLATTEN across dims, don't
+                # average -- each dim's PIT is independently ~Uniform(0,1)
+                # under correct calibration, but the MEAN of two independent
+                # Uniform(0,1) values is NOT Uniform(0,1) (it's triangular,
+                # concentrated near 0.5, std ~0.204 not ~0.289) -- averaging
+                # was a real bug in an earlier version of this script that
+                # manufactured apparent miscalibration for exactly these two
+                # features. Flattening (treating x and y as two separate
+                # pooled observations, same convention the old z-score
+                # version used) preserves the correct marginal property.
                 u_1step[key].append(u[:, 0].flatten())
 
                 # Horizon widening: implied Student-t variance

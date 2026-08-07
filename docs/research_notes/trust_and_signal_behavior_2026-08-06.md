@@ -187,23 +187,131 @@ by one branch's noise floor, not evidence against that underlying result.
 
 ---
 
+## 3. First calibration-fix attempt (same day, follow-up): Gaussian -> Student-t + horizon-conditioned decoder
+
+Per Kalpit's explicit direction: since 1.2's architecture problem needs
+fixing regardless of what a cheap post-hoc recalibration would show, skip
+straight to the full fix and retrain, rather than diagnosing further with
+a fast patch first. Two changes made together in `st_gat/model/model.py`/
+`loss.py` (see that commit's message for the full mechanism):
+
+1. Every continuous head now predicts Student-t `mean`/`scale`/`dof`
+   instead of Gaussian `mean`/`var` — lets the model represent heavy
+   tails directly instead of being forced into a bell curve (targets 1.1's
+   leptokurtosis finding).
+2. The flat single-shot `Linear(d_h, dim*T_out)` heads were replaced with
+   `_StepConditionedHead` — a small MLP conditioned on `[h_last ; a
+   learned per-horizon-step embedding]`, applied independently at each of
+   the 30 future steps, instead of one weight matrix with no structural
+   mechanism for step *t*'s prediction to differ from step *t+1*'s
+   (targets 1.2's horizon-widening finding).
+
+Retrained (`python3 -m st_gat.train`, same hyperparameters as before —
+200-epoch cap, patience 20, batch 128, lr 4e-4). Early-stopped at **epoch
+55**, best val raw error (position L2 + 0.8·velocity L1) **0.0158** —
+slightly *better* point accuracy than the pre-fix model's 0.0168.
+
+Validation required rebuilding the calibration check itself: a raw
+z-score has no fixed reference distribution to check against once dof
+varies per sample, so `check_calibration.py`/`plot_calibration_diagrams.py`
+were rewritten around the **probability integral transform (PIT)** —
+`u = F(actual; that sample's own predicted mean/scale/dof)`, which should
+be Uniform(0,1) under correct calibration regardless of family (Gneiting
+et al., JRSS-B 2007). Caught and fixed a real bug in the first version of
+this rewrite along the way: averaging position/velocity's two per-dim PIT
+values per sample instead of flattening across dims — the mean of two
+independent Uniform(0,1) values is NOT itself Uniform(0,1) (triangular,
+std ≈0.204 not ≈0.289), which manufactured apparent miscalibration for
+exactly those two features. Fixed by flattening (pooling x/y as separate
+observations, same convention the original z-score version used), then
+cross-checked `plot_calibration_diagrams.py` against `check_calibration.py`
+independently — both now agree exactly.
+
+**Result: mixed, not a clean fix.** Coverage-curve max-gap, before
+(Gaussian, §1.1) vs. after (Student-t, corrected PIT):
+
+| feature | before (Gaussian) | after (Student-t) | direction |
+|---|---|---|---|
+| position | 0.197 | **0.066** | better (3x) |
+| steering | 0.156 | **0.125** | better |
+| velocity | 0.235 | 0.243 | ~unchanged |
+| acceleration | 0.270 | **0.310** | **worse** |
+| traffic_light_color | 0.275 | **0.376** | **worse** |
+| traffic_light_confidence | 0.263 | **0.360** | **worse** |
+
+Every feature still decisively fails a Kolmogorov-Smirnov test against
+Uniform(0,1) (KS statistic 0.08–0.32, p-values effectively zero at
+n=11684) — not surprising at this sample size, but real. `check_calibration.py`'s
+central-interval numbers give the practically-readable version: cov68%/
+cov95% are 73–89%/90–96% across all 6 features (want 68%/95%) — still
+systematically overcovered (predicted intervals too wide), just less
+uniformly and less severely than the old Gaussian model's shape mismatch.
+
+**Horizon widening is still broken for the same 5 of 6 features** —
+`horizon_widening.png` looks essentially unchanged from §1.2: only
+`position`'s implied std (now `sqrt(scale² · dof/(dof-2))`) tracks actual
+RMSE growth across the 3s horizon; velocity/steering/acceleration/both TL
+heads still show a nearly flat or dipping predicted std while actual RMSE
+grows 2–4x. **The architecture change did NOT fix this on its own** —
+giving the decoder per-step conditioning capacity is necessary but
+evidently not sufficient; the model apparently didn't learn to use that
+capacity for most heads.
+
+**Root-cause hypothesis, not yet tested:** `Trainer`'s checkpoint-selection
+/ early-stopping criterion (`v_raw = position_l2_raw + 0.8·velocity_l1_raw`,
+see `trainer.py`'s own docstring for why NLL was deliberately excluded
+from it — a real, separate, previously-discovered pathology) is blind to
+calibration quality for every feature, and blind to accuracy *or*
+calibration for `acceleration`/both TL heads entirely. Training stops the
+moment position/velocity point-accuracy plateaus (epoch 55 here),
+regardless of whether the scale/dof heads for other features — which get
+weaker, more indirect gradient signal via beta-NLL reweighting — have
+converged. This plausibly explains the mixed result directly: whichever
+epoch happened to have the best position/velocity accuracy is not
+necessarily the epoch where acceleration/TL-heads' calibration was best,
+and there's currently zero training signal rewarding horizon-widening
+specifically for the checkpoint that gets saved. Not yet fixed or
+retrained against — a real design decision (how to fold a calibration
+signal into the stopping criterion without reintroducing the "NLL
+prefers an undertrained model" pathology `v_raw` was built to avoid)
+that needs a choice before the next retrain, not a guess.
+
+`experiments/analysis/tl_calibration/temperature.json` refit against the
+new model's logits (T 1.20 → 1.40, ECE 0.0168 → 0.0133) — the
+`traffic_light_discrepancy` Bernoulli head itself is unaffected by the
+Gaussian→Student-t question, its reliability-curve shape (underconfident
+in the 0.3–0.6 predicted-probability range) is essentially unchanged.
+
+`st_gat/residuals.py`'s trace schema updated to match (`_pred_scale`/
+`_pred_dof`/`_pred_implied_var` columns, `_nll`/`_residual` column NAMES
+unchanged so downstream scripts keep working, values now from the real
+Student-t density). All 59 nominal+fault trials' traces regenerated
+against the new model. `_gaussian_llr` (the SPRT test) is an explicitly
+documented stopgap — standardizes by the Student-t scale now but its own
+derivation still assumes both hypotheses are Gaussian; per Kalpit, not
+re-derived until the calibration fix above is actually validated, which
+per this section it isn't yet.
+
+---
+
 ## Where this leaves step 3
 
-Per the reframe's explicit gating ("only if 1 and 2 hold up"): they don't,
-yet, but both problems are now specific and fixable rather than vague:
+Per the reframe's explicit gating ("only if 1 and 2 hold up"): still no,
+but the open items are now sharper:
 
-1. **1.2 (horizon widening)** — needs investigation into why 5 of 6
-   Gaussian variance heads don't grow with predicted horizon step, before
-   any confidence number beyond 1-step-ahead can be trusted.
-2. **2.2 (TL-discrepancy base rate)** — the dominant, load-bearing fix.
-   Candidates worth evaluating (not yet decided or implemented): a
-   different base rate that accounts for autocorrelation/clustering of
-   discrepancy events rather than treating each 10Hz step as an
-   independent Bernoulli trial against a flat rate; a coarser sampling
-   cadence for this one branch's accumulator; or revisiting whether 9.3%
-   nominal positive rate itself is a real map/perception-scoping issue
-   (per the discriminability memory's note on TL-zone entity scoping)
-   rather than a fact to calibrate around as-is.
+1. **Calibration is measurably better for `position`/`steering`, flat for
+   `velocity`, and measurably worse for `acceleration`/both TL heads** —
+   likely explained by the checkpoint-selection-criterion gap above, not
+   yet fixed. Next step is a decision (how to make the stopping criterion
+   calibration-aware) followed by another retrain, not more diagnosis.
+2. **Horizon widening still doesn't work for 5 of 6 heads** despite the
+   architecture now having the capacity for it — same likely cause as
+   above (training/selection never rewards it), not a representational
+   limit anymore.
+3. **2.2 (TL-discrepancy base rate)** — the dominant driver of the
+   original SPRT-saturation finding, still entirely unaddressed. Explicitly
+   deferred again this session (per Kalpit: revisit SPRT only after
+   calibration is actually validated, which it still isn't).
 
-Both are concrete enough to be next session's actual work, ahead of any
-Autoware planning/control interface research.
+All three are concrete enough to be next session's actual work, ahead of
+any Autoware planning/control interface research.

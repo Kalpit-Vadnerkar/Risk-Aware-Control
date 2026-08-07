@@ -69,7 +69,12 @@ _STUDENT_T_FEATURES = {
 def _pit(actual: np.ndarray, mean: np.ndarray, scale: np.ndarray, dof: np.ndarray) -> np.ndarray:
     """Probability integral transform: F_t(actual; mean, scale, dof) per
     sample, using each sample's own predicted parameters (dof varies
-    sample-to-sample, unlike a fixed-family z-score check)."""
+    sample-to-sample, unlike a fixed-family z-score check). Caller flattens
+    across dims for multi-dim features rather than averaging -- averaging
+    two independent Uniform(0,1) PIT values is NOT itself Uniform(0,1)
+    (it's triangular, concentrated near 0.5), which was a real bug in an
+    earlier version of this check that manufactured apparent miscalibration
+    for position/velocity specifically."""
     z = (actual - mean) / scale
     return student_t.cdf(z, df=dof)
 

@@ -54,23 +54,35 @@ Summary:
   base rate too high for a memoryless sequential accumulator to treat as
   rare evidence).
 
-**Current blocking priority: fix the model's uncertainty calibration.**
-This outranks resuming SPRT/detection work (Priority 0/1 below) and is
-well ahead of any Autoware planning/control integration research — the
-leptokurtic-residual finding is the direct mechanistic explanation for the
-SPRT saturation finding, so fixing calibration is expected to fix (or at
-least substantially clarify) the SPRT behavior too, not just the coverage
-curves. Not yet root-caused to a specific architectural fix as of this
-writing — candidates to investigate (not yet decided): whether the
-variance heads' horizon-step conditioning is structurally broken (an
-architecture question) vs. a loss-weighting/training issue; whether a
-proper scoring-rule loss or per-horizon-step variance supervision would
-help; whether the `traffic_light_discrepancy` branch specifically needs a
-different base-rate treatment (accounting for autocorrelation/clustering)
-rather than a flat per-step Bernoulli rate.
+**First fix attempt done (same day) — mixed result, still blocking.**
+Gaussian heads → Student-t (mean/scale/dof) + the flat single-shot output
+heads → a per-horizon-step conditioned decoder (`_StepConditionedHead`),
+retrained (early-stopped epoch 55, val raw error 0.0158, slightly better
+than the 0.0168 pre-fix baseline). Full writeup incl. before/after
+coverage-curve table: §3 of the same research note. Result: calibration
+measurably improved for `position`/`steering`, ~unchanged for `velocity`,
+measurably **worse** for `acceleration`/both TL heads; horizon widening
+**still doesn't work for 5 of 6 heads** despite the architecture now
+having the capacity for it. Leading hypothesis (not yet tested): the
+`Trainer`'s checkpoint-selection/early-stopping criterion
+(`position_l2_raw + 0.8·velocity_l1_raw`) is blind to calibration for
+every feature and blind to accuracy *and* calibration for
+acceleration/TL heads specifically — training stops the moment
+position/velocity point-accuracy plateaus, with no signal rewarding
+correct scale/dof convergence for the other heads before that happens.
+
+**Current blocking priority: make the training/checkpoint-selection
+criterion calibration-aware, then retrain again.** This outranks
+resuming SPRT/detection work (Priority 0/1 below) and is well ahead of
+any Autoware planning/control integration research. The
+`traffic_light_discrepancy` branch's own SPRT-saturation root cause (base
+rate too high for a memoryless sequential accumulator) is a SEPARATE,
+still entirely unaddressed problem — deferred again per Kalpit, revisit
+only once calibration is actually validated.
 
 Tooling for this: `experiments/scripts/plot_calibration_diagrams.py`
-(step 1, needs ROS+model) and `experiments/scripts/plot_sprt_signal_behavior.py`
+(step 1, needs ROS+model; now PIT-based, not z-score — see the research
+note for why) and `experiments/scripts/plot_sprt_signal_behavior.py`
 (step 2, pure pandas over `st_gat/results/h30_30/traces/*.csv`, no ROS
 needed) — see CLAUDE.md's "Trusting the model itself" section.
 

@@ -22,15 +22,21 @@ that the SPRT/sequential-evidence signal (`p_fault_motion`/`p_fault_tl`/
 continuous trace, not "does it cross a threshold," and only then (3) look
 at Autoware planning/control interfaces. See
 `docs/research_notes/trust_and_signal_behavior_2026-08-06.md` for where
-this currently stands — **(1) and (2) do not hold up cleanly yet**: the
-model's own predicted uncertainty is measurably miscalibrated (leptokurtic
-residuals, non-widening variance across the prediction horizon for 5 of 6
-Gaussian heads) and that miscalibration is the traced root cause of the
-SPRT signal's behavior (it saturates to >0.99 roughly every 9s under pure
-nominal driving, dominated by the `traffic_light_discrepancy` branch).
-**Fixing the model's uncertainty calibration is the current blocking
-priority** — ahead of resuming SPRT/detection work, and well ahead of any
-Autoware planning/control integration work.
+this currently stands — **(1) and (2) do not hold up cleanly yet**. A
+first fix (Gaussian → Student-t heads + a per-horizon-step conditioned
+decoder, retrained same day) gave a **mixed** result, documented in that
+note's §3: measurably better calibration for `position`/`steering`, worse
+for `acceleration`/both TL heads, and horizon widening still doesn't work
+for 5 of 6 heads despite the architecture now having the capacity for it.
+Leading hypothesis: `Trainer`'s checkpoint-selection criterion
+(`position_l2_raw + 0.8·velocity_l1_raw`) is blind to calibration quality
+entirely, so training/checkpoint-selection stops as soon as point-accuracy
+plateaus regardless of whether other heads' scale/dof converged. **Making
+that criterion calibration-aware and retraining again is the current
+blocking priority** — ahead of resuming SPRT/detection work (the
+`traffic_light_discrepancy` SPRT-saturation root cause is separate and
+still entirely unaddressed), and well ahead of any Autoware
+planning/control integration work.
 
 **Core contribution (reframed 2026-07-24 — see TODO.md "Research Direction" and
 `docs/theoretical_framework.md` for the full argument):** the digital twin detects
@@ -257,12 +263,17 @@ number as meaningful, run these two (see
 `docs/research_notes/trust_and_signal_behavior_2026-08-06.md` for the full
 findings, which currently say don't trust it yet):
 - `experiments/scripts/plot_calibration_diagrams.py` (needs ROS+model) —
-  coverage curves, z-score histograms, excess-kurtosis/Anderson-Darling
-  normality stats, horizon-widening, TL-discrepancy reliability diagram, on
-  the held-out calibration split. **`check_calibration.py`'s std(z) summary
-  number alone is not sufficient** — it can't distinguish "right variance,
-  right shape" from "right variance, wrong shape," and the current model is
-  the latter (leptokurtic, not Gaussian) despite std(z) looking fine.
+  coverage curves, PIT histograms, PIT-uniformity (Kolmogorov-Smirnov)
+  stats, horizon-widening, TL-discrepancy reliability diagram, on the held-
+  out calibration split. Rewritten 2026-08-06 around the **probability
+  integral transform (PIT)**, not a raw z-score — the model's heads predict
+  a per-sample degrees-of-freedom (Student-t, not Gaussian, since
+  2026-08-06), so there's no single fixed reference distribution to check a
+  z-score against; PIT generalizes correctly regardless of family. If you
+  add a multi-dim feature's PIT to a pooled array, **flatten across dims,
+  don't average** — averaging two independent Uniform(0,1) values is not
+  itself Uniform(0,1) (a real bug this script had once, see the research
+  note below for the exact effect it had).
 - `experiments/scripts/plot_sprt_signal_behavior.py` (no ROS needed, pure
   pandas over `st_gat/results/h30_30/traces/*.csv`) — does `p_fault_*` stay
   near its floor (0.5, not 0.0 — see the script's own docstring) under
