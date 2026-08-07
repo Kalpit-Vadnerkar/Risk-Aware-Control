@@ -89,6 +89,40 @@ Changes from the T-ITS reference:
          point-errors. Trainer.py MUST include this module's own
          parameters (self.criterion.parameters(), not just the model's) in
          the optimizer for these to actually learn.
+
+         Runaway found live 2026-08-07: unclamped, all 7 learned weights
+         grew ~1.0 -> ~10 within 20 epochs while validation NLL got
+         monotonically WORSE the whole time (train NLL crashed to -79).
+         LOG_TASK_VAR_CLAMP (see below) bounds the weights, but clamping
+         ALONE did not fix the underlying divergence — it only capped the
+         weights at their ceiling while validation NLL kept degrading
+         regardless. The real cause, confirmed against Wong-Toi, Boyd,
+         Fortuin & Mandt, "Understanding Pathologies of Deep Heteroskedastic
+         Regression," UAI 2023 (arXiv:2306.16717): this is the textbook
+         overparameterized-heteroscedastic-regression failure they formally
+         characterize — once the mean network is flexible enough to fit
+         training data well, the variance network can ALWAYS improve
+         training likelihood further by shrinking predicted scale toward
+         zero on training-specific noise, independent of genuine
+         generalization. beta-NLL alone does not prevent this (already
+         active in both attempts). Their paper's own finding: this is
+         controlled by regularization STRENGTH on the variance network
+         specifically — which is exactly what VAR_REG_WEIGHT (point 3
+         below) targets.
+      3. VAR_REG_WEIGHT RE-ADDED 2026-08-07, properly this time (see the
+         2026-08-02 removal note above): an asymmetric, per-timestep,
+         per-feature penalty — only fires when predicted scale falls BELOW
+         that batch's own empirical residual magnitude at that same
+         timestep (computed fresh every batch, no persistent state,
+         detached so it's a target not a gradient path), zero once scale is
+         calibrated or wider. This is the "tied to actual error scale" fix
+         the removal note explicitly asked for, not a reintroduction of the
+         old flat, error-unaware 1/variance penalty. Strength needs a sweep
+         — Wong-Toi et al.'s own finding is that this regularization
+         strength is THE key hyperparameter for this failure mode, not
+         something safe to guess once and move on from (see
+         docs/research_notes/calibration_training_literature_2026-08-07.md
+         for the sweep this triggered).
 """
 
 import math
@@ -102,6 +136,16 @@ SCALE_FLOOR = 1e-4    # must match model.py — sqrt of the old VAR_FLOOR=1e-8,
                        # directly rather than variance.
 DOF_FLOOR = 2.1        # must match model.py — see its docstring.
 BETA_NLL  = 0.5        # Seitzer et al. 2022 — see module docstring
+# Bounds the learned Kendall-et-al. task weights to exp(-2.3)..exp(2.3) ~=
+# 0.10..10.0 -- see CombinedLoss._clamped_log_var's docstring for why this
+# is necessary (unclamped, the weights ran away in a live run).
+LOG_TASK_VAR_CLAMP = 2.3
+# Variance-collapse regularizer strength (see module docstring point 3) --
+# module-level so a sweep script can monkeypatch it between runs without
+# needing a CombinedLoss constructor argument for every knob. Starting
+# value is a guess, NOT yet swept -- see the calibration_training_literature
+# note's "not something safe to guess once and move on from."
+VAR_REG_WEIGHT = 0.1
 
 
 def _student_t_nll(target: torch.Tensor, mean: torch.Tensor, scale: torch.Tensor,
@@ -175,11 +219,27 @@ class CombinedLoss(nn.Module):
             k: nn.Parameter(torch.zeros(1)) for k in task_keys
         })
 
+    def _clamped_log_var(self, key: str) -> torch.Tensor:
+        """log_task_var[key], clamped to LOG_TASK_VAR_CLAMP (see module
+        docstring: found live, 2026-08-07 -- unclamped, this runs away.
+        Kendall et al.'s method was analyzed for losses bounded below (L2,
+        cross-entropy); our per-task losses are NLLs, which are NOT bounded
+        below -- a task can drive its own NLL arbitrarily negative by
+        overfitting predicted scale toward zero, which increases that
+        task's learned weight, which increases its gradient contribution,
+        which pushes it to overfit further -- a real runaway feedback loop,
+        not a hypothetical one (observed: all 7 weights grew ~1.0 -> ~10 in
+        20 epochs while validation NLL got monotonically WORSE the whole
+        time). Clamping keeps the adaptive relative weighting Kendall et
+        al.'s method is for, within a bounded dynamic range that can't
+        runaway."""
+        return self.log_task_var[key].clamp(-LOG_TASK_VAR_CLAMP, LOG_TASK_VAR_CLAMP)
+
     def task_weights(self) -> dict:
-        """Current learned precision (exp(-log_task_var)) per task -- for
-        logging/diagnostics, so the actual learned weighting is visible,
-        not just assumed to be doing something reasonable."""
-        return {k: float(torch.exp(-v).item()) for k, v in self.log_task_var.items()}
+        """Current learned precision (exp(-clamped log_task_var)) per task
+        -- for logging/diagnostics, so the actual learned weighting is
+        visible, not just assumed to be doing something reasonable."""
+        return {k: float(torch.exp(-self._clamped_log_var(k)).item()) for k in self.log_task_var}
 
     def mean_only_forward(self, pred: dict, target: dict):
         """Phase 1 ('mean warmup', see module docstring point 1): plain
@@ -249,6 +309,24 @@ class CombinedLoss(nn.Module):
             # actually has an extra dim to broadcast against.
             dof_b = dof.unsqueeze(-1) if mean.dim() == 3 else dof
 
+            # Variance-collapse regularizer (module docstring point 3):
+            # per-timestep empirical residual magnitude, reduced over the
+            # BATCH only (not time) so this respects horizon-dependent
+            # noise growth instead of collapsing it to one scalar per
+            # feature -- shape (T_out,) or (T_out, dims). Detached: this is
+            # a target the regularizer pulls scale toward, not something
+            # scale should be able to shrink by pushing gradient into.
+            # Asymmetric (relu): zero penalty once scale already matches or
+            # exceeds the batch's own empirical spread -- this only fights
+            # UNDERdispersion (the collapse failure mode just observed),
+            # not overdispersion, unlike the old removed flat 1/variance
+            # penalty which pulled in both directions regardless of need.
+            with torch.no_grad():
+                empirical_scale = (target_k - mean).pow(2).mean(dim=0).sqrt().clamp(min=SCALE_FLOOR)
+            underdispersion = F.relu(empirical_scale.unsqueeze(0) - scale)
+            var_reg = underdispersion.pow(2).mean()
+            losses[f'{key}_var_reg'] = var_reg.item()
+
             nll = _student_t_nll(target_k, mean, scale, dof_b)
             # beta-NLL (Seitzer et al. 2022, see module docstring): weight each
             # sample by its own predicted scale (stop-gradient — the weight
@@ -270,16 +348,22 @@ class CombinedLoss(nn.Module):
             # what stops the trivial "inflate log_var to zero out this
             # task" collapse -- both ARE differentiated through (unlike
             # beta_weight above, which is a detached heuristic).
-            log_var   = self.log_task_var[key]
+            log_var   = self._clamped_log_var(key)
             precision = torch.exp(-log_var)
             weighted  = precision * nll + log_var.squeeze()
             losses[f'{key}_loss'] = weighted.item()
-            total    = total    + weighted
-            # nll_sum/total_nll stays the RAW (unweighted) sum -- this is
-            # what Phase 2 checkpoint selection tracks (see trainer.py),
-            # deliberately NOT the learned-weighted objective, so the
-            # selection metric doesn't move every time the learned weights
-            # shift scale.
+            # var_reg added OUTSIDE the Kendall precision weighting,
+            # deliberately -- it's a hard floor against collapse, not a
+            # task-difficulty-scaled term, so it must not be attenuatable by
+            # the same learned weight mechanism that was part of the
+            # observed runaway (a task "buying down" its own precision
+            # would otherwise also buy down its own collapse penalty).
+            total    = total    + weighted + VAR_REG_WEIGHT * var_reg
+            # nll_sum/total_nll stays the RAW (unweighted, no var_reg) sum
+            # -- this is what Phase 2 checkpoint selection tracks (see
+            # trainer.py), deliberately NOT the learned-weighted objective,
+            # so the selection metric doesn't move every time the learned
+            # weights shift scale.
             nll_sum  = nll_sum  + nll
 
         losses['total_nll'] = nll_sum.item()
@@ -313,7 +397,7 @@ class CombinedLoss(nn.Module):
             if tgt.dim() == 3:
                 tgt = tgt.squeeze(-1)
             bce = F.binary_cross_entropy(pred['traffic_light_discrepancy'], tgt)
-            log_var   = self.log_task_var['traffic_light_discrepancy']
+            log_var   = self._clamped_log_var('traffic_light_discrepancy')
             precision = torch.exp(-log_var)
             weighted  = precision * bce + log_var.squeeze()
             losses['traffic_light_discrepancy_loss'] = weighted.item()
