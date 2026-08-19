@@ -227,7 +227,31 @@ started without flagging this explicitly.
 
 ## Status
 
-Literature review and design complete. Implementation in progress
-(`st_gat/model/ensemble.py` — see that module's own docstring for
-current state). Full ensemble training not yet started; will not be
-started without explicit confirmation given the compute cost above.
+Literature review and design complete. Implementation done and committed
+(`st_gat/model/ensemble.py`, `ensemble_loss.py`, `train_ensemble.py`,
+commit `3bf698d`) — smoke-tested end-to-end (Gaussian/Student-t forward
+parity, the `total_var == aleatoric_var + epistemic_var` identity, a full
+tiny training run through the real entry point).
+
+**Paused 2026-08-19, deliberately, before any member finished training —
+see the memory system's `project_ensemble_reconsideration_2026-08-19` note
+for the full reasoning.** Short version: this design targets problem 3 in
+§0 above (single-network mode collapse under joint mean+scale+dof
+optimization) and, per Ovadia et al., calibration robustness under the
+nominal→fault distribution shift generally. It was never verified against
+the *original* motivating problem — per-horizon uncertainty *widening*
+(§0's problem 2, `_StepConditionedHead` having the architectural capacity
+but not learning to use it). Each ensemble member is still a single STGAT
+instance with that same per-member decoder/training; if one member's
+aleatoric variance stays flat across the horizon, averaging several such
+flat curves together does not itself produce widening — only the new
+epistemic term (variance of member means) might, and that was never
+tested. **Recommended before resuming:** train one single
+`STGAT(distribution='gaussian')` member in isolation and check its
+horizon-widening behavior directly before committing to the full 5-member
+ensemble again. Also logged: concurrent multi-process training on this
+machine requires `--workers 0` on every process (fork-based DataLoader
+workers, combined with this project's graph-heavy per-sequence dataset,
+multiply host RAM sharply enough that 5 concurrent processes at
+`--workers 2` were killed by `earlyoom` within ~20 seconds, before any
+checkpoint saved).
