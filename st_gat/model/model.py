@@ -55,6 +55,24 @@ priority ordering that put this ahead of resuming SPRT/detection work):
    Every head is now a small MLP conditioned on [h_last ; a learned
    per-step horizon embedding] instead of one flat projection — see
    `_StepConditionedHead` below.
+3. Per-head horizon embeddings (2026-08-19). Point 2's fix gave every head
+   decoder capacity for horizon-dependent behavior, but the horizon
+   embedding itself was still ONE table shared across all 7 heads —
+   horizon widening still only worked for `position` afterward. A
+   gradient-probe diagnostic against the trained checkpoint found why:
+   that shared table's gradient was 40-44% owned by position alone (vs.
+   6-7% each for steering/acceleration/traffic_light_confidence — exactly
+   the three worst-widening heads), and position's gradient direction on
+   it had negative cosine similarity (-0.32 to -0.68) with 4 of the other
+   5 heads' desired directions — a genuine resource conflict, not just an
+   imbalance. Separately: position's target has a real statistical
+   advantage the others don't — its marginal (unconditional) std grows
+   29x from t=0 to t=29 (kinematic integration), while every other
+   feature's marginal std is flat (ratio 0.99-1.01) across the full
+   horizon, so position's widening is partly a population-level shortcut
+   unavailable to the rest. Each head now gets its own horizon embedding
+   table (still tiny — ~3,360 floats total across all 7) instead of one
+   shared table, removing the contention mechanism directly.
 """
 
 import torch
@@ -296,6 +314,12 @@ class STGAT(nn.Module):
     closest_object_velocity — removed 2026-08-02, replaced by the object set.
     """
 
+    # Shared feature-extraction trunk -- everything that produces h_last,
+    # i.e. everything upstream of the per-head decoders. See freeze_trunk()
+    # below (2026-08-20).
+    _TRUNK_MODULES = ('object_encoder', 'graph_encoder', 'graph_proj',
+                       'input_bn', 'input_proj', 'attn_block', 'lstm')
+
     def __init__(self, config: dict):
         super().__init__()
 
@@ -384,8 +408,32 @@ class STGAT(nn.Module):
         # shared across dims) per step; traffic_light_discrepancy is
         # unchanged (Bernoulli/sigmoid, no distribution-family question).
         d_pos = HORIZON_EMBED_DIM
-        self.horizon_embed = nn.Embedding(self.T_out, d_pos)
         self.register_buffer('_horizon_idx', torch.arange(self.T_out), persistent=False)
+
+        # Per-head horizon embeddings (fixed 2026-08-19 — see module
+        # docstring point 3): this used to be ONE nn.Embedding shared across
+        # all 7 heads. A gradient-probe diagnostic against the trained
+        # checkpoint found that shared table's gradient was 40-44% owned by
+        # position alone (vs. 6-7% each for steering/acceleration/
+        # traffic_light_confidence — exactly the three worst-widening
+        # heads), AND position's gradient direction on that table had
+        # negative cosine similarity (-0.32 to -0.68) with 4 of the other 5
+        # heads' desired directions — not just outweighed, actively fought.
+        # Separately, position's own target has a genuinely different
+        # statistical structure: its marginal (unconditional) std grows 29x
+        # from t=0 to t=29 (kinematic integration), while every other
+        # feature's marginal std is flat (ratio 0.99-1.01) across the full
+        # horizon — so position gets a population-level widening shortcut
+        # none of the other heads have, making it even more likely to
+        # dominate a shared resource. One embedding table PER head (still
+        # tiny — 30*16*7 ~= 3,360 floats total) removes the contention
+        # mechanism directly, at negligible parameter/compute cost.
+        _head_keys = ('position', 'velocity', 'steering', 'acceleration',
+                      'traffic_light_color', 'traffic_light_confidence',
+                      'traffic_light_discrepancy')
+        self.horizon_embed = nn.ModuleDict({
+            k: nn.Embedding(self.T_out, d_pos) for k in _head_keys
+        })
 
         # Per-dim output width: student_t = mean+scale+dof-shared (2*dims+1);
         # gaussian = mean+var (2*dims), no dof term at all.
@@ -461,17 +509,22 @@ class STGAT(nn.Module):
         # ── 7. Output heads — per-horizon-step conditioned (2026-08-06) ──────
         T_o = self.T_out
         h_expanded = h_last.unsqueeze(1).expand(-1, T_o, -1)             # (B, T_o, d_h)
-        pos_embed  = self.horizon_embed(self._horizon_idx)               # (T_o, d_pos)
-        pos_embed  = pos_embed.unsqueeze(0).expand(B, -1, -1)            # (B, T_o, d_pos)
-        h_cond     = torch.cat([h_expanded, pos_embed], dim=-1)          # (B, T_o, d_h + d_pos)
 
-        pos   = self.head_position(h_cond)       # (B, T_o, 5): mean(2)+scale(2)+dof(1)
-        vel   = self.head_velocity(h_cond)        # (B, T_o, 5)
-        steer = self.head_steering(h_cond)        # (B, T_o, 3): mean(1)+scale(1)+dof(1)
-        accel = self.head_accel(h_cond)           # (B, T_o, 3)
-        tl_color = self.head_tl_color(h_cond)      # (B, T_o, 3)
-        tl_conf  = self.head_tl_confidence(h_cond)  # (B, T_o, 3)
-        tl_disc  = self.head_tl_discrepancy(h_cond).squeeze(-1)   # (B, T_o)
+        def _h_cond(key: str) -> torch.Tensor:
+            """[h_last ; that head's OWN horizon embedding[t]] — see
+            __init__'s per-head horizon_embed note for why this is no
+            longer one embedding shared across heads."""
+            pos_embed = self.horizon_embed[key](self._horizon_idx)         # (T_o, d_pos)
+            pos_embed = pos_embed.unsqueeze(0).expand(B, -1, -1)           # (B, T_o, d_pos)
+            return torch.cat([h_expanded, pos_embed], dim=-1)              # (B, T_o, d_h + d_pos)
+
+        pos   = self.head_position(_h_cond('position'))       # (B, T_o, 5): mean(2)+scale(2)+dof(1)
+        vel   = self.head_velocity(_h_cond('velocity'))        # (B, T_o, 5)
+        steer = self.head_steering(_h_cond('steering'))        # (B, T_o, 3): mean(1)+scale(1)+dof(1)
+        accel = self.head_accel(_h_cond('acceleration'))       # (B, T_o, 3)
+        tl_color = self.head_tl_color(_h_cond('traffic_light_color'))      # (B, T_o, 3)
+        tl_conf  = self.head_tl_confidence(_h_cond('traffic_light_confidence'))  # (B, T_o, 3)
+        tl_disc  = self.head_tl_discrepancy(_h_cond('traffic_light_discrepancy')).squeeze(-1)   # (B, T_o)
 
         def _dof(raw_dof: torch.Tensor) -> torch.Tensor:
             # dof > DOF_FLOOR always (finite variance) — see module docstring.
@@ -515,3 +568,35 @@ class STGAT(nn.Module):
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def freeze_trunk(self, freeze: bool = True):
+        """Freeze (or unfreeze) every shared trunk module (_TRUNK_MODULES),
+        leaving each head's own MLP + horizon embedding trainable (added
+        2026-08-20 -- see docs/research_notes/, the 2026-08-19/20
+        checkpoint-selection-divergence investigation).
+
+        Motivation: a data check on a completed Phase-2 run found
+        position/velocity point accuracy improving monotonically the ENTIRE
+        run while validation total_nll got monotonically WORSE, in lockstep,
+        for all 6 heads simultaneously -- not the classic Wong-Toi-style
+        per-head variance collapse (VAR_REG_WEIGHT, which only fights scale
+        shrinking below the empirical residual, was confirmed inactive/flat
+        for most heads and 5x-ing it didn't change the trajectory). The
+        shared-lockstep-degradation shape instead points at the shared
+        trunk (graph/temporal encoder -> h_last) continuing to adapt under
+        Phase 2's optimizer, driven by whichever head's gradient is
+        largest (point-accuracy-adjacent signal, per this session's own
+        gradient-dominance finding for horizon_embed) -- improving the mean
+        at the expense of what the now-per-head scale/dof heads need from
+        that shared representation to generalize to held-out data. Freezing
+        the trunk for Phase 2 tests this directly: the only remaining
+        trainable parameters are each head's own small MLP (already fully
+        separate per feature, no shared weights) plus its own horizon
+        embedding (already split per-head, see model.py's earlier
+        2026-08-19 fix) -- so this is equivalent to fine-tuning each
+        feature's own scale/dof independently against a FIXED shared
+        representation, with zero remaining cross-feature parameter
+        contention."""
+        for name in self._TRUNK_MODULES:
+            for p in getattr(self, name).parameters():
+                p.requires_grad = not freeze

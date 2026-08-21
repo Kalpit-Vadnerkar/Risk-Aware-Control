@@ -147,6 +147,34 @@ LOG_TASK_VAR_CLAMP = 2.3
 # note's "not something safe to guess once and move on from."
 VAR_REG_WEIGHT = 0.1
 
+# Dof-collapse regularizer (added 2026-08-20 -- see model.py's
+# STGAT.freeze_trunk docstring and the trunk-freeze retrain's dof logging
+# that motivated this). VAR_REG_WEIGHT only fights SCALE underdispersion;
+# a live run with dof logging found dof itself collapsing toward DOF_FLOOR
+# in the SAME early epochs where validation NLL degrades most, for
+# position/velocity/steering/acceleration specifically (4.6->2.3, 5.2->4.4,
+# 3.8->2.9, 2.8->2.5 by epoch 10) -- a genuine, previously-unmeasured
+# Wong-Toi-family collapse mechanism VAR_REG_WEIGHT has zero reach into.
+# Asymmetric (relu against a fixed floor), same shape as VAR_REG_WEIGHT's
+# scale regularizer, module-level for the same sweep-friendly reason.
+#
+# Deliberately NOT applied to traffic_light_color/traffic_light_confidence
+# (see DOF_REG_KEYS) -- those two sat pinned AT DOF_FLOOR from the first
+# finetune epoch onward rather than collapsing OVER epochs, consistent with
+# docs/research_notes/calibration_training_literature_2026-08-07.md §1's
+# finding that they're near-categorical (traffic_light_color is ~4 discrete
+# values, 80% of residuals in one histogram bin) -- a continuous Student-t
+# correctly wants maximal tail weight to approximate that point-mass-plus-
+# jump shape, so forcing their dof up would fight the actual data rather
+# than fix a training pathology (this is the same distribution-family
+# mismatch that made the Student-t redesign make these two heads WORSE, not
+# better, in the 2026-08-06 retrain -- see trust_and_signal_behavior note
+# §3's before/after table). That's a separate, already-scoped-out problem
+# (mixture density / hurdle-network territory), not this regularizer's job.
+DOF_REG_WEIGHT = 0.05
+DOF_REG_TARGET = 5.0
+DOF_REG_KEYS = ('position', 'velocity', 'steering', 'acceleration')
+
 
 def _student_t_nll(target: torch.Tensor, mean: torch.Tensor, scale: torch.Tensor,
                     dof: torch.Tensor) -> torch.Tensor:
@@ -200,21 +228,41 @@ class CombinedLoss(nn.Module):
     Scale/dof must already have SCALE_FLOOR/DOF_FLOOR applied (as in model.py).
 
     Two entry points (2026-08-07, see module docstring): mean_only_forward()
-    for Phase 1 (mean-only warmup), forward() for Phase 2 (full NLL +
-    learned Kendall-et-al. task weighting) -- trainer.py's two-phase loop
-    calls each in turn, not this module deciding which phase it's in.
+    for Phase 1 (mean-only warmup), forward() for Phase 2 (full NLL,
+    optionally + learned Kendall-et-al. task weighting) -- trainer.py's
+    two-phase loop calls each in turn, not this module deciding which phase
+    it's in.
+
+    use_task_weighting (2026-08-19): defaults to True (unchanged behavior),
+    but can be set False to use the fixed DEFAULT_WEIGHTS constants instead
+    of the learned Kendall et al. weighting -- see this module's docstring
+    point 2's "Runaway found live" note. That mechanism has caused one
+    documented divergence (unclamped weights ran away 1->10 in 20 epochs
+    while validation NLL got monotonically worse; clamping capped the
+    weights but not the underlying divergence) and, as of 2026-08-19, has
+    never been validated end-to-end to actually improve calibration -- the
+    var-reg sweep meant to fix the divergence never produced a completed,
+    better checkpoint (see the 2026-08-19 horizon-embedding-fix memory).
+    Disabling it isolates that one still-unproven, already-once-harmful
+    mechanism out of a retrain that's specifically testing a DIFFERENT,
+    better-evidenced fix (per-head horizon embeddings in model.py).
     """
 
-    def __init__(self, weights: dict = None, task_keys=_TASK_KEYS):
+    def __init__(self, weights: dict = None, task_keys=_TASK_KEYS, use_task_weighting: bool = True):
         super().__init__()
         self.weights = weights if weights is not None else DEFAULT_WEIGHTS
+        self.use_task_weighting = use_task_weighting
         # Kendall et al. 2018 learned per-task uncertainty (see module
         # docstring point 2) -- starts at log_var=0 (weight exp(0)=1.0,
         # neutral) for every task, replacing DEFAULT_WEIGHTS' fixed
-        # constants once Phase 2 is active. `weights`/DEFAULT_WEIGHTS above
-        # are kept only as Phase 1's implicit equal-ish starting point (Phase
-        # 1 doesn't use either -- see mean_only_forward) and as a documented
-        # historical reference for what was hand-picked before this fix.
+        # constants once Phase 2 is active (only when use_task_weighting is
+        # True -- see forward() below). `weights`/DEFAULT_WEIGHTS above
+        # are kept as Phase 1's implicit equal-ish starting point (Phase
+        # 1 doesn't use either -- see mean_only_forward) and as the fixed
+        # alternative when use_task_weighting is False. Parameters still
+        # created either way (kept simple, harmless -- they just never
+        # receive gradient when unused, so AdamW leaves them at their
+        # neutral init).
         self.log_task_var = nn.ParameterDict({
             k: nn.Parameter(torch.zeros(1)) for k in task_keys
         })
@@ -236,9 +284,12 @@ class CombinedLoss(nn.Module):
         return self.log_task_var[key].clamp(-LOG_TASK_VAR_CLAMP, LOG_TASK_VAR_CLAMP)
 
     def task_weights(self) -> dict:
-        """Current learned precision (exp(-clamped log_task_var)) per task
-        -- for logging/diagnostics, so the actual learned weighting is
-        visible, not just assumed to be doing something reasonable."""
+        """Current effective per-task weight -- learned precision
+        (exp(-clamped log_task_var)) when use_task_weighting, else the
+        fixed self.weights constants -- for logging/diagnostics, so
+        whichever scheme is active is visible, not just assumed."""
+        if not self.use_task_weighting:
+            return {k: self.weights.get(k, 1.0) for k in self.log_task_var}
         return {k: float(torch.exp(-self._clamped_log_var(k)).item()) for k in self.log_task_var}
 
     def mean_only_forward(self, pred: dict, target: dict):
@@ -327,6 +378,53 @@ class CombinedLoss(nn.Module):
             var_reg = underdispersion.pow(2).mean()
             losses[f'{key}_var_reg'] = var_reg.item()
 
+            # Diagnostic-only logging (no gradient), expanded 2026-08-20 per
+            # Kalpit's request to preemptively track everything informative
+            # about this task rather than adding one metric per hypothesis
+            # after the fact. Every value here is monitoring only.
+            with torch.no_grad():
+                # dof: is the Wong-Toi-family collapse happening via dof
+                # (see DOF_REG_WEIGHT's docstring)?
+                losses[f'{key}_dof_mean'] = dof.mean().item()
+                losses[f'{key}_dof_min']  = dof.min().item()
+                # scale vs. empirical_scale (this batch's own actual
+                # residual magnitude, already computed above for var_reg):
+                # is predicted scale actually TRACKING the residual as mean
+                # accuracy improves over epochs, or lagging behind it (a
+                # distinct failure mode from collapse -- var_reg is
+                # asymmetric and only ever fights scale being too NARROW,
+                # never too wide, so a growing scale/residual mismatch in
+                # the "too wide" direction would be invisible to every
+                # metric logged before this). Logged side by side so this
+                # is readable directly from the CSV without a separate
+                # script.
+                losses[f'{key}_scale_mean']    = scale.mean().item()
+                losses[f'{key}_empirical_scale_mean'] = empirical_scale.mean().item()
+                # Student-t implied std (scale^2 * dof/(dof-2), sqrt'd) --
+                # what plot_calibration_diagrams.py's horizon_widening.png
+                # actually plots as "predicted std", combining scale AND
+                # dof into the one number that determines coverage. Useful
+                # to see this move even if scale/dof individually look fine.
+                dof_b_diag = dof.unsqueeze(-1) if mean.dim() == 3 else dof
+                implied_std = (scale.pow(2) * dof_b_diag / (dof_b_diag - 2)).clamp(min=0).sqrt()
+                losses[f'{key}_implied_std_mean'] = implied_std.mean().item()
+
+            # Dof-collapse regularizer (see DOF_REG_WEIGHT's module-level
+            # docstring) -- only for DOF_REG_KEYS, i.e. NOT
+            # traffic_light_color/traffic_light_confidence, which
+            # legitimately want dof near DOF_FLOOR for their near-
+            # categorical data. Asymmetric (relu against a fixed target,
+            # not an empirical per-batch one like var_reg -- dof has no
+            # natural per-batch "should be" value the way scale does
+            # against empirical residual spread): zero penalty once dof
+            # already at or above DOF_REG_TARGET.
+            if key in DOF_REG_KEYS:
+                dof_underflow = F.relu(DOF_REG_TARGET - dof)
+                dof_reg = dof_underflow.pow(2).mean()
+                losses[f'{key}_dof_reg'] = dof_reg.item()
+            else:
+                dof_reg = torch.tensor(0.0, device=total.device)
+
             nll = _student_t_nll(target_k, mean, scale, dof_b)
             # beta-NLL (Seitzer et al. 2022, see module docstring): weight each
             # sample by its own predicted scale (stop-gradient — the weight
@@ -342,15 +440,22 @@ class CombinedLoss(nn.Module):
             nll = nll.sum(dim=tuple(range(1, nll.dim()))).mean()
 
             # Kendall et al. 2018 learned task weighting (2026-08-07, see
-            # module docstring point 2) replaces the old fixed
-            # self.weights.get(key, 1.0) constant. precision = exp(-log_var)
-            # scales this task's gradient contribution; the +log_var term is
-            # what stops the trivial "inflate log_var to zero out this
-            # task" collapse -- both ARE differentiated through (unlike
-            # beta_weight above, which is a detached heuristic).
-            log_var   = self._clamped_log_var(key)
-            precision = torch.exp(-log_var)
-            weighted  = precision * nll + log_var.squeeze()
+            # module docstring point 2), when use_task_weighting -- replaces
+            # the fixed self.weights.get(key, 1.0) constant. precision =
+            # exp(-log_var) scales this task's gradient contribution; the
+            # +log_var term is what stops the trivial "inflate log_var to
+            # zero out this task" collapse -- both ARE differentiated
+            # through (unlike beta_weight above, which is a detached
+            # heuristic). When use_task_weighting is False (2026-08-19, see
+            # class docstring), falls back to the fixed constant directly --
+            # no log_var term, since there's no learned parameter to
+            # regularize against collapsing.
+            if self.use_task_weighting:
+                log_var   = self._clamped_log_var(key)
+                precision = torch.exp(-log_var)
+                weighted  = precision * nll + log_var.squeeze()
+            else:
+                weighted = self.weights.get(key, 1.0) * nll
             losses[f'{key}_loss'] = weighted.item()
             # var_reg added OUTSIDE the Kendall precision weighting,
             # deliberately -- it's a hard floor against collapse, not a
@@ -358,7 +463,7 @@ class CombinedLoss(nn.Module):
             # the same learned weight mechanism that was part of the
             # observed runaway (a task "buying down" its own precision
             # would otherwise also buy down its own collapse penalty).
-            total    = total    + weighted + VAR_REG_WEIGHT * var_reg
+            total    = total    + weighted + VAR_REG_WEIGHT * var_reg + DOF_REG_WEIGHT * dof_reg
             # nll_sum/total_nll stays the RAW (unweighted, no var_reg) sum
             # -- this is what Phase 2 checkpoint selection tracks (see
             # trainer.py), deliberately NOT the learned-weighted objective,
@@ -397,9 +502,12 @@ class CombinedLoss(nn.Module):
             if tgt.dim() == 3:
                 tgt = tgt.squeeze(-1)
             bce = F.binary_cross_entropy(pred['traffic_light_discrepancy'], tgt)
-            log_var   = self._clamped_log_var('traffic_light_discrepancy')
-            precision = torch.exp(-log_var)
-            weighted  = precision * bce + log_var.squeeze()
+            if self.use_task_weighting:
+                log_var   = self._clamped_log_var('traffic_light_discrepancy')
+                precision = torch.exp(-log_var)
+                weighted  = precision * bce + log_var.squeeze()
+            else:
+                weighted = self.weights.get('traffic_light_discrepancy', 1.0) * bce
             losses['traffic_light_discrepancy_loss'] = weighted.item()
             losses['traffic_light_discrepancy_bce_raw'] = bce.item()
             total = total + weighted
