@@ -135,7 +135,12 @@ version — both real, worth knowing about if this is ever touched again:
    (`VELOCITY_X_RANGE`/`VELOCITY_Y_RANGE` differ 30x) — split into
    `velocity_longitudinal`/`velocity_lateral`, each calibrated separately.
 
-**Final result**: pooled coverage 89.7-90.2% (target 90%) at **every**
+**Final result** (re-run 2026-08-21 against `h30_30_pointpred_v1` — the
+properly early-stopped production point predictor, epoch 28, replacing the
+`h30_30_dofreg_test` stand-in used earlier the same day; numbers held up,
+essentially unchanged: 89.5-90.7% pooled coverage — confirms the first
+result wasn't specific to that stand-in checkpoint): pooled coverage
+89.7-90.2% (target 90%) at **every**
 horizon step for **all 7 series** (position, velocity split into 2 axes,
 steering, acceleration, both traffic-light heads) — tighter and far more
 trustworthy than the original leaky number. `conformal_vs_actual.png` shows
@@ -222,22 +227,28 @@ of whether the model generalizes differently on out-of-distribution
 (fault) data, i.e. calibration robustness under the shift conformal
 calibration doesn't itself address.
 
-**Method**: 2 independently-trained (different seed/data order, no
+**Method**: independently-trained (different seed/data order, no
 NLL/scale/dof anywhere) point predictors (`st_gat/train.py --warmup-only`),
 cross-member std of their mean predictions per feature per horizon step,
 compared against actual RMSE the same way as every other horizon-widening
 plot in this note. `experiments/scripts/epistemic_disagreement_check.py`,
-`experiments/analysis/epistemic_disagreement/`.
+`experiments/analysis/epistemic_disagreement/`. Run first at M=2
+(2026-08-20), then confirmed at M=3 (2026-08-21, adding
+`h30_30_pointpred_v1` once it finished its own early-stopped training) —
+same qualitative pattern both times, numbers below are the M=3 version.
 
 **Result: real for 2 of 7 series, flat for the other 5.** `position`
-epistemic std grows 6.1x from t=0 to t=3s (actual RMSE grows 9.75x — real,
+epistemic std grows 5.5x from t=0 to t=3s (actual RMSE grows 9.6x — real,
 same-direction growth, just under-scaled in absolute terms).
-`acceleration` grows 1.52x (actual 2.33x) — partial signal. But
-`velocity_longitudinal` (epistemic 1.13x vs. actual 2.2x),
-`velocity_lateral`, `steering`, `traffic_light_color`, and
-`traffic_light_confidence` all show essentially FLAT cross-member
-disagreement despite real (if more modest) actual error growth for most of
-them. See `epistemic_vs_actual.png`.
+`acceleration` grows 1.39x (actual 2.32x) — partial signal. But
+`velocity_longitudinal` (epistemic 1.19x vs. actual 2.27x),
+`velocity_lateral` (1.08x vs. 1.36x), `steering` (0.98x vs. 1.31x),
+`traffic_light_color` (1.14x vs. 1.30x), and `traffic_light_confidence`
+(1.08x vs. 1.16x) all show essentially FLAT cross-member disagreement
+despite real (if more modest, for the TL heads) actual error growth. See
+`epistemic_vs_actual.png`. M=2 → M=3 changed the numbers only slightly
+(position 6.1x→5.5x, acceleration 1.52x→1.39x) and not the qualitative
+story at all — confirms this isn't 2-member sampling noise.
 
 **This is a genuinely interesting echo of the original problem, through a
 completely different mechanism.** The single-network NLL arc (§1-§2) found
@@ -255,13 +266,16 @@ cross-model disagreement) has an easy time picking it up for `position`
 specifically, and a genuinely harder time for features whose difficulty
 growth is a subtler, conditional property of the specific scenario.
 
-**Caveat**: only M=2 members — a small sample for a "spread" statistic
-(though averaged over ~11,684 windows, the reported MEAN epistemic std
-should be reasonably stable even if individual-sample estimates are noisy).
-The original ensemble design's M=5 would reduce that noise, but is unlikely
-to change the qualitative pattern found here (which features show real
-cross-model disagreement) — more members means a better-estimated
-magnitude, not a different mechanism.
+**Caveat, updated**: M=3 as of 2026-08-21 (was M=2) — confirmed the
+pattern isn't 2-member sampling noise (see above). The original ensemble
+design's M=5 would sharpen the magnitude estimate further but is very
+unlikely to change which features show real cross-model disagreement,
+given M=2→M=3 already barely moved the numbers. Minor purity caveat, not
+a validity one: `pointpred_v1` used early-stopping (28 epochs) while
+`m1`/`m2` used a fixed 25-epoch schedule (no early stop) — slightly
+different training protocols, though all three are independently-seeded
+plain mean-only training, so this doesn't undermine the "independent
+member" premise the disagreement metric relies on.
 
 **What this means for the dissertation claim**: conformal calibration (§4)
 is validated and solid for held-out *nominal* data. This result is a real,
