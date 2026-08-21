@@ -30,6 +30,7 @@ from torch.utils.data import DataLoader
 
 from st_gat.pipeline import config as cfg
 from st_gat.model import STGAT, TrajectoryDataset, Trainer
+from st_gat.model import loss as loss_module
 
 
 def build_model_config(args) -> dict:
@@ -50,6 +51,9 @@ def build_model_config(args) -> dict:
         'max_grad_norm': 1.0,
         'weight_decay':  1e-4,
         'device':        torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+        'freeze_trunk_phase2': args.freeze_trunk_phase2,
+        'resume_warmup_from': args.resume_warmup_from,
+        'warmup_only': args.warmup_only,
     })
     return base
 
@@ -67,7 +71,50 @@ def main():
     parser.add_argument('--workers', type=int,   default=4)
     parser.add_argument('--out',     type=str,   default=cfg.CHECKPOINT_DIR,
                         help="Checkpoint dir (default: horizon-tagged, e.g. st_gat/checkpoints/h30_30/)")
+    parser.add_argument('--no-task-weighting', action='store_true',
+                        help='Disable Kendall et al. learned per-task loss weighting in Phase 2, '
+                             'use fixed DEFAULT_WEIGHTS instead (2026-08-19 -- see loss.py CombinedLoss '
+                             'docstring: that mechanism has caused one documented divergence and has '
+                             'never been validated to help)')
+    parser.add_argument('--var-reg-weight', type=float, default=None,
+                        help='Override loss.py VAR_REG_WEIGHT (default: module constant, currently '
+                             '0.1, never swept -- see loss.py docstring point 3). Monkeypatched onto '
+                             'the loss module before training, per that module\'s own documented '
+                             'intent for a sweep script to do this.')
+    parser.add_argument('--freeze-trunk-phase2', action='store_true',
+                        help='Freeze the shared trunk (graph/temporal encoder -> h_last) for Phase 2, '
+                             'training only each head\'s own MLP + horizon embedding (2026-08-20 -- '
+                             'see model.py STGAT.freeze_trunk docstring: tests whether the trunk '
+                             'continuing to adapt under Phase 2, driven by whichever head\'s gradient '
+                             'is largest, is what degrades validation NLL for every head in lockstep)')
+    parser.add_argument('--dof-reg-weight', type=float, default=None,
+                        help='Override loss.py DOF_REG_WEIGHT (default: module constant, currently '
+                             '0.05). Only applies to DOF_REG_KEYS (position/velocity/steering/'
+                             'acceleration) -- deliberately not the TL heads, see loss.py docstring.')
+    parser.add_argument('--dof-reg-target', type=float, default=None,
+                        help='Override loss.py DOF_REG_TARGET (default: module constant, currently 5.0)')
+    parser.add_argument('--resume-warmup-from', type=str, default=None,
+                        help='Skip Phase 1 (mean-only warmup) entirely and load weights from this '
+                             'mean_warmup.pth instead (2026-08-20) -- valid across any Phase-2-only '
+                             'config change (VAR_REG_WEIGHT/DOF_REG_WEIGHT/--no-task-weighting/'
+                             '--freeze-trunk-phase2 all only affect Phase 2), saves ~90min/run. Only '
+                             'valid if model.py has not changed shape since that checkpoint was saved.')
+    parser.add_argument('--warmup-only', action='store_true',
+                        help='Stop after Phase 1 (mean-only warmup), no Phase 2 at all -- for training '
+                             'independent point-predictor-only members to check EPISTEMIC (cross-member '
+                             'disagreement) horizon-widening rather than aleatoric (self-reported '
+                             'scale/dof). 2026-08-20.')
     args = parser.parse_args()
+
+    if args.var_reg_weight is not None:
+        print(f"[train] Overriding VAR_REG_WEIGHT: {loss_module.VAR_REG_WEIGHT} -> {args.var_reg_weight}")
+        loss_module.VAR_REG_WEIGHT = args.var_reg_weight
+    if args.dof_reg_weight is not None:
+        print(f"[train] Overriding DOF_REG_WEIGHT: {loss_module.DOF_REG_WEIGHT} -> {args.dof_reg_weight}")
+        loss_module.DOF_REG_WEIGHT = args.dof_reg_weight
+    if args.dof_reg_target is not None:
+        print(f"[train] Overriding DOF_REG_TARGET: {loss_module.DOF_REG_TARGET} -> {args.dof_reg_target}")
+        loss_module.DOF_REG_TARGET = args.dof_reg_target
 
     model_cfg = build_model_config(args)
 
@@ -90,19 +137,36 @@ def main():
     model = STGAT(model_cfg)
 
     trainer = Trainer(
-        model          = model,
-        train_loader   = train_loader,
-        val_loader     = val_loader,
-        config         = model_cfg,
-        checkpoint_dir = args.out,
+        model            = model,
+        train_loader     = train_loader,
+        val_loader       = val_loader,
+        config           = model_cfg,
+        checkpoint_dir   = args.out,
+        criterion_kwargs = {'use_task_weighting': not args.no_task_weighting},
     )
 
     trained_model = trainer.train()
 
-    final_path = model_cfg['model_path']
-    os.makedirs(os.path.dirname(final_path), exist_ok=True)
-    torch.save(trained_model.state_dict(), final_path)
-    print(f"[train] Final model saved to {final_path}")
+    # Only copy to the shared model_path (st_gat/models/<horizon>/st_gat_rise.pth
+    # -- what analysis scripts default to loading) when --out is the default
+    # checkpoint dir, i.e. this run is meant to BE the official model. Fixed
+    # 2026-08-20: every one-off experimental run (--out pointing at a named
+    # test dir) was unconditionally overwriting this shared path regardless,
+    # silently clobbering it for anything relying on the default --model
+    # argument in check_calibration.py/plot_calibration_diagrams.py/etc.
+    # Found live: st_gat_rise.pth ended up holding an unfinished experimental
+    # checkpoint after several such runs; restored via `git checkout` since
+    # it's tracked. Experimental runs' real output is args.out's checkpoint
+    # dir -- that's what --model should point at explicitly.
+    if args.out == cfg.CHECKPOINT_DIR:
+        final_path = model_cfg['model_path']
+        os.makedirs(os.path.dirname(final_path), exist_ok=True)
+        torch.save(trained_model.state_dict(), final_path)
+        print(f"[train] Final model saved to {final_path}")
+    else:
+        print(f"[train] --out is not the default checkpoint dir -- skipping the "
+              f"shared model_path save (experimental run; use --model "
+              f"{os.path.join(args.out, 'best_model.pth')} explicitly for analysis scripts)")
 
 
 if __name__ == '__main__':

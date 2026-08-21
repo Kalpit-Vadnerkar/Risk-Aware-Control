@@ -88,6 +88,9 @@ class Trainer:
         # members (ensemble_loss.GaussianMemberLoss) -- both loss classes
         # expose the same mean_only_forward()/forward() two-phase interface,
         # so Trainer's loop needs no other change to support either.
+        criterion_kwargs: dict = None,    # added 2026-08-19 -- e.g.
+        # {'use_task_weighting': False} to disable Kendall et al. learned
+        # task weighting, see loss.py's CombinedLoss docstring.
     ):
         self.device         = config['device']
         self.model          = model.to(self.device)
@@ -102,7 +105,7 @@ class Trainer:
 
         os.makedirs(checkpoint_dir, exist_ok=True)
 
-        self.criterion = criterion_cls().to(self.device)
+        self.criterion = criterion_cls(**(criterion_kwargs or {})).to(self.device)
 
         # Phase 1 optimizer/scheduler/early-stop -- _start_phase() rebuilds
         # all three fresh when Phase 2 begins (see module docstring).
@@ -116,7 +119,10 @@ class Trainer:
         self.history = {'warmup': {'train': [], 'val': []}, 'finetune': {'train': [], 'val': []}}
 
     def _build_optimizer_and_schedule(self, lr: float):
-        params = list(self.model.parameters()) + list(self.criterion.parameters())
+        # requires_grad filter (2026-08-20) -- lets freeze_trunk_phase2
+        # (see train() below) actually exclude frozen trunk params from the
+        # optimizer, not just leave them with a permanently-None .grad.
+        params = [p for p in self.model.parameters() if p.requires_grad] + list(self.criterion.parameters())
         self.optimizer = torch.optim.AdamW(
             params, lr=lr, weight_decay=self.config.get('weight_decay', 1e-4),
         )
@@ -259,20 +265,70 @@ class Trainer:
         print(f"Train batches: {len(self.train_loader)}  |  Val batches: {len(self.val_loader)}")
 
         # ── Phase 1: mean-only warmup (fixed duration, no early stopping) ──
-        warmup_keys = ['position_raw', 'velocity_raw', 'steering_raw', 'acceleration_raw',
-                       'traffic_light_color_raw', 'traffic_light_confidence_raw',
-                       'traffic_light_discrepancy_loss']
-        self._run_phase(
-            phase_name='warmup', loss_fn=self.criterion.mean_only_forward,
-            num_epochs=self.warmup_epochs, selection_key='total_loss',
-            use_early_stopping=False, checkpoint_name='mean_warmup.pth',
-            breakdown_keys=warmup_keys,
-        )
+        # Skippable via config['resume_warmup_from'] (2026-08-20, per
+        # Kalpit's request -- Phase 1 is identical regardless of Phase 2's
+        # settings (VAR_REG_WEIGHT/DOF_REG_WEIGHT/use_task_weighting/
+        # freeze_trunk_phase2 -- mean_only_forward() touches none of them),
+        # so re-running it from scratch for every Phase-2-only experiment
+        # was pure waste (~94 min/run at this dataset size). Only valid
+        # across runs that share the same model architecture -- if model.py
+        # changes shape, a stale mean_warmup.pth will fail to load and
+        # should be regenerated, not silently ignored.
+        resume_from = self.config.get('resume_warmup_from')
+        warmup_only = self.config.get('warmup_only', False)
+        if resume_from:
+            tqdm.write(f"\n[trainer] Skipping Phase 1 -- loading warmup weights from {resume_from}")
+            self.model.load_state_dict(torch.load(resume_from, map_location=self.device, weights_only=True))
+        else:
+            warmup_keys = ['position_raw', 'velocity_raw', 'steering_raw', 'acceleration_raw',
+                           'traffic_light_color_raw', 'traffic_light_confidence_raw',
+                           'traffic_light_discrepancy_loss']
+            # warmup_only (2026-08-20, per Kalpit): when there's no Phase 2
+            # to hand off to, the original "fixed duration, no early
+            # stopping" design (see this method's original docstring
+            # comment -- "we WANT this phase to run to completion so
+            # scale/dof get a stable mean to condition on") no longer
+            # applies -- there's no scale/dof phase waiting on this one.
+            # Train this as a normal point predictor to actual convergence
+            # instead: early-stopped, up to the Phase-2 epoch ceiling
+            # (config['num_epochs']/'patience', already-built machinery),
+            # not the arbitrary fixed warmup_epochs=25 that was only ever
+            # meant as "warmed up enough to start Phase 2 from," not a
+            # convergence target in its own right.
+            self._run_phase(
+                phase_name='warmup', loss_fn=self.criterion.mean_only_forward,
+                num_epochs=(self.num_epochs if warmup_only else self.warmup_epochs),
+                selection_key='total_loss',
+                use_early_stopping=warmup_only, checkpoint_name='mean_warmup.pth',
+                breakdown_keys=warmup_keys,
+            )
+
+        # warmup_only (2026-08-20): stop here entirely, no Phase 2 at all --
+        # for training independent point-predictor-only "members" to check
+        # epistemic (cross-member disagreement) rather than aleatoric
+        # (self-reported scale/dof) horizon-widening behavior. See the
+        # independent architecture review this session (memory:
+        # project_calibration_attempt_log_2026-08-20) point 5 -- the
+        # previously-planned single-Gaussian-member aleatoric check mostly
+        # re-derives already-known information; cross-member mean
+        # disagreement is the actually-untested mechanism.
+        if self.config.get('warmup_only', False):
+            tqdm.write("\n[trainer] warmup_only: stopping after Phase 1, no Phase 2")
+            return self.model
 
         # ── Phase transition: fresh optimizer/scheduler/early-stop, so Phase
         # 2 gets its own real LR budget instead of inheriting Phase 1's decay
         # (Phase 1 optimizes a completely different loss scale) ────────────
         phase2_lr = self.config.get('phase2_lr', self.config['learning_rate'])
+        # freeze_trunk_phase2 (2026-08-20, see model.py's STGAT.freeze_trunk
+        # docstring): freeze the shared trunk BEFORE rebuilding the
+        # optimizer, so the requires_grad filter in
+        # _build_optimizer_and_schedule actually excludes it. hasattr, not
+        # a config-only check, so this no-ops harmlessly on any model that
+        # doesn't define freeze_trunk (e.g. if ever reused elsewhere).
+        if self.config.get('freeze_trunk_phase2', False) and hasattr(self.model, 'freeze_trunk'):
+            self.model.freeze_trunk(True)
+            tqdm.write("[trainer] Phase 2: shared trunk FROZEN — only per-head decoders train")
         tqdm.write(f"\n[trainer] Phase transition: resetting optimizer/scheduler/early-stop, phase2_lr={phase2_lr:.1e}")
         self._build_optimizer_and_schedule(phase2_lr)
 
