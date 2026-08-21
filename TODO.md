@@ -1,16 +1,62 @@
 # Risk-Aware Control — Task List
 
-**Last Updated:** 2026-08-06 — see the status block immediately below for
-what's actually current. The "Research Direction" section further down is
-last-revised 2026-07-24 and still describes the right underlying claim
-(belief divergence, calibrated confidence, lead time); it has NOT been
-rewritten to match the 2026-08-06 reframe's change in *emphasis* (continuous
-decision-support signal over binary detection) or its finding that the
-model's own calibration doesn't hold up yet — read the status block first.
+**Last Updated:** 2026-08-20 (open-world reframe — read
+`docs/research_notes/open_world_safety_reframe_2026-08-20.md` FIRST, it
+supersedes the "belief divergence" claim language used throughout this
+file). The calibration-pivot status block immediately below is still
+factually accurate and worth reading — it's the mechanics of Layer 1 in
+the new reframe's terms — but its own framing language (written a few
+hours earlier the same day) predates that reframe. The "Research Direction"
+section further down (last-revised 2026-07-24) and "Priority 0" are both
+**retired** by the reframe — kept verbatim further down as history, not
+deleted, not current.
 
 ---
 
-## Status block (2026-08-06 reframe — read this first)
+## Status block (2026-08-20 — calibration pivot, read this first)
+
+**Calibration is now working — via a different mechanism than originally
+planned.** The 2026-08-06 reframe's step (1) ("ground the belief-divergence
+mechanism's own credibility with calibration/trust plots") now holds up:
+pooled coverage 89.7-90.2% (target 90%) at every horizon step for all 7
+series (position, velocity split per-axis, steering, acceleration, both TL
+heads), via **leave-one-trial-out cross-conformal calibration wrapped
+around a plain point predictor** (`experiments/scripts/
+conformal_horizon_calibration.py`) — not via the jointly-trained Student-t/
+NLL heads that the 2026-08-06 through 2026-08-20 arc (summarized below,
+kept for history) tried and never fully converged. Real caveat: only 7
+nominal trials exist, and per-trial coverage varies much more than the
+pooled number (e.g. 77-95% for acceleration) — the aggregate claim is
+solid, a claim about one single new drive is not yet, without more nominal
+data. Full arc + pivot rationale:
+`docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md`
+— **read that before resuming any calibration work**, so effort isn't
+spent re-diagnosing an already-understood, already-paused problem.
+
+**What this changes, concretely:**
+- Step (1) of the explicit order below is now satisfied. Step (2) (SPRT
+  signal behavior — still not quiet under nominal driving, see below) is
+  the next open item, followed by (3) Autoware planning/control interfaces.
+- The primary calibration artifact to trust going forward is
+  `conformal_horizon_calibration.py`'s output
+  (`experiments/analysis/conformal_horizon_calibration/`), not
+  `plot_calibration_diagrams.py`'s `horizon_widening.png` (still real,
+  still useful if the NLL arc is ever resumed, just not the current
+  headline result).
+- Two real architecture bugs found during the NLL arc are KEPT regardless
+  of the pivot (not reverted): per-head horizon-step embeddings
+  (`model.py`, fixes a genuine gradient-contention bug) and the dof-collapse
+  regularizer (`loss.py`'s `DOF_REG_WEIGHT`).
+- **Open, not yet answered**: does conformal calibration (validated on
+  held-out *nominal* data, under an exchangeability assumption) hold up
+  under actual fault/distribution-shift conditions? An epistemic-
+  disagreement test (independently-trained point-predictor members, does
+  their disagreement widen over the horizon) is the current parallel
+  thread investigating model robustness under shift — see the research
+  note's closing section.
+
+**Old status (2026-08-06 through 2026-08-19, kept for history — the arc the
+note above supersedes):**
 
 **Direction reframe.** Stop optimizing toward "detect and classify a
 specific fault type" — collapsing a fault into a named category only
@@ -71,26 +117,37 @@ acceleration/TL heads specifically — training stops the moment
 position/velocity point-accuracy plateaus, with no signal rewarding
 correct scale/dof convergence for the other heads before that happens.
 
-**Current blocking priority: make the training/checkpoint-selection
-criterion calibration-aware, then retrain again.** This outranks
-resuming SPRT/detection work (Priority 0/1 below) and is well ahead of
-any Autoware planning/control integration research. The
-`traffic_light_discrepancy` branch's own SPRT-saturation root cause (base
-rate too high for a memoryless sequential accumulator) is a SEPARATE,
-still entirely unaddressed problem — deferred again per Kalpit, revisit
-only once calibration is actually validated.
+**(2026-08-20: the paragraph above — "make the training/checkpoint-selection
+criterion calibration-aware, then retrain again" — is superseded by the
+conformal pivot at the top of this status block. Calibration is no longer
+blocked on the NLL training criterion converging.)**
 
-Tooling for this: `experiments/scripts/plot_calibration_diagrams.py`
-(step 1, needs ROS+model; now PIT-based, not z-score — see the research
-note for why) and `experiments/scripts/plot_sprt_signal_behavior.py`
-(step 2, pure pandas over `st_gat/results/h30_30/traces/*.csv`, no ROS
-needed) — see CLAUDE.md's "Trusting the model itself" section.
+**Current priority: step (2)** — the `traffic_light_discrepancy` branch's
+SPRT-saturation root cause (base rate too high for a memoryless sequential
+accumulator to treat as rare evidence) is still a real, unaddressed
+problem, now that step (1) is satisfied via the conformal pivot. Revisit
+`experiments/scripts/plot_sprt_signal_behavior.py` (pure pandas over
+`st_gat/results/h30_30/traces/*.csv`, no ROS needed) with that in mind.
+
+Tooling: `experiments/scripts/conformal_horizon_calibration.py` (repo venv
+only, no ROS) is the primary calibration check now — see CLAUDE.md's
+"Trusting the model itself" section. `plot_calibration_diagrams.py`
+(needs ROS+model) is the older, paused NLL-head diagnostic, still real but
+not the first thing to run.
 
 ---
 
-## Research Direction (revised 2026-07-24 — supersedes the 2026-07-22 text below it)
+## Research Direction — RETIRED 2026-08-20, kept as history (was: revised 2026-07-24, supersedes the 2026-07-22 text below it)
 
-**The claim to defend:** This digital-twin framework detects when the autonomy
+**Superseded by `docs/research_notes/open_world_safety_reframe_2026-08-20.md`
+— the "belief divergence / negative evidence" claim below is retired, not
+current.** Some mechanics described in this section still apply unchanged
+under the new reframe (the two-arm fault-injection design just below this
+section; the scoping corollary excluding staged-avoidance/RISE work, itself
+now an open question again per the reframe's Layer 3 — see `CLAUDE.md`) —
+read the new note to know which parts of this section still hold.
+
+**The claim to defend (OLD, retired):** This digital-twin framework detects when the autonomy
 stack's perceptual belief has diverged from a map-grounded, independently derived
 expectation of the world; it reports that divergence with calibrated confidence, a
 bounded number of seconds of lead time before the divergence degrades vehicle
@@ -196,7 +253,26 @@ the claim itself; don't duplicate its text here.
 
 ---
 
-## Priority 0 — BLOCKING: Mechanism Experiments (added 2026-07-24)
+## Priority 0 — RETIRED 2026-08-20 (was: BLOCKING Mechanism Experiments, added 2026-07-24)
+
+**Retired by the open-world reframe — see
+`docs/research_notes/open_world_safety_reframe_2026-08-20.md` §1 for the
+full reasoning.** Both experiments below were closed-set fault
+classification (fixed bin set, requires fault data, says nothing about a
+novel failure mode) — exactly what the reframe moves away from. Kept
+verbatim below as history, not current work. Disposition:
+- **P0.1 dropped entirely.** No residual value under the new framing.
+- **P0.2 not reused as-is, but its underlying question survives**: whether
+  map-derived graph context is load-bearing for the model's behavior is now
+  a prerequisite for Layer 2 (consequence estimation) rather than a
+  fault-classification ablation — re-run only with a continuous,
+  scene-sensitivity metric, not the old classification-accuracy-delta one.
+  Not yet run either way.
+- Decoupled from `../Graph-Scene-Representation-and-Prediction/` as a
+  dependency for new work — stays cited reference material only.
+
+<details>
+<summary>Original text (2026-07-24, historical — do not treat as current)</summary>
 
 These two experiments either establish or kill the central mechanistic claim
 (negative-evidence detection via a map-grounded prior). Nothing downstream —
@@ -256,6 +332,8 @@ scoping question as P0.1 — original T-ITS pipeline vs. this repo's ST-GAT, whi
 is itself mid-retrain per the 2026-07-23 feature-vector change below); (2) a
 graph-node-feature strip-out of map-derived TL annotations, which doesn't exist
 yet in either codebase.
+
+</details>
 
 ---
 

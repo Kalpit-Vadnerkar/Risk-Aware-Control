@@ -6,7 +6,15 @@ Guidance for Claude Code (or any agent) working in this repo.
 
 Kalpit Vadnerkar's PhD dissertation project (Clemson ECE, advisor Pierluigi Pisu).
 
-**Direction reframe (2026-08-06 — READ THIS FIRST, supersedes the framing
+**Read `open_world_safety_reframe_2026-08-20.md` first — it supersedes the
+"belief divergence" claim language in this section and below, though the
+step/phase mechanics described here (calibration first, then the SPRT
+signal, then planning interfaces) still map onto that reframe's Layer 1/2/3
+structure: step (1) below = Layer 1 (now done, via conformal), step (2) =
+still open, step (3) ≈ Layer 3 (now an open scoping question, not a settled
+future-work exclusion).**
+
+**Direction reframe (2026-08-06 — supersedes the framing
 below where they conflict).** The project should NOT converge on "detect and
 classify a specific fault type" — collapsing a fault into a named category
 just licenses a pre-planned canned response for that category, which is
@@ -20,77 +28,99 @@ credibility with calibration/trust plots before anything else, (2) check
 that the SPRT/sequential-evidence signal (`p_fault_motion`/`p_fault_tl`/
 `p_fault_combined` in `st_gat/residuals.py`) behaves as an interpretable
 continuous trace, not "does it cross a threshold," and only then (3) look
-at Autoware planning/control interfaces. See
-`docs/research_notes/trust_and_signal_behavior_2026-08-06.md` and
-`docs/research_notes/calibration_training_literature_2026-08-07.md` for
-where this currently stands — **(1) and (2) do not hold up cleanly yet**.
-Two fix attempts so far, both same-day (2026-08-07): (a) two-phase training
-(mean-only warmup, then full Student-t NLL fine-tuning with Kendall-et-al.
-learned per-task weighting) — the checkpoint-selection criterion IS now
-calibration-aware (`total_nll`, not raw point error, per Phase 2), but this
-surfaced a deeper problem: Phase 2 diverges from epoch 1 (validation NLL
-gets monotonically worse, learned task weights run away) — a textbook
-overparameterized-heteroscedastic-regression failure (Wong-Toi et al., UAI
-2023), not a training-schedule bug. (b) A variance-collapse regularizer
-(`VAR_REG_WEIGHT` in `loss.py`, tied to each batch's own empirical residual
-scale) was re-added to address this directly — a regularization-strength
-sweep is the current in-progress work, not yet concluded. **Do not assume
-calibration is fixed until that sweep's result is checked** — treat this
-section as the live status, not the two-phase-training commit alone.
+at Autoware planning/control interfaces.
 
-**Core contribution (reframed 2026-07-24 — see TODO.md "Research Direction" and
-`docs/theoretical_framework.md` for the full argument):** the digital twin detects
-faults through **belief divergence under a map-grounded prior**, not generic
-residual anomaly detection. It maintains an independent expectation of what the
-perception layer should be reporting — from HD map (Lanelet2) categorical
-assertions, learned nominal temporal patterns, and vehicle dynamics context — and
-flags a fault when the autonomy stack's perceptual belief diverges from that
-expectation. The strong form is **negative-evidence detection**: the map licenses a
-hard categorical expectation ("a signalized intersection exists here"), and the
-fault signature is perception failing to report what must be there.
+**Calibration status (2026-08-20 — supersedes everything below in this
+section; read
+`docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md`
+for the full arc).** Step (1) above now HOLDS UP: after a multi-week arc
+trying to get the model's own jointly-trained Student-t heads
+(mean+scale+dof per feature via NLL) correctly calibrated — which surfaced
+real, fixable bugs (a shared-gradient-contention bug in the horizon-step
+embedding, fixed; a dof-collapse pathology, fixed; a scale/validation-
+residual-drift pathology, diagnosed but not yet fixed) but never converged
+end-to-end — the project **pivoted to conformal calibration** on top of a
+plain point predictor (`st_gat/train.py --warmup-only`, no variance/dof
+head involved in training at all). Validated same day via leave-one-trial-
+out cross-conformal (only 7 nominal trials exist — a naive fixed fit/test
+split was tried first and found unreliable, see the research note):
+pooled empirical coverage 89.7-90.2% (target 90%) at every horizon step for
+all 7 series (position, velocity split per-axis, steering, acceleration,
+both TL heads), correct widening for every one, including the two
+traffic-light heads the distributional approach never calibrated. Real
+caveat, not hidden: per-trial coverage swings much wider (e.g. 77-95% for
+acceleration across the 7 individual held-out trials) — the *aggregate*
+claim is well-supported, a claim about any single new drive is not, given
+only 7 trials exist. **This is now Layer 1 of the 2026-08-20 open-world
+reframe** (`open_world_safety_reframe_2026-08-20.md`) — detect the unknown,
+no fault data required. The
+Student-t/NLL machinery is not deleted (still real, working code) but is
+paused — see the research note's §5 for the concrete, well-evidenced next
+step if it's ever resumed, and don't re-diagnose the collapse pathology
+from scratch without reading it first.
 
-**Claim to defend:** this framework detects when the autonomy stack's perceptual
-belief has diverged from a map-grounded, independently derived expectation of the
-world; it reports that divergence with **calibrated confidence**, a bounded number
-of seconds of **lead time** before the divergence degrades vehicle safety. Three
-load-bearing pieces: belief divergence/negative evidence (mechanism — not yet
-proven, see Priority 0 in TODO.md), calibrated confidence (conformal prediction /
-UQ — a calibration curve, not an accuracy number), lead time (prediction-horizon
-study reframed as a safety result, measured against Autoware's own MRM trigger as
-ground truth). Detection ("fault: yes/no") is already banked from the published
-paper; the dissertation's job is *verification*.
+**Core contribution (reframed 2026-08-20 — see
+`docs/research_notes/open_world_safety_reframe_2026-08-20.md` for the full
+argument, supersedes the 2026-07-24 framing below where they conflict):**
+open-world safety verification, not closed-set fault classification. The
+question is not "which known fault is this" (requires fault data, a fixed
+bin set, says nothing about a failure mode outside that set) but "how far
+off-nominal am I right now, in what way, and what does that imply about
+whether I'm about to do something unsafe." Three-layer architecture:
+- **Layer 1 — detect the unknown**: a continuous, distribution-free anomaly
+  measure (ST-GAT residuals as conformal nonconformity scores), no fault
+  data required. **Already built** — this is the conformal-calibration
+  pivot (`nll_calibration_arc_and_conformal_pivot_2026-08-20.md`).
+- **Layer 2 — consequence estimation (THE thesis)**: map anomaly to actual
+  risk by rolling counterfactual futures forward through the digital twin
+  — the same residual, asking "so what" instead of "which bin." Not yet
+  built; the core remaining work.
+- **Layer 3 — graceful response**: continuous behavior modulation
+  proportional to quantified ignorance, not limp-mode/ODD binning. Scoping
+  vs. the descoped RISE work below is an open question, not yet resolved.
 
-Extends the published prior work — `Digital_Twins_as_Predictive_Models_for_Real-Time_Probabilistic_Risk_Assessment_of_Autonomous_Vehicles.pdf`
-in the project root (IEEE T-ITS vol. 27 no. 4, April 2026, 93.7% fault detection
-accuracy across Camera/IMU/LiDAR, Traffic Light Status Flag 29.7% feature
-importance, TL Status Flag × CUSUM 22% top feature-residual combination) — not by
-restating it but by explaining *why* those numbers came out that way (negative
-evidence needs a hard prior; traffic lights have one via the map, object
-detections don't) and building the calibration/lead-time evidence the paper
-doesn't have. Runs on Autoware + AWSIM in a simulated Nishishinjuku (Tokyo) map.
+**Claim to defend:** a principled translation from "my model is uncertain
+in this specific way, right now" to "therefore this specific driving
+behavior is unsafe, by this much" — reported with calibrated confidence (a
+reliability diagram, not just a coverage number) and **decomposition**
+(which subsystem/uncertainty-source it's attributable to, not just a
+magnitude), giving measurable lead time before a safety-margin violation,
+evaluated at matched false-alarm rates. The 2026-07-24 "belief divergence /
+negative evidence" framing and its Priority 0 mechanism experiments
+(per-fault-class importance recompute, HD map ablation) are retired — see
+the reframe note §1 for the disposition of each (one dropped outright, one
+folded into Layer 2 validation with a different, continuous metric).
+Decoupled from the published T-ITS paper's own reference repo as a
+dependency — it stays cited context, not something new work reproduces
+against.
+
+Runs on Autoware + AWSIM in a simulated Nishishinjuku (Tokyo) map.
 
 **Repo name is a legacy artifact.** This repo was originally scoped as an
 extension from passive detection to *active risk-aware control* ("RISE" —
 Residual-Informed Safety Envelopes; relaxing a velocity constraint under
-uncertainty so the AV makes progress instead of stopping). **That control work is
-not the core dissertation contribution as of this reframe.** Scenario-based
-avoidance demonstrations (staged obstacles, cut-ins — the `obs_*` campaigns below)
-are a contribution to control/handling, not to safety verification, and are
-deliberately scoped out of the claim being defended (see TODO.md's "Scoping
-corollary"). RISE content stays in `docs/` as clearly-marked future-work, not
-deleted — don't treat it as the thing under defense.
+uncertainty so the AV makes progress instead of stopping). Under the
+2026-08-06 reframe that control work was explicitly out of scope, future-
+work-only. **As of the 2026-08-20 reframe's Layer 3 ("graceful response"),
+this is an open scoping question again, not a settled exclusion** — see
+`open_world_safety_reframe_2026-08-20.md` §4. Don't assume RISE content is
+still purely illustrative without checking whether Layer 3 has been scoped
+one way or the other since this was written.
 
 **Don't duplicate context that's already written down and moves fast:**
-- `TODO.md` — current research direction, phase status, what's next, and the two
-  **blocking** experiments (per-fault-class importance recompute; HD map detection
-  ablation) that either establish or kill the mechanistic claim. **Read this
-  fresh every session** — direction changes are common.
+- `TODO.md` — current research direction, phase status, what's next. **Read
+  this fresh every session** — direction changes are common. Priority 0's
+  old "blocking" mechanism experiments (per-fault-class importance,
+  HD-map-ablation-as-classification-metric) are retired as of 2026-08-20 —
+  see the reframe note for the one piece that was kept, reframed.
 - `README.md` — environment setup, the Autoware source patches that must be reapplied
   after any Autoware reinstall/rebuild, data collection campaign commands.
-- `docs/theoretical_framework.md` — the belief-divergence mechanism, the claim,
-  and the two-arm fault-injection design (Arm A: Autoware safety disabled, the
-  science condition; Arm B: Autoware safety enabled, the ground-truth oracle for
-  lead-time measurement).
+- `docs/theoretical_framework.md` — the belief-divergence mechanism and the
+  two-arm fault-injection design (Arm A: Autoware safety disabled, the
+  science condition; Arm B: Autoware safety enabled, the ground-truth oracle
+  for lead-time measurement) — the two-arm design still applies under the
+  2026-08-20 reframe; the belief-divergence *claim* language there is
+  superseded, not the fault-injection mechanics.
 - `docs/research_notes/` — dated findings docs (MRM analysis, EKF fixes, fault
   literature review, etc.) — check these for the *why* behind non-obvious decisions
   before re-deriving them. These predate the 2026-07-24 reframe and are kept as
@@ -258,10 +288,29 @@ reflects Autoware's own MRM state machine, not whether the vehicle actually move
 
 ## Trusting the model itself (before trusting any detection/SPRT result)
 
-Added 2026-08-06, per the reframe above. Before treating any residual/SPRT
-number as meaningful, run these two (see
-`docs/research_notes/trust_and_signal_behavior_2026-08-06.md` for the full
-findings, which currently say don't trust it yet):
+Added 2026-08-06, per the reframe above. **Primary calibration check as of
+2026-08-20 (Layer 1 of the open-world reframe)**:
+`experiments/scripts/conformal_horizon_calibration.py` (repo venv only, no
+ROS needed — reads precomputed `.pkl` sequences, not live bags) —
+leave-one-trial-out cross-conformal per feature-series per horizon step
+(NOT a fixed split — `CAL_DIR` only has 7 trials, a naive fixed split gave
+an unreliable estimate, see the research note), wrapped around a plain
+point predictor's residuals (no distributional head). Reports pooled +
+per-fold-spread coverage plus `conformal_vs_actual.png`. See
+`docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md`
+for why this replaced the Student-t/NLL approach, and
+`open_world_safety_reframe_2026-08-20.md` for how it fits the current claim.
+
+Companion check, same day: `experiments/scripts/epistemic_disagreement_check.py`
+— does disagreement between independently-trained point predictors widen
+with horizon (a robustness-under-shift proxy the conformal check alone
+doesn't cover, since that's validated on nominal data only). Mixed result:
+real for `position`/`acceleration`, flat for the other 5 series — see the
+pivot note's §6.
+
+The two scripts below are the now-paused NLL/Student-t-head diagnostics —
+still real, working tools (useful if that arc is ever resumed per the
+research note's §5), just not the first thing to run anymore:
 - `experiments/scripts/plot_calibration_diagrams.py` (needs ROS+model) —
   coverage curves, PIT histograms, PIT-uniformity (Kolmogorov-Smirnov)
   stats, horizon-widening, TL-discrepancy reliability diagram, on the held-
