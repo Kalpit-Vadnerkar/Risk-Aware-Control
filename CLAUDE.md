@@ -288,15 +288,25 @@ reflects Autoware's own MRM state machine, not whether the vehicle actually move
 
 ## Trusting the model itself (before trusting any detection/SPRT result)
 
-Added 2026-08-06, per the reframe above. **Primary calibration check as of
-2026-08-20 (Layer 1 of the open-world reframe)**:
-`experiments/scripts/conformal_horizon_calibration.py` (repo venv only, no
-ROS needed — reads precomputed `.pkl` sequences, not live bags) —
+Added 2026-08-06, per the reframe above. **Run
+`./experiments/scripts/run_calibration_pipeline.sh` for the full Layer-1
+result set in one command** (repo venv only, no ROS needed — reads
+precomputed `.pkl` sequences, not live bags) — chains the two scripts
+below and lists the independently-trained epistemic members in one place
+to edit as more get trained. Scales automatically as `CAL_DIR` grows (LOO-
+CV folds on however many trial files exist, not a hardcoded count).
+
+**Primary calibration check as of 2026-08-20 (Layer 1 of the open-world
+reframe)**: `experiments/scripts/conformal_horizon_calibration.py` —
 leave-one-trial-out cross-conformal per feature-series per horizon step
 (NOT a fixed split — `CAL_DIR` only has 7 trials, a naive fixed split gave
 an unreliable estimate, see the research note), wrapped around a plain
 point predictor's residuals (no distributional head). Reports pooled +
-per-fold-spread coverage plus `conformal_vs_actual.png`. See
+per-fold-spread coverage, `conformal_vs_actual.png` (interval width vs.
+actual RMSE), and `reliability_diagram.png` (nominal vs. empirical
+coverage swept across 50%-98%, pooled across horizon — the headline
+calibration plot; current result: max gap 0.004-0.011 across every series
+and every coverage level). See
 `docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md`
 for why this replaced the Student-t/NLL approach, and
 `open_world_safety_reframe_2026-08-20.md` for how it fits the current claim.

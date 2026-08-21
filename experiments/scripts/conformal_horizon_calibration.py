@@ -118,7 +118,6 @@ _SERIES = [
     ('traffic_light_confidence', 'traffic_light_confidence',  'scalar'),
 ]
 
-_SPLIT_SEED = 20260820  # fixed, so fit/test halves are reproducible run to run
 
 
 def conformal_quantile(residuals: np.ndarray, alpha: float) -> float:
@@ -248,11 +247,69 @@ def plot_comparison(fit_q, test_rmse, out_path, alpha):
     print(f'Saved {out_path}')
 
 
+_RELIABILITY_ALPHAS = np.linspace(0.02, 0.5, 15)   # nominal coverage 50%-98%
+
+
+def reliability_curve(all_resid, trial_id, n_trials, series_keys, T_out, alphas=_RELIABILITY_ALPHAS):
+    """The headline Layer-1 calibration plot: for a SWEEP of alpha (not just
+    the one target level), pooled LOO-CV coverage across every (sample,
+    horizon-step) pair -- does the calibrated interval mean what it claims
+    across the whole range, not just at one point? Perfect calibration is
+    the y=x diagonal (nominal 1-alpha vs. empirical coverage). Reuses the
+    residuals already collected for the main per-alpha run (no new model
+    inference) -- cheap: alphas x n_trials x T_out conformal_quantile
+    calls, each a numpy sort over a few thousand values."""
+    nominal = 1 - alphas
+    empirical = {k: [] for k in series_keys}
+    for alpha in alphas:
+        for key in series_keys:
+            resid = all_resid[key]
+            covered_all = []
+            for held_out in range(n_trials):
+                fit_mask  = trial_id != held_out
+                test_mask = trial_id == held_out
+                q = np.array([conformal_quantile(resid[fit_mask, t], alpha) for t in range(T_out)])
+                covered_all.append((resid[test_mask] <= q[np.newaxis, :]).ravel())
+            empirical[key].append(np.concatenate(covered_all).mean())
+    return nominal, {k: np.array(v) for k, v in empirical.items()}
+
+
+def plot_reliability_curve(nominal, empirical, out_path):
+    keys = list(empirical.keys())
+    ncols = 3
+    nrows = -(-len(keys) // ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(14, 4.3 * nrows))
+    for ax, key in zip(axes.flat, keys):
+        ax.plot([0, 1], [0, 1], color='#999999', linestyle='--', linewidth=1, label='perfect calibration', zorder=1)
+        ax.plot(nominal, empirical[key], color='#9467bd', linewidth=2, marker='o', markersize=3, zorder=2)
+        ax.fill_between(nominal, nominal, empirical[key], color='#9467bd', alpha=0.12)
+        max_gap = float(np.max(np.abs(empirical[key] - nominal)))
+        ax.text(0.03, 0.93, f'max gap: {max_gap:.3f}', fontsize=7.5, transform=ax.transAxes,
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.7, linewidth=0))
+        ax.set_title(key, fontsize=10)
+        ax.set_xlabel('nominal coverage (1-alpha)', fontsize=8)
+        ax.set_ylabel('pooled LOO-CV empirical coverage', fontsize=8)
+        ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+        ax.set_aspect('equal')
+        ax.tick_params(labelsize=7)
+    for ax in axes.flat[len(keys):]:
+        ax.axis('off')
+    axes.flat[0].legend(loc='lower right', fontsize=7)
+    fig.suptitle('Layer 1 reliability diagram — nominal vs. empirical coverage '
+                 '(leave-one-trial-out cross-conformal, pooled across horizon)', fontsize=12)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+    print(f'Saved {out_path}')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--model', default=cfg.MODEL_CONFIG['model_path'])
     ap.add_argument('--batch', type=int, default=256)
     ap.add_argument('--alpha', type=float, default=0.1, help='miscoverage rate (default 0.1 -> 90% target coverage)')
+    ap.add_argument('--skip-reliability-curve', action='store_true',
+                     help='skip the alpha-sweep reliability diagram (adds ~a few extra seconds; on by default)')
     ap.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR)
     args = ap.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
@@ -339,6 +396,11 @@ def main():
     print(f'\nSaved {report_path}')
 
     plot_comparison(mean_q, pooled_rmse, os.path.join(args.output_dir, 'conformal_vs_actual.png'), args.alpha)
+
+    if not args.skip_reliability_curve:
+        print(f"\nComputing reliability diagram ({len(_RELIABILITY_ALPHAS)} alpha levels)...")
+        nominal, empirical = reliability_curve(all_resid, trial_id, n_trials, series_keys, T_out)
+        plot_reliability_curve(nominal, empirical, os.path.join(args.output_dir, 'reliability_diagram.png'))
 
 
 if __name__ == '__main__':
