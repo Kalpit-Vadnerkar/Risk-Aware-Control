@@ -144,6 +144,18 @@ def main():
     train_ds = TrajectoryDataset(cfg.TRAIN_DIR)
     val_ds   = TrajectoryDataset(cfg.CAL_DIR)
 
+    # Deliberately NOT using persistent_workers (tried 2026-08-24, reverted):
+    # caused two separate systemd-oomd kills (12 workers: OOM by epoch 2; 8
+    # workers + explicit MemoryMax cap: OOM by epoch 5) despite thread-count
+    # capping. Root cause: CPython's fork-based worker processes lose
+    # copy-on-write sharing gradually as refcounts on touched objects get
+    # bumped (a well-known fork+refcounting gotcha) -- persistent_workers
+    # lets that accumulate WITHIN each worker across every epoch it stays
+    # alive, instead of resetting via a fresh fork every epoch (the default,
+    # non-persistent behavior every previously-working run -- e.g.
+    # h30_30_pointpred_v1's mean_warmup.pth -- always used). The modest
+    # per-epoch respawn overhead this brings back is a much better trade
+    # than periodic OOM kills.
     if args.zone_weighted_sampling:
         print(f"[train] Computing zone-weighted sample weights "
               f"(turn_boost={args.turn_boost}, tl_boost={args.tl_boost}, turn_cap_deg={args.turn_cap_deg})...")
@@ -155,18 +167,15 @@ def main():
         train_loader = DataLoader(
             train_ds, batch_size=args.batch, sampler=sampler,
             num_workers=args.workers, pin_memory=True, drop_last=True,
-            persistent_workers=(args.workers > 0),
         )
     else:
         train_loader = DataLoader(
             train_ds, batch_size=args.batch, shuffle=True,
             num_workers=args.workers, pin_memory=True, drop_last=True,
-            persistent_workers=(args.workers > 0),
         )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch, shuffle=False,
         num_workers=args.workers, pin_memory=True,
-        persistent_workers=(args.workers > 0),
     )
 
     model = STGAT(model_cfg)

@@ -22,6 +22,11 @@ st_gat/data/
 # Downloaded papers
 docs/papers/
 
+# Background job logs (systemd-run --user output redirects here for
+# multi-hour training/experiment jobs, see feedback_background_process_survival
+# memory) — operational output, not a data artifact worth tracking
+logs/
+
 # OS and editor files
 .DS_Store
 .vscode/
