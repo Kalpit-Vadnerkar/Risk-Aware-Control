@@ -370,6 +370,49 @@ only ~10% of windows, vs. weak/diluted graph-context signal reaching the
 position head at all — GraphEncoder's attention-pooling behavior on
 route-ahead nodes hasn't been directly inspected).
 
+**Scene-embedding-conditioned conformal quantile — first implementation
+and validation (2026-08-24)**, Kalpit's chosen fix for the above:
+`experiments/scripts/conformal_scene_conditioning.py`. `model.py`'s
+`STGAT.forward()` was refactored (non-breaking) to factor its trunk
+computation (steps 1-6, everything upstream of the per-head decoders) into
+a new `encode_scene(x, graph) -> h_last` method, so this script gets the
+model's own learned "what kind of situation is this" vector without
+duplicating trunk logic. Method: for each test window, find its k nearest
+neighbors by Euclidean distance in `h_last`-space among the FIT set only
+(same leave-one-trial-out discipline, no leakage), fit the conformal
+quantile on that neighborhood's residuals instead of the whole fit set.
+
+Confirms the exact mechanism Kalpit predicted, decisively, for steering:
+vanilla (global) per-step coverage pools to ~90% overall, but splits into
+94.2% on calm windows and only **59.0%** on real-turn windows — the pooled
+average hides a badly broken turn-specific guarantee. Scene-conditioning
+(k=150 neighbors) raises turn-window coverage to 90.1% (k=400: 79.0%,
+non-monotonic in k — see caveat below) while correctly widening the
+interval ~2x specifically for turn-like scenes (steering half-width
+0.024→0.046-0.057 on turns, i.e. it detects the harder scenario and
+reacts) and tightening it for the calm majority (0.024→0.015-0.016).
+Position, whose vanilla per-step coverage was already uniform across
+turn/calm (94.7%/90.1%, no gap to fix), got mildly WORSE under
+scene-conditioning (~85% both) — the fix is real and targeted, not a
+blanket improvement, and doesn't help where there was nothing to fix.
+
+Not yet a finished/production result — real caveats, don't overclaim: (1)
+coverage doesn't hit the 90% target cleanly and isn't monotonic in
+k-neighbors (k=150 outperformed k=400 for steering-on-turns in one
+comparison) — likely a mix of small-sample quantile noise and h_last not
+being a perfectly turn-specific similarity metric (it encodes the WHOLE
+scene, so neighbor sets also vary on other axes, visible as high width
+variance even among turn_deg≈0 windows in the scatter plot). (2) Only
+checked for `position` and `steering` series so far (the two most
+turn-relevant), not the full 7-series set. (3) A "whole-horizon joint
+coverage" metric (all 30 steps simultaneously in-band) was also computed
+alongside the validated per-step metric — reads much lower (~55-77%) by
+construction (a strictly harder bar) — the two are NOT the same number,
+keep them separate when discussing this result to avoid contradicting the
+already-published ~90% figure. Candidate next steps, not yet tried:
+normalize/whiten `h_last` before the distance metric, try cosine
+similarity, or adapt k per-window instead of a fixed constant.
+
 Companion check, same day: `experiments/scripts/epistemic_disagreement_check.py`
 — does disagreement between independently-trained point predictors widen
 with horizon (a robustness-under-shift proxy the conformal check alone

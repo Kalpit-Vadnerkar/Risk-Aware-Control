@@ -464,7 +464,16 @@ class STGAT(nn.Module):
                 n = p.size(0) // 4
                 p.data[n:2*n].fill_(1.0)
 
-    def forward(self, x: dict, graph: dict) -> dict:
+    def encode_scene(self, x: dict, graph: dict) -> torch.Tensor:
+        """Steps 1-6 of forward(): everything upstream of the per-head
+        decoders, producing h_last -- the single vector every head is
+        conditioned on. Factored out (2026-08-24) so callers that need the
+        model's own learned "what kind of situation is this" representation
+        (e.g. scene-embedding-conditioned conformal quantiles, see
+        experiments/scripts/conformal_scene_conditioning.py) can get it
+        without duplicating trunk logic that forward() also needs to stay
+        in sync with. forward() calls this directly -- there is exactly one
+        implementation of the trunk, not two copies that could drift."""
         node_features = graph['node_features']   # (B, N, node_fdim)
         adj_matrix    = graph['adj_matrix']      # (B, N, N)
         node_mask     = graph.get('node_mask')   # (B, N) or None (older cached data)
@@ -504,7 +513,11 @@ class STGAT(nn.Module):
 
         # ── 6. Recurrent encoding ────────────────────────────────────────────
         lstm_out, _ = self.lstm(seq)       # (B, T, d_h)
-        h_last = self.lstm_drop(lstm_out[:, -1])   # (B, d_h) — last hidden state
+        return self.lstm_drop(lstm_out[:, -1])   # (B, d_h) — last hidden state
+
+    def forward(self, x: dict, graph: dict) -> dict:
+        B = graph['node_features'].size(0)
+        h_last = self.encode_scene(x, graph)
 
         # ── 7. Output heads — per-horizon-step conditioned (2026-08-06) ──────
         T_o = self.T_out
