@@ -62,6 +62,11 @@ import plotting as plib  # noqa: E402
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'layer1_trust_examples')
 CONFORMAL_REPORT = os.path.join(REPO_DIR, 'experiments', 'analysis',
                                  'conformal_horizon_calibration', 'conformal_report.json')
+# Fixed canonical example windows, chosen by select_trust_example_windows.py
+# (2026-08-24) to cover distinct real scenario types (turn, TL color change,
+# hard braking, hard acceleration, calm baseline) rather than a random draw
+# that might land on unremarkable windows or, by luck, unusually hard ones.
+CANONICAL_WINDOWS = os.path.join(REPO_DIR, 'experiments', 'analysis', 'trust_example_windows.json')
 
 # (report_key, source_feature, mode) for the 6 non-position series --
 # mirrors conformal_horizon_calibration.py's _SERIES but this script needs
@@ -155,9 +160,15 @@ def plot_position_map(preds, future, seq, quantile_position, map_data, idx: int,
     T_out = pred_xy.shape[0]
     step_show = max(1, T_out // n_circles)
     for t in range(0, T_out, step_show):
-        r = quantile_position[t]
-        circ = Circle((pred_xy[t, 0], pred_xy[t, 1]), r, facecolor='#1f77b4', alpha=0.15,
-                       edgecolor='#1f77b4', linewidth=0.5, zorder=1)
+        # quantile_position is in NORMALIZED units (same space as position_mean
+        # before de-normalization above) -- must be scaled by the same
+        # POSITION_DISPLACEMENT_RANGE_M to become a real-metre radius, or the
+        # circle is ~100x too small to see against real map coordinates (bug
+        # found 2026-08-24: circles were invisible because this scaling was
+        # missing).
+        r = quantile_position[t] * cfg.POSITION_DISPLACEMENT_RANGE_M
+        circ = Circle((pred_xy[t, 0], pred_xy[t, 1]), r, facecolor='#1f77b4', alpha=0.25,
+                       edgecolor='#1f77b4', linewidth=1.0, zorder=3)
         ax.add_patch(circ)
     ax.plot([], [], marker='o', markersize=10, markerfacecolor='#1f77b4', alpha=0.3,
              markeredgecolor='#1f77b4', linestyle='none', label='calibrated position uncertainty (radius = conformal quantile)')
@@ -173,6 +184,9 @@ def plot_position_map(preds, future, seq, quantile_position, map_data, idx: int,
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--model', default=cfg.MODEL_CONFIG['model_path'])
+    ap.add_argument('--random', action='store_true',
+                     help='draw a random sample instead of the fixed canonical windows '
+                          '(experiments/analysis/trust_example_windows.json)')
     ap.add_argument('--n-examples', type=int, default=4)
     ap.add_argument('--seed', type=int, default=20260821)
     ap.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR)
@@ -190,17 +204,26 @@ def main():
     ds = TrajectoryDataset(cfg.CAL_DIR)
     map_data = plib.load_map(cfg.MAP_FILE)
 
-    rng = np.random.default_rng(args.seed)
-    idxs = rng.choice(len(ds), size=args.n_examples, replace=False)
+    if args.random or not os.path.exists(CANONICAL_WINDOWS):
+        rng = np.random.default_rng(args.seed)
+        idxs = [int(i) for i in rng.choice(len(ds), size=args.n_examples, replace=False)]
+        names = {i: f'window{i}' for i in idxs}
+    else:
+        with open(CANONICAL_WINDOWS) as f:
+            canonical = json.load(f)
+        idxs = list(canonical.values())
+        names = {v: f'{k}_window{v}' for k, v in canonical.items()}
+        print(f"Using fixed canonical example windows from {CANONICAL_WINDOWS}: {canonical}")
 
     for idx in idxs:
         idx = int(idx)
+        tag = names[idx]
         preds, future = _forward_one(model, device, ds, idx)
         seq = ds.sequences[idx]
         plot_scalar_bands(preds, future, quantiles, idx,
-                           os.path.join(args.output_dir, f'window{idx}_scalar_bands.png'))
+                           os.path.join(args.output_dir, f'{tag}_scalar_bands.png'))
         plot_position_map(preds, future, seq, quantiles['position'], map_data, idx,
-                           os.path.join(args.output_dir, f'window{idx}_position_map.png'))
+                           os.path.join(args.output_dir, f'{tag}_position_map.png'))
 
 
 if __name__ == '__main__':

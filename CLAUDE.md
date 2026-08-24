@@ -328,6 +328,47 @@ a map-view of predicted vs. actual trajectory with the calibrated position
 uncertainty drawn as discs along the path (`window*_position_map.png`).
 Reuses `experiments/lib/plotting.py`'s existing map/band-plotting
 primitives. Output: `experiments/analysis/layer1_trust_examples/`.
+**Fixed bug (2026-08-24)**: the uncertainty-disc radius was passed straight
+from `conformal_report.json`'s NORMALIZED quantile without multiplying by
+`POSITION_DISPLACEMENT_RANGE_M`, making circles ~100x too small to see
+against real map coordinates — now scaled correctly.
+Example windows are no longer random: `experiments/scripts/
+select_trust_example_windows.py` scores every calibration window (turn
+severity, TL color transition, braking, acceleration, calm baseline) and
+picks one fixed canonical example per category, saved to `experiments/
+analysis/trust_example_windows.json`, so the same 5 scenarios are reused
+every time the pipeline regenerates (pass `--random` to
+`plot_layer1_trust_examples.py` for the old random-sample behavior).
+
+**Turn-anticipation gap found (2026-08-24)** — real, quantified, NOT yet
+fixed: `experiments/scripts/diagnose_turn_learning.py` shows the position
+head captures real future turns only partially (predicted heading change
+~60% of actual magnitude on average), and the gap is much worse
+specifically when the turn hasn't started yet in the observed 3s history —
+predicted turn magnitude is only ~48% of actual for windows where the turn
+is genuinely upcoming (not yet visible in the past), vs. ~65% for windows
+where the ego is already mid-turn. r(actual future turn, predicted turn) =
+0.62 overall, but r(past turn already observed, predicted turn) = 0.53 is
+nearly as strong — meaning much of what looks like "turn prediction" is
+actually the model extrapolating a turn already underway (kinematic
+continuation), not genuinely anticipating one from route/map context via
+the graph encoder, despite `GraphBuilder` including route-ahead lanelets
+(`path_node=1`) within `GRAPH_RADIUS_M` (~150m, horizon-derived) of the
+window's start. Practical risk this raises for Layer 1's trustworthiness,
+flagged by Kalpit directly: if ordinary turns systematically produce
+larger residuals than calm driving, the pooled/global conformal quantile
+either (a) is wider than necessary during calm driving to stay valid
+during turns, or worse, (b) a real anomaly occurring near/during a turn
+gets partially masked because the "turn residual" and the "fault residual"
+are conflated into one undifferentiated magnitude — exactly the scenario
+the already-agreed-but-unbuilt scene-embedding conditioning of the
+conformal quantile (`open_world_safety_reframe_2026-08-20.md` §5) would
+directly address, by giving turn-like scenes their own quantile instead of
+sharing one global per-step width with calm ones. Root cause not yet
+isolated further (candidates: rare-event MSE-attenuation from turns being
+only ~10% of windows, vs. weak/diluted graph-context signal reaching the
+position head at all — GraphEncoder's attention-pooling behavior on
+route-ahead nodes hasn't been directly inspected).
 
 Companion check, same day: `experiments/scripts/epistemic_disagreement_check.py`
 — does disagreement between independently-trained point predictors widen
