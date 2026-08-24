@@ -41,53 +41,31 @@ import sys
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from scipy.spatial import cKDTree
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, REPO_DIR)
 sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
 
 from st_gat.pipeline import config as cfg  # noqa: E402
 from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 from conformal_horizon_calibration import _FEATURES, _extract_series  # noqa: E402
+import scenario_zones  # noqa: E402
 
-TURN_ZONES_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'turn_zones.json')
-TL_ZONES_FILE   = os.path.join(REPO_DIR, 'experiments', 'configs', 'tl_zones.json')
 CONFORMAL_REPORT = os.path.join(REPO_DIR, 'experiments', 'analysis',
                                  'conformal_horizon_calibration', 'conformal_report.json')
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'minority_scenario_audit')
 
-# category -> (radius_m, is_fault_targeted)
-_RADIUS_M = {
-    'turn_zones':          15.0,   # segment start; turn_zones also has end_x/end_y, checked separately
-    'bias_leadin_zones':   15.0,
-    'lane_change_zones':   15.0,
-    'curved_road_zones':   15.0,
-    'tl_zones':            20.0,   # matches fault_injector.py's established 20-30m stable TL-zone range
-}
+# Zone geometry (loading, pooling, radii) now lives in experiments/lib/
+# scenario_zones.py -- shared with st_gat/train.py's --zone-weighted-sampling
+# (2026-08-24) so the audit and the fix it motivated use the exact same
+# definition of "near a turn/intersection zone."
+_RADIUS_M = scenario_zones.RADIUS_M
 _FAULT_TARGETED = {
     'turn_zones': True, 'bias_leadin_zones': True, 'lane_change_zones': False,
     'curved_road_zones': False, 'tl_zones': True,
 }
-
-
-def _pooled_zone_points(turn_zones_data, category):
-    pts = []
-    for g in turn_zones_data['goals'].values():
-        for z in g[category]:
-            pts.append((z['x'], z['y']))
-            if 'end_x' in z:   # turn_zones segments: include the end point too
-                pts.append((z['end_x'], z['end_y']))
-    return np.array(pts) if pts else np.zeros((0, 2))
-
-
-def _pooled_tl_points(tl_zones_data):
-    pts = []
-    for g in tl_zones_data['goals'].values():
-        for z in g['tl_zones']:
-            pts.append((z['x'], z['y']))
-    return np.array(pts) if pts else np.zeros((0, 2))
 
 
 def _load_model(model_path):
@@ -108,20 +86,11 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    with open(TURN_ZONES_FILE) as f:
-        turn_zones_data = json.load(f)
-    with open(TL_ZONES_FILE) as f:
-        tl_zones_data = json.load(f)
     with open(CONFORMAL_REPORT) as f:
         report = json.load(f)
     quantiles = {row['feature']: np.array(row['mean_fold_quantile_by_step']) for row in report['features']}
 
-    trees = {}
-    for cat in ['turn_zones', 'bias_leadin_zones', 'lane_change_zones', 'curved_road_zones']:
-        pts = _pooled_zone_points(turn_zones_data, cat)
-        trees[cat] = (cKDTree(pts) if len(pts) else None, len(pts))
-    tl_pts = _pooled_tl_points(tl_zones_data)
-    trees['tl_zones'] = (cKDTree(tl_pts) if len(tl_pts) else None, len(tl_pts))
+    trees = scenario_zones.load_zone_trees()
     for cat, (_, npts) in trees.items():
         print(f"  {cat}: {npts} pooled zone points (radius {_RADIUS_M[cat]}m)")
 
@@ -152,21 +121,8 @@ def main():
     # this mirrors the actual live gating condition rather than an
     # after-the-fact reconstruction from the future trajectory.
     print("Computing per-window real-world position...")
-    xy = np.zeros((n, 2))
-    for idx in range(n):
-        seq = ds.sequences[idx]
-        ref_x, ref_y = seq['position_ref']
-        last_past = seq['past'][-1]['position']
-        xy[idx, 0] = ref_x + last_past[0] * cfg.POSITION_DISPLACEMENT_RANGE_M
-        xy[idx, 1] = ref_y + last_past[1] * cfg.POSITION_DISPLACEMENT_RANGE_M
-
-    membership = {}
-    for cat, (tree, npts) in trees.items():
-        if tree is None:
-            membership[cat] = np.zeros(n, dtype=bool)
-            continue
-        dist, _ = tree.query(xy, k=1)
-        membership[cat] = dist <= _RADIUS_M[cat]
+    xy = scenario_zones.window_start_xy(ds, cfg)
+    membership = scenario_zones.zone_membership(xy, trees)
 
     none_mask = ~np.any(np.stack(list(membership.values())), axis=0)
     membership['open_road (none of the above)'] = none_mask

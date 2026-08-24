@@ -24,13 +24,17 @@ inheriting whatever LR decay Phase 1 leaves the optimizer at.
 
 import argparse
 import os
+import sys
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from st_gat.pipeline import config as cfg
 from st_gat.model import STGAT, TrajectoryDataset, Trainer
 from st_gat.model import loss as loss_module
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'experiments', 'lib'))
+import scenario_zones  # noqa: E402
 
 
 def build_model_config(args) -> dict:
@@ -104,6 +108,21 @@ def main():
                              'independent point-predictor-only members to check EPISTEMIC (cross-member '
                              'disagreement) horizon-widening rather than aleatoric (self-reported '
                              'scale/dof). 2026-08-20.')
+    parser.add_argument('--zone-weighted-sampling', action='store_true',
+                        help='Oversample training windows near turn/intersection zones instead of uniform '
+                             'shuffling (2026-08-24) -- fixes the turn-anticipation gap found via '
+                             'diagnose_turn_learning.py/audit_minority_scenarios.py at the model level '
+                             'instead of only widening the calibrated interval there (which would trade '
+                             'away detection sensitivity exactly where fault_injector.py targets faults). '
+                             'See experiments/lib/scenario_zones.py for the weighting formula.')
+    parser.add_argument('--turn-boost', type=float, default=3.0,
+                        help='Extra sample weight (on top of 1.0 baseline) for a window whose OWN actual '
+                             'future turn severity hits --turn-cap-deg or more; scales linearly below that.')
+    parser.add_argument('--tl-boost', type=float, default=2.0,
+                        help='Extra flat sample weight for a window starting within a real TL/intersection zone.')
+    parser.add_argument('--turn-cap-deg', type=float, default=20.0,
+                        help='Turn severity (degrees of heading change over the horizon) at which --turn-boost '
+                             'reaches its full value.')
     args = parser.parse_args()
 
     if args.var_reg_weight is not None:
@@ -125,13 +144,29 @@ def main():
     train_ds = TrajectoryDataset(cfg.TRAIN_DIR)
     val_ds   = TrajectoryDataset(cfg.CAL_DIR)
 
-    train_loader = DataLoader(
-        train_ds, batch_size=args.batch, shuffle=True,
-        num_workers=args.workers, pin_memory=True, drop_last=True,
-    )
+    if args.zone_weighted_sampling:
+        print(f"[train] Computing zone-weighted sample weights "
+              f"(turn_boost={args.turn_boost}, tl_boost={args.tl_boost}, turn_cap_deg={args.turn_cap_deg})...")
+        weights = scenario_zones.compute_train_sample_weights(
+            train_ds, cfg, turn_boost=args.turn_boost, tl_boost=args.tl_boost, turn_cap_deg=args.turn_cap_deg)
+        print(f"[train] Sample weight stats: min={weights.min():.2f} max={weights.max():.2f} "
+              f"mean={weights.mean():.2f} (baseline 1.0)")
+        sampler = WeightedRandomSampler(weights, num_samples=len(train_ds), replacement=True)
+        train_loader = DataLoader(
+            train_ds, batch_size=args.batch, sampler=sampler,
+            num_workers=args.workers, pin_memory=True, drop_last=True,
+            persistent_workers=(args.workers > 0),
+        )
+    else:
+        train_loader = DataLoader(
+            train_ds, batch_size=args.batch, shuffle=True,
+            num_workers=args.workers, pin_memory=True, drop_last=True,
+            persistent_workers=(args.workers > 0),
+        )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch, shuffle=False,
         num_workers=args.workers, pin_memory=True,
+        persistent_workers=(args.workers > 0),
     )
 
     model = STGAT(model_cfg)

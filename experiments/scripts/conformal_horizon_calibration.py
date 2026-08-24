@@ -258,20 +258,33 @@ def reliability_curve(all_resid, trial_id, n_trials, series_keys, T_out, alphas=
     the y=x diagonal (nominal 1-alpha vs. empirical coverage). Reuses the
     residuals already collected for the main per-alpha run (no new model
     inference) -- cheap: alphas x n_trials x T_out conformal_quantile
-    calls, each a numpy sort over a few thousand values."""
+    calls, each a numpy sort over a few thousand values.
+
+    ALSO returns mean interval width per alpha (2026-08-24, Kalpit's
+    question: "isn't tighter better, or would that be a sensitivity
+    curve?") -- coverage alone is a meaningless metric in isolation (an
+    interval of [-inf, inf] trivially achieves 100% coverage); the
+    complementary EFFICIENCY (width) side of the same alpha sweep is what
+    makes the coverage number interpretable. Costs nothing extra: q is
+    already computed for the coverage check, just also recorded here
+    rather than discarded. See plot_efficiency_curve()."""
     nominal = 1 - alphas
     empirical = {k: [] for k in series_keys}
+    mean_width = {k: [] for k in series_keys}
     for alpha in alphas:
         for key in series_keys:
             resid = all_resid[key]
             covered_all = []
+            fold_q = []
             for held_out in range(n_trials):
                 fit_mask  = trial_id != held_out
                 test_mask = trial_id == held_out
                 q = np.array([conformal_quantile(resid[fit_mask, t], alpha) for t in range(T_out)])
                 covered_all.append((resid[test_mask] <= q[np.newaxis, :]).ravel())
+                fold_q.append(q)
             empirical[key].append(np.concatenate(covered_all).mean())
-    return nominal, {k: np.array(v) for k, v in empirical.items()}
+            mean_width[key].append(np.mean(fold_q))   # mean across folds AND horizon steps
+    return nominal, {k: np.array(v) for k, v in empirical.items()}, {k: np.array(v) for k, v in mean_width.items()}
 
 
 def plot_reliability_curve(nominal, empirical, out_path):
@@ -296,6 +309,37 @@ def plot_reliability_curve(nominal, empirical, out_path):
         ax.axis('off')
     axes.flat[0].legend(loc='lower right', fontsize=7)
     fig.suptitle('Layer 1 reliability diagram — nominal vs. empirical coverage '
+                 '(leave-one-trial-out cross-conformal, pooled across horizon)', fontsize=12)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+    print(f'Saved {out_path}')
+
+
+def plot_efficiency_curve(nominal, mean_width, out_path):
+    """The complement to the reliability diagram (2026-08-24): coverage
+    alone doesn't say whether an interval is USEFUL -- an interval of
+    [-inf, inf] trivially covers 100% of the time. This shows what buying
+    more coverage actually COSTS in width, per series, across the same
+    alpha sweep reliability_curve() already ran. Monotonically increasing
+    (tighter target coverage -> narrower interval) is the expected shape;
+    a series whose width blows up disproportionately fast as nominal
+    coverage approaches 1 is one where the tail is heavy/poorly-behaved,
+    worth knowing when picking an operating alpha."""
+    keys = list(mean_width.keys())
+    ncols = 3
+    nrows = -(-len(keys) // ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(14, 4.3 * nrows))
+    for ax, key in zip(axes.flat, keys):
+        ax.plot(nominal, mean_width[key], color='#2ca02c', linewidth=2, marker='o', markersize=3)
+        ax.set_title(key, fontsize=10)
+        ax.set_xlabel('nominal coverage (1-alpha)', fontsize=8)
+        ax.set_ylabel('mean interval half-width\n(pooled across folds + horizon)', fontsize=8)
+        ax.set_xlim(0, 1)
+        ax.tick_params(labelsize=7)
+    for ax in axes.flat[len(keys):]:
+        ax.axis('off')
+    fig.suptitle('Layer 1 efficiency curve — cost (interval width) of buying more coverage '
                  '(leave-one-trial-out cross-conformal, pooled across horizon)', fontsize=12)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     fig.savefig(out_path, dpi=140)
@@ -399,8 +443,9 @@ def main():
 
     if not args.skip_reliability_curve:
         print(f"\nComputing reliability diagram ({len(_RELIABILITY_ALPHAS)} alpha levels)...")
-        nominal, empirical = reliability_curve(all_resid, trial_id, n_trials, series_keys, T_out)
+        nominal, empirical, mean_width = reliability_curve(all_resid, trial_id, n_trials, series_keys, T_out)
         plot_reliability_curve(nominal, empirical, os.path.join(args.output_dir, 'reliability_diagram.png'))
+        plot_efficiency_curve(nominal, mean_width, os.path.join(args.output_dir, 'efficiency_curve.png'))
 
 
 if __name__ == '__main__':
