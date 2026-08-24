@@ -176,6 +176,32 @@ for both TL heads is not worse than the continuous features, and a
 classification treatment would also cut against the 2026-08-06 reframe's
 own move away from discrete-state framing. Not built, deliberately.
 
+## 4.5 Direct side-by-side comparison (2026-08-21)
+
+Ran both approaches against the same held-out calibration data,
+`experiments/scripts/compare_layer1_approaches.py`
+(`experiments/analysis/layer1_approach_comparison/`). Note:
+`h30_30/best_model.pth` (approach 1's checkpoint) can no longer be loaded
+by the current `model.py` — the per-head-embedding fix changed the state
+dict shape — so it was evaluated using the model class as it existed at
+its own commit (`git show 7525b00:st_gat/model/model.py`, loaded
+dynamically), not by reverting today's architecture fix.
+
+**Point accuracy: mixed, doesn't favor either approach cleanly.** Approach
+1 (Student-t/NLL) is more accurate on 4/6 features (position, velocity,
+steering, acceleration); approach 2 (conformal) wins on both TL heads. This
+is NOT the basis for the pivot.
+
+**Calibration: decisive.** Approach 1's coverage-curve max gap ranges
+0.066–0.376 across the 6 features, and a Kolmogorov-Smirnov test
+decisively rejects uniform calibration for every one (p ≈ 0) —
+quantitatively confirming what the whole arc found and never fixed.
+Approach 2's reliability-diagram max gap is 0.004–0.011 across the *same*
+alpha range, for all 7 series. Horizon widening: approach 1 only works for
+`position` (freshly re-confirmed, unchanged); approach 2 works for all 7.
+**The pivot's justification was always calibration, not point accuracy —
+this comparison confirms that's the correct framing, not an assumption.**
+
 ## 5. If this arc is ever resumed
 
 Everything in §2 is real, working code, not reverted:

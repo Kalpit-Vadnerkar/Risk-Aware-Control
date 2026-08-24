@@ -1,0 +1,92 @@
+{
+  "approach1_checkpoint": "/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/st_gat/checkpoints/h30_30/best_model.pth",
+  "approach2_checkpoint": "/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/st_gat/checkpoints/h30_30_pointpred_v1/mean_warmup.pth",
+  "rows": [
+    {
+      "feature": "position",
+      "approach1_point_error": 0.0042803159617648525,
+      "approach2_point_error": 0.008160380235371845,
+      "pct_change": 90.64901535930473
+    },
+    {
+      "feature": "velocity",
+      "approach1_point_error": 0.02510265573497016,
+      "approach2_point_error": 0.03075218255098424,
+      "pct_change": 22.50569372285102
+    },
+    {
+      "feature": "steering",
+      "approach1_point_error": 0.005780458557786672,
+      "approach2_point_error": 0.00977373011618543,
+      "pct_change": 69.08226256582272
+    },
+    {
+      "feature": "acceleration",
+      "approach1_point_error": 0.09012718792716948,
+      "approach2_point_error": 0.0989268014546087,
+      "pct_change": 9.763550522124438
+    },
+    {
+      "feature": "traffic_light_color",
+      "approach1_point_error": 0.09234853524888581,
+      "approach2_point_error": 0.0780222125784197,
+      "pct_change": -15.513318789362135
+    },
+    {
+      "feature": "traffic_light_confidence",
+      "approach1_point_error": 0.10948128052175718,
+      "approach2_point_error": 0.09529739249504879,
+      "pct_change": -12.95553720153066
+    }
+  ],
+  "approach1_pit_uniformity": [
+    {
+      "feature": "position",
+      "mean_u": 0.5189137868701825,
+      "std_u": 0.27883690627797797,
+      "ks_statistic": 0.08290999380251363,
+      "ks_pvalue": 3.4686630605911347e-140,
+      "n": 23368
+    },
+    {
+      "feature": "velocity",
+      "mean_u": 0.4827926127055182,
+      "std_u": 0.22522794604825866,
+      "ks_statistic": 0.1266356502797399,
+      "ks_pvalue": 0.0,
+      "n": 23368
+    },
+    {
+      "feature": "steering",
+      "mean_u": 0.5408440468041242,
+      "std_u": 0.24857850939146664,
+      "ks_statistic": 0.11384505217799717,
+      "ks_pvalue": 2.2706077144612554e-132,
+      "n": 11684
+    },
+    {
+      "feature": "acceleration",
+      "mean_u": 0.4374386178077519,
+      "std_u": 0.21787185770084005,
+      "ks_statistic": 0.22271226647036013,
+      "ks_pvalue": 0.0,
+      "n": 11684
+    },
+    {
+      "feature": "traffic_light_color",
+      "mean_u": 0.4437075913833267,
+      "std_u": 0.1833775228350524,
+      "ks_statistic": 0.3159959651308083,
+      "ks_pvalue": 0.0,
+      "n": 11684
+    },
+    {
+      "feature": "traffic_light_confidence",
+      "mean_u": 0.47503117665114086,
+      "std_u": 0.20509339552335645,
+      "ks_statistic": 0.22080470660658247,
+      "ks_pvalue": 0.0,
+      "n": 11684
+    }
+  ]
+}

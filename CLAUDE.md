@@ -306,10 +306,28 @@ per-fold-spread coverage, `conformal_vs_actual.png` (interval width vs.
 actual RMSE), and `reliability_diagram.png` (nominal vs. empirical
 coverage swept across 50%-98%, pooled across horizon — the headline
 calibration plot; current result: max gap 0.004-0.011 across every series
-and every coverage level). See
+and every coverage level). **Read this pooled number carefully, don't
+over-trust it on its own** — it pools every window, fold, and horizon step
+into one number per alpha, which is heavy averaging; the coverage table's
+per-fold spread (e.g. acceleration ranged 71-100% across the 7 individual
+held-out trials at one alpha) shows real per-trial instability that the
+pooled/aggregate number can hide via cancellation. The near-perfect
+diagonal is a genuine average-case result, not evidence every trial or
+region of driving is well-calibrated on its own — more nominal trials
+(pending future data collection) is the actual test of that. See
 `docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md`
 for why this replaced the Student-t/NLL approach, and
 `open_world_safety_reframe_2026-08-20.md` for how it fits the current claim.
+
+**Concrete trust visualization (2026-08-21)**:
+`experiments/scripts/plot_layer1_trust_examples.py` — the aggregate plots
+above prove calibration statistically; this shows it concretely, for a
+handful of real example windows: predicted mean ± the calibrated conformal
+band vs. actual value, per scalar feature (`window*_scalar_bands.png`), and
+a map-view of predicted vs. actual trajectory with the calibrated position
+uncertainty drawn as discs along the path (`window*_position_map.png`).
+Reuses `experiments/lib/plotting.py`'s existing map/band-plotting
+primitives. Output: `experiments/analysis/layer1_trust_examples/`.
 
 Companion check, same day: `experiments/scripts/epistemic_disagreement_check.py`
 — does disagreement between independently-trained point predictors widen
