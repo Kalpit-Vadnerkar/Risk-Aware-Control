@@ -1,0 +1,76 @@
+{
+  "n_windows": 11684,
+  "target_coverage": 0.9,
+  "categories": [
+    {
+      "category": "turn_zones",
+      "n": 4865,
+      "pct_of_data": 41.63813762410133,
+      "fault_targeted": true,
+      "position_coverage": 0.9634395340870161,
+      "position_mean_resid": 0.005470931064337492,
+      "steering_coverage": 0.8369167523124358,
+      "steering_mean_resid": 0.014458452351391315,
+      "velocity_longitudinal_coverage": 0.9289071599862967,
+      "velocity_longitudinal_mean_resid": 0.020094046369194984,
+      "acceleration_coverage": 0.9221171634121275,
+      "acceleration_mean_resid": 0.08017668128013611
+    },
+    {
+      "category": "bias_leadin_zones",
+      "n": 3585,
+      "pct_of_data": 30.682985279014037,
+      "fault_targeted": true,
+      "position_coverage": 0.9470850767085077,
+      "position_mean_resid": 0.004891231656074524,
+      "steering_coverage": 0.8300139470013947,
+      "steering_mean_resid": 0.014895555563271046,
+      "velocity_longitudinal_coverage": 0.9177405857740586,
+      "velocity_longitudinal_mean_resid": 0.019674798473715782,
+      "acceleration_coverage": 0.9052905625290563,
+      "acceleration_mean_resid": 0.09043791145086288
+    },
+    {
+      "category": "curved_road_zones",
+      "n": 595,
+      "pct_of_data": 5.092434097911674,
+      "fault_targeted": false,
+      "position_coverage": 0.9011764705882352,
+      "position_mean_resid": 0.006505585741251707,
+      "steering_coverage": 0.9710364145658263,
+      "steering_mean_resid": 0.008553767576813698,
+      "velocity_longitudinal_coverage": 0.905266106442577,
+      "velocity_longitudinal_mean_resid": 0.02016865462064743,
+      "acceleration_coverage": 0.9356302521008404,
+      "acceleration_mean_resid": 0.05888783186674118
+    },
+    {
+      "category": "tl_zones",
+      "n": 2591,
+      "pct_of_data": 22.17562478603218,
+      "fault_targeted": true,
+      "position_coverage": 0.9413096616492989,
+      "position_mean_resid": 0.007630652282387018,
+      "steering_coverage": 0.8728161584973627,
+      "steering_mean_resid": 0.012061484158039093,
+      "velocity_longitudinal_coverage": 0.9289592178052232,
+      "velocity_longitudinal_mean_resid": 0.02080175094306469,
+      "acceleration_coverage": 0.9493117200566062,
+      "acceleration_mean_resid": 0.06861989945173264
+    },
+    {
+      "category": "open_road (none of the above)",
+      "n": 5184,
+      "pct_of_data": 44.36836699760356,
+      "fault_targeted": null,
+      "position_coverage": 0.8726851851851852,
+      "position_mean_resid": 0.010072785429656506,
+      "steering_coverage": 0.9723958333333333,
+      "steering_mean_resid": 0.007696441374719143,
+      "velocity_longitudinal_coverage": 0.8429591049382716,
+      "velocity_longitudinal_mean_resid": 0.03640267997980118,
+      "acceleration_coverage": 0.8811728395061729,
+      "acceleration_mean_resid": 0.11943215131759644
+    }
+  ]
+}

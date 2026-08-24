@@ -43,10 +43,16 @@ def wrap(angle):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--model', default=os.path.join(REPO_DIR, 'st_gat', 'checkpoints',
+                                                      'h30_30_pointpred_v1', 'mean_warmup.pth'))
+    args = ap.parse_args()
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_cfg = cfg.build_inference_model_cfg(device)
     model = STGAT(model_cfg).to(device)
-    model_path = os.path.join(REPO_DIR, 'st_gat', 'checkpoints', 'h30_30_pointpred_v1', 'mean_warmup.pth')
+    model_path = args.model
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
     print(f"Loaded model: {model_path}")
