@@ -86,6 +86,24 @@ actually novel here is more specific: propagating a distribution-free,
 by construction. The novelty is in the quality and structure of what gets
 propagated and how it's justified, not in the bare act of propagation.
 
+**REFRAMED 2026-08-24, per an independent literature review (§9) and
+Kalpit's explicit direction**: the paragraph above is now understood to be
+still too close to "extend the UQ side." Waymo's own published safety
+research already does forward-propagated, map-grounded, decomposed
+consequence estimation — via forward REACHABILITY sets (Johnson/Victor/
+Engström's "Field of Safe Motion," 2026), not a learned residual signal.
+That work is not calibrated in the conformal sense (it assumes correct
+state estimation, doesn't derive its safety margin from a model's own
+learned, statistically-guaranteed uncertainty). The precise, defensible
+novelty claim is now: **a synthesis of two traditions that don't currently
+talk to each other** — data-driven, distribution-free CALIBRATION
+(this project's Layer 1) combined with REACHABILITY-STYLE consequence
+estimation (Layer 2, pivoting toward reachability sets rather than a
+static lane-boundary margin — see §9) — not an extension of either
+tradition alone. State it this way in any future writing; the older
+"propagate a calibrated signal forward" framing above undersells what's
+actually different once Field of Safe Motion is accounted for.
+
 ## 4. Three-layer architecture
 
 1. **Layer 1 — Detect the unknown.** A continuously-valued anomaly
@@ -224,3 +242,85 @@ Four artifacts, roughly in order of how buildable they are today:
   rollout-through-the-digital-twin yet.
 - Layer 3's controller question is explicitly unscoped pending Kalpit's
   call (§4).
+
+## 9. Layer 1 wasn't actually done; Layer 2 pivots to reachability (2026-08-24)
+
+Three things happened the same day that materially change §4 and §8 above.
+
+**(a) Layer 1's "fully validated" claim (§8, and the 2026-08-21 memory
+entry) was premature.** Concrete trust-visualization plots
+(`experiments/scripts/plot_layer1_trust_examples.py`) surfaced by eye that
+the position head barely anticipates turns from route/map context —
+quantified in `experiments/scripts/diagnose_turn_learning.py`: predicted
+heading-change magnitude is only ~48% of actual when a turn hasn't started
+yet in the observed past, vs. ~65% once already mid-turn. Kalpit's
+response, correct and important: **this cannot just be papered over by
+widening the calibrated interval on turns (scene-conditioning, §5) — the
+model's actual weakness needs fixing, because fault injection is
+specifically gated on turn zones and TL/intersection zones
+(`experiments/lib/fault_injector.py`: all 4 IMU fault types gate on
+`turn_zones`/`bias_leadin_zones`, all 5 TL fault types gate near
+`tl_zones` — there is no OTHER fault-injection locus in this project).**
+A wider-but-honest interval at exactly the place faults are injected means
+lower detection sensitivity exactly where it matters most for the
+dissertation's practical claim — calibration validity and detection power
+are in tension here, not the same thing. Scene-conditioning
+(`experiments/scripts/conformal_scene_conditioning.py`) stays valuable as
+a safety net for genuinely irreducible scene-dependent variance, but is no
+longer treated as sufficient on its own — model improvement (reweighting/
+oversampling minority scenes, see below) is now the primary track, with
+scene-conditioning re-evaluated afterward on whatever residual gap
+remains once the model itself is better.
+
+**(b) Systematic minority-scenario audit, grounded in the project's own
+fault-targeting geometry, not an ad hoc metric** (Kalpit's point: "we
+would have never caught [the turn gap] if it weren't for the plots... we
+might be missing other minority scenes too"). `experiments/scripts/
+audit_minority_scenarios.py` reuses the exact zone files fault_injector.py
+already gates on (`experiments/configs/turn_zones.json`'s turn_zones/
+bias_leadin_zones/lane_change_zones/curved_road_zones, and
+`experiments/configs/tl_zones.json`'s tl_zones — all real geometry
+computed from driven trajectories, not guessed), labels every calibration
+window by proximity, and checks coverage against the ALREADY-DEPLOYED
+global quantile per category. Found a SECOND gap the turn diagnostic alone
+missed: **`tl_zones` (intersections) has the worst steering coverage of
+any category, 75.6%** — worse even than turn_zones (80.3%) or
+bias_leadin_zones (81.6%) — and both turn_zones/tl_zones are exactly where
+fault injection is targeted. Also surprising: `open_road` (44.4% of the
+data, NOT near any special zone) under-covers on position (85.3%) and
+longitudinal velocity (86.2%) despite being the "easy" majority case —
+not yet investigated further, a real open item. `curved_road_zones`
+(not fault-targeted) calibrates fine. `lane_change_zones` has essentially
+zero matching windows in the current 7-trial dataset — not a calibration
+gap, a DATA gap (this scenario type is barely represented in the map/route
+set at all) — worth flagging for future data collection alongside more
+nominal trials generally (§6). **This audit script should be re-run any
+time the model or calibration set changes — it's the repeatable version
+of what an ad hoc plot review caught once by luck.**
+
+**(c) Layer 2's preferred direction is now forward reachability, not a
+static lane-boundary margin.** Per the independent Waymo-literature review
+(2026-08-24, summarized in project memory — full report not duplicated
+here) and Kalpit's explicit confirmation: replace the paused v1 design's
+`lane_boundary_distance` + naive constant-velocity object extrapolation
+(`experiments/lib/margin.py`, still has its known adjacent-lane-boundary
+bug, still unfixed) with a reachability-style margin in the shape of
+Johnson/Victor/Engström's "Field of Safe Motion" (2026) — bounded reachable
+sets for nearby tracked objects (not a single constant-velocity point
+estimate) pruned by lane-containment (`lanelet2.geometry.inside` on the
+ego's actual current lanelet, not nearest-5), rather than a bare geometric
+distance. This is a genuine redesign of margin.py's approach, not a patch
+to the existing bug — do not just fix the nearest-lanelet bug in the old
+design and call Layer 2 unblocked; the whole margin computation shape is
+changing. Not yet implemented as of this note.
+
+**(d) A dedicated, robust literature review is now an explicit task**,
+not assumed already done by the one 9-paper Waymo-only review. That review
+was scoped to Waymo's own published safety research specifically (a
+reasonable first pass, and it's what surfaced the reachability pivot in
+(c)) — it is NOT a substitute for a broader search across the reachability-
+analysis, conformal-prediction-for-planning, and AV-safety-verification
+literatures more generally, needed to make sure the "calibration ×
+reachability" synthesis claim (§3's reframe above) actually holds up and
+isn't already done elsewhere under different terminology. Scope this
+before writing up Layer 2's contribution as novel, not after.

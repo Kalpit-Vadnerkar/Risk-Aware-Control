@@ -13,6 +13,30 @@ deleted, not current.
 
 ---
 
+## Status block (2026-08-24 update — read this first, then the 2026-08-20 block below)
+
+The "89.7-90.2% pooled coverage, all 7 series" claim below is real but was
+**premature to call "fully validated."** Concrete trust-visualization
+plots surfaced a real turn-anticipation gap in the position head, and a
+systematic audit grounded in `fault_injector.py`'s own zone-targeting
+geometry found intersections (`tl_zones`) under-cover even worse (75.6%
+steering coverage) — both exactly where fault injection is targeted, so
+this isn't a cosmetic issue. Model improvement (reweighting/oversampling
+minority scenes) is now the primary open task, not just wider intervals.
+Layer 2 also pivots toward forward-reachability-style consequence
+estimation instead of a static lane-boundary margin, per an independent
+lit review. Full detail: `docs/research_notes/
+open_world_safety_reframe_2026-08-20.md` §9 (added 2026-08-24) — **read
+that before resuming Layer 1 "done" claims or starting Layer 2 margin
+work.**
+
+**New task, not yet started**: a dedicated, robust literature review
+(beyond the one Waymo-specific pass that surfaced the reachability pivot)
+across reachability analysis, conformal-prediction-for-planning, and AV
+safety-verification more broadly — needed to confirm the "calibration ×
+reachability" novelty claim actually holds up before writing it up as a
+contribution. See §9(d) of the note above.
+
 ## Status block (2026-08-20 — calibration pivot, read this first)
 
 **Calibration is now working — via a different mechanism than originally
