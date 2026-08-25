@@ -413,6 +413,61 @@ already-published ~90% figure. Candidate next steps, not yet tried:
 normalize/whiten `h_last` before the distance metric, try cosine
 similarity, or adapt k per-window instead of a fixed constant.
 
+**Pipeline connected + Mondrian calibration built (2026-08-25)**:
+`experiments/scripts/promote_model.py` gates every future model swap
+(confirms the candidate isn't worse than current, refuses to promote a
+regression, auto-regenerates the canonical conformal_report.json on
+promotion — closing the exact gap that left v2's promotion stale for a
+while). `scenario_zones.compute_train_sample_weights` is now fully
+data-driven (inverse-class-frequency over quantile bins derived from the
+current dataset, no fixed boost constants) so it re-derives itself as
+more data is collected. `experiments/scripts/
+conformal_mondrian_calibration.py` supersedes the k-NN scene-conditioning
+above with the actual established technique (Vovk 2012, group-conditional
+conformal): 4 groups (turn/tl_zones/curved_road_zones/open_road), every
+group lands near the 90% target, width plot shows the intended shape
+(turn widens, open_road/curved tighten). One honest limitation: grouping
+uses the window's CURRENT position (matching fault_injector.py's live
+gating), so a window approaching a turn but not yet inside the zone gets
+the too-narrow band for what it's about to do.
+
+**Layer 1 vs. real faults — first check, 2026-08-25.**
+`experiments/scripts/inspect_fault_predictions.py` ran the promoted model
+against all 20 trials across all 8 fault campaigns on disk (including
+"stuck"/"timeout" outcomes nominal-only extraction correctly filters out
+for training but which are exactly the case worth inspecting here). Two
+qualitatively different fault signatures found, not one:
+- **IMU faults**: residual roughly triples during the fault-active window
+  (median 0.91m clean → 2.83m active) and then KEEPS GROWING afterward
+  instead of recovering — exceed-rate vs. the vanilla band climbs 44.3%
+  (0-10s post-fault) → 57.8% (10-30s) → 61.6% (30-60s) → 77.9% (60-120s).
+  Compounding state-estimation corruption (EKF integrates bad gyro data,
+  doesn't self-heal), not a momentary glitch.
+- **TL faults**: far more contained — clean exceed rate 4.0% (BELOW the
+  10% target), active 17.4%, post-fault(≤30s) 23.7%. Real but modest, and
+  genuinely confounded: TL faults are gated to fire at real intersections,
+  which are already the hardest nominal scenario, so elevated residual
+  near a TL fault can't be cleanly separated into "the fault" vs. "the
+  intersection" from this data alone.
+
+**Good news for Layer 2**: the residual signal demonstrably responds to
+real faults, sometimes dramatically (IMU: up to 78% exceed rate vs. a 10%
+target) — the core premise (Layer 1's calibrated signal carries real
+fault information) holds. Mondrian calibration correctly widens near
+inherently-hard scenarios independent of faults, so Layer 2's nominal
+floor should be more honestly scenario-aware without hand-tuning.
+**Bad news / open problems**: (1) IMU consequence keeps growing past
+120s — Layer 2 as scoped (roll a 3-second counterfactual forward) is
+plausibly well-matched to TL faults but structurally too short-horizon to
+see a slow-compounding IMU fault coming; H may need to be fault-type-
+dependent or trend-based, not fixed at the model's own prediction
+horizon. (2) The TL-fault/intersection-difficulty confound needs a
+controlled comparison (same intersections, fault vs. no-fault) before any
+detection claim from TL-fault data can be trusted. (3) This only checked
+Layer 1's UNCERTAINTY signal — the actual margin/consequence rollout
+Layer 2 needs is still unbuilt and completely unvalidated by this check.
+Full data: `experiments/analysis/fault_prediction_inspection/`.
+
 Companion check, same day: `experiments/scripts/epistemic_disagreement_check.py`
 — does disagreement between independently-trained point predictors widen
 with horizon (a robustness-under-shift proxy the conformal check alone
