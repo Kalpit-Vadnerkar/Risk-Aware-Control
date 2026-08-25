@@ -468,6 +468,65 @@ Layer 1's UNCERTAINTY signal — the actual margin/consequence rollout
 Layer 2 needs is still unbuilt and completely unvalidated by this check.
 Full data: `experiments/analysis/fault_prediction_inspection/`.
 
+**Multi-feature extension (2026-08-25, same day)** — Kalpit's catch: "is
+there a reason we're only looking at position?" Extended the same script
+to all 7 series and it decisively mattered — position was NOT the most
+sensitive indicator for either fault family:
+- **IMU**: acceleration's active/clean exceed-rate RATIO is 13.66x (3.4%
+  clean → 46.2% active) — by far the sharpest signal, vs. position's only
+  1.66x. velocity_lateral (3.43x) and steering (2.05x) also beat position.
+  Makes physical sense: acceleration/velocity are closer to what an IMU
+  corruption directly touches; position is a downstream, integrated (and
+  therefore laggier, noisier) consequence.
+- **TL faults**: surprisingly, the TL features THEMSELVES (color 2.35x,
+  confidence 2.92x) are NOT the sharpest signal either — velocity_lateral
+  (4.62x) and velocity_longitudinal (8.87x, small clean baseline though)
+  lead. A miscalibrated light shows up more in the resulting DRIVING
+  BEHAVIOR (unexpected braking/proceeding) than in the model's residual
+  on the spoofed signal itself.
+Implication for Layer 2: a margin/consequence design built only on
+position residual (the original v1 plan) would miss the sharpest
+available fault evidence for both fault families. The per-feature
+decomposition idea, previously judged "structurally vacuous" for the old
+static lane-margin design (which only depended on predicted position), is
+worth reconsidering now that we know WHICH features actually carry the
+signal — an acceleration-triggered flag could be a real leading indicator
+worth its own attention, not just noise to fold into one number.
+
+**Mondrian's real cost, quantified (2026-08-25)** — Kalpit's catch: "it
+seems like vanilla is better almost always." Checked directly: computing
+each feature's SIZE-WEIGHTED average Mondrian width (weighting each
+group's width by how common it actually is) against vanilla's pooled
+width shows Mondrian is NOT uniformly tighter -- steering is 11.4% WIDER
+on net, traffic_light_confidence 19.4% WIDER on net (only position/
+acceleration/traffic_light_color come out net tighter). This is the real,
+expected statistical cost of group-conditional calibration: each group's
+quantile is fit on a fraction of the data, so it's noisier and needs more
+finite-sample padding; that cost is only worth paying where a group is
+BOTH large AND genuinely, robustly different in difficulty (steering in
+`turn`, 43.6% of the data, a real demonstrated gap) -- not automatic.
+Earlier framing ("turn widens, calm tightens — the intended shape!") was
+directionally true per-group but did not check the net effect before
+presenting it; correct now.
+
+**Continuous (h_last) conditioning re-checked against v2 (2026-08-25)**
+— Kalpit's proposal: discrete Mondrian buckets are a fixed partition that
+doesn't adapt as the model improves; a continuous scene-embedding
+similarity measure would. Re-ran `conformal_scene_conditioning.py`
+(k-NN in `h_last`-space, tried 2026-08-24 against v1, noisy then) against
+the promoted v2 model: BOTH the vanilla baseline and the scene-conditioned
+result improved simply because the underlying model improved -- steering
+per-step coverage on real turns: vanilla 59.0%→72.0%, scene-conditioned
+82.3%→86.7%, absolute scene-conditioned width on turns shrank 19%
+(0.057→0.046) even while widening 2x relative to vanilla's own turn width.
+Also showed a kind of adaptivity Mondrian's 4 buckets structurally can't:
+tightened POSITION on turns 26% (0.0182→0.0134) where global calibration
+was already fine, not just widening where needed. Real evidence for
+investing further in the continuous direction (localized conformal
+prediction, Guan 2023, is the principled version of the ad hoc k-NN tried
+so far — see the literature-search notes) rather than only the discrete
+Mondrian partition.
+
 Companion check, same day: `experiments/scripts/epistemic_disagreement_check.py`
 — does disagreement between independently-trained point predictors widen
 with horizon (a robustness-under-shift proxy the conformal check alone

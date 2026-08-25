@@ -59,6 +59,9 @@ from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 from compare_fault_vs_nominal import load_fault_log, extract_fault_windows, in_any_window  # noqa: E402
 import scenario_zones  # noqa: E402
 from conformal_mondrian_calibration import assign_groups  # noqa: E402
+from conformal_horizon_calibration import _SERIES  # noqa: E402
+
+_SERIES_KEYS = [s[0] for s in _SERIES]
 
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_prediction_inspection')
@@ -208,8 +211,14 @@ def main():
                 print(f"  {len(sequences)} windows, {len(fault_windows)} fault-active window(s), "
                       f"duration {out['bag_duration']:.1f}s")
 
-                position_resid = np.zeros(len(sequences))
-                steering_resid = np.zeros(len(sequences))
+                # Per (report_key, source_feature, mode) -- SAME reduction spec as
+                # conformal_horizon_calibration.py's _SERIES, so these residuals are
+                # directly comparable to the calibrated widths (2026-08-25, per
+                # Kalpit: "is there a reason we are only looking at position residuals?
+                # ... fault signatures can manifest in all of them differently" --
+                # TL faults in particular should show up most directly in the TL
+                # features themselves, which the position-only check would completely miss).
+                resid = {k: np.zeros(len(sequences)) for k in _SERIES_KEYS}
                 xy = np.zeros((len(sequences), 2))
                 with torch.no_grad():
                     for i, seq in enumerate(sequences):
@@ -219,16 +228,24 @@ def main():
                         past  = {k: torch.as_tensor(v, device=device).unsqueeze(0) for k, v in past_t.items()}
                         graph = {k: torch.as_tensor(v, device=device).unsqueeze(0) for k, v in graph_t.items()}
                         preds = model(past, graph)
-                        actual_pos = np.asarray(future_t['position'])
-                        pred_pos = preds['position_mean'][0].cpu().numpy()
-                        position_resid[i] = np.linalg.norm(pred_pos - actual_pos, axis=-1).mean() * cfg.POSITION_DISPLACEMENT_RANGE_M
-                        actual_steer = np.asarray(future_t['steering']).reshape(-1)
-                        pred_steer = preds['steering_mean'][0].cpu().numpy().reshape(-1)
-                        steering_resid[i] = np.abs(pred_steer - actual_steer).mean()
+
+                        for report_key, source_key, mode in _SERIES:
+                            actual = np.asarray(future_t[source_key])
+                            pred = preds[f'{source_key}_mean'][0].cpu().numpy()
+                            if mode == 'l2':
+                                r = np.linalg.norm(pred - actual, axis=-1).mean() * cfg.POSITION_DISPLACEMENT_RANGE_M
+                            elif mode == 'scalar':
+                                r = np.abs(pred.reshape(-1) - actual.reshape(-1)).mean()
+                            else:
+                                _, axis = mode
+                                r = np.abs(pred[:, axis] - actual[:, axis]).mean()
+                            resid[report_key][i] = r
+
                         ref_x, ref_y = seq['position_ref']
                         last_past = seq['past'][-1]['position']
                         xy[i, 0] = ref_x + last_past[0] * cfg.POSITION_DISPLACEMENT_RANGE_M
                         xy[i, 1] = ref_y + last_past[1] * cfg.POSITION_DISPLACEMENT_RANGE_M
+                position_resid = resid['position']
 
                 groups = assign_groups(xy)
                 in_fault = np.array([in_any_window(t, fault_windows) for t in t_rel])
@@ -243,33 +260,39 @@ def main():
                     if ends:
                         t_since_fault_end[j] = min(ends)
 
-                # quantiles are stored NORMALIZED (same space as position_mean pre-scaling) --
-                # must multiply by POSITION_DISPLACEMENT_RANGE_M to compare against the
-                # real-metre residual computed above (same bug class as the trust-plot
-                # circle-radius fix from 2026-08-24; caught here by the reference line
-                # plotting at ~0 against real residuals).
-                vanilla_pos_width = vanilla_q['position'].mean() * cfg.POSITION_DISPLACEMENT_RANGE_M
-                mondrian_pos_width = np.array([
-                    np.mean(mondrian['by_group'][g]['position']['mean_fold_quantile_by_step']) for g in groups
-                ]) * cfg.POSITION_DISPLACEMENT_RANGE_M
+                # quantiles are stored NORMALIZED (position/velocity share
+                # POSITION_DISPLACEMENT_RANGE_M's space via l2/axis reduction, the
+                # rest are already real-unit scalars from _extract_series's 'scalar'
+                # mode) -- position needs the same *100 scaling bug-fixed here
+                # (2026-08-24 class of bug) before comparing to real-metre residuals.
+                width_scale = {k: (cfg.POSITION_DISPLACEMENT_RANGE_M if k in ('position',) else 1.0)
+                                for k in _SERIES_KEYS}
+                vanilla_width = {k: vanilla_q[k].mean() * width_scale[k] for k in _SERIES_KEYS}
+                mondrian_width = {
+                    k: np.array([np.mean(mondrian['by_group'][g][k]['mean_fold_quantile_by_step']) for g in groups])
+                       * width_scale[k]
+                    for k in _SERIES_KEYS
+                }
 
                 for i in range(len(sequences)):
-                    rows.append({
+                    row = {
                         'campaign': campaign, 'run': run_name, 'status': status,
                         't_rel': float(t_rel[i]), 'in_fault': bool(in_fault[i]),
                         't_since_fault_end': float(t_since_fault_end[i]),
                         'post_fault_30s': bool(t_since_fault_end[i] <= 30.0),
-                        'position_resid': float(position_resid[i]), 'steering_resid': float(steering_resid[i]),
                         'group': groups[i],
-                        'exceeds_vanilla': bool(position_resid[i] > vanilla_pos_width),
-                        'exceeds_mondrian': bool(position_resid[i] > mondrian_pos_width[i]),
-                    })
+                    }
+                    for k in _SERIES_KEYS:
+                        row[f'resid_{k}'] = float(resid[k][i])
+                        row[f'exceeds_vanilla_{k}'] = bool(resid[k][i] > vanilla_width[k])
+                        row[f'exceeds_mondrian_{k}'] = bool(resid[k][i] > mondrian_width[k][i])
+                    rows.append(row)
 
                 if trace_plots_saved < args.max_trace_plots and len(fault_windows) > 0:
                     fig, ax = plt.subplots(figsize=(11, 4.5))
                     ax.plot(t_rel, position_resid, color='#1f77b4', linewidth=1.2, label='position residual (mean over horizon, m)')
-                    ax.axhline(vanilla_pos_width, color='#7f7f7f', linestyle='--', linewidth=1.3, label='vanilla calibrated width')
-                    ax.plot(t_rel, mondrian_pos_width, color='#2ca02c', linewidth=1.0, linestyle=':', label='Mondrian calibrated width (per-window group)')
+                    ax.axhline(vanilla_width['position'], color='#7f7f7f', linestyle='--', linewidth=1.3, label='vanilla calibrated width')
+                    ax.plot(t_rel, mondrian_width['position'], color='#2ca02c', linewidth=1.0, linestyle=':', label='Mondrian calibrated width (per-window group)')
                     for w in fault_windows:
                         ax.axvspan(w['start'], w['end'], color='#d62728', alpha=0.15)
                     ax.axvspan(np.nan, np.nan, color='#d62728', alpha=0.15, label='fault active')
@@ -292,20 +315,25 @@ def main():
     in_fault_arr = np.array([r['in_fault'] for r in rows])
     post_fault_arr = np.array([r['post_fault_30s'] for r in rows]) & ~in_fault_arr
     clean_arr = ~in_fault_arr & ~post_fault_arr
-    pos_resid_arr = np.array([r['position_resid'] for r in rows])
-    exceeds_van = np.array([r['exceeds_vanilla'] for r in rows])
-    exceeds_mon = np.array([r['exceeds_mondrian'] for r in rows])
+    is_imu = np.array([r['campaign'].startswith('imu_') for r in rows])
+    is_tl = ~is_imu
 
-    print(f"\n{'='*70}\nAGGREGATE SUMMARY ({len(rows)} windows across {len(set((r['campaign'], r['run']) for r in rows))} trials)\n{'='*70}")
-    print(f"{'segment':<28}{'n':>8}{'mean pos resid (m)':>20}{'vanilla exceed':>16}{'mondrian exceed':>17}")
-    for name, mask in [('clean (>30s from any fault)', clean_arr),
-                        ('fault ACTIVE', in_fault_arr),
-                        ('post-fault (<=30s after end)', post_fault_arr)]:
-        if mask.sum() == 0:
-            print(f"{name:<28}{'0':>8}   (no windows in this segment)")
-            continue
-        print(f"{name:<28}{int(mask.sum()):>8}{pos_resid_arr[mask].mean():>20.4f}"
-              f"{exceeds_van[mask].mean():>16.3f}{exceeds_mon[mask].mean():>17.3f}")
+    print(f"\n{'='*70}\nPER-FEATURE SUMMARY ({len(rows)} windows across "
+          f"{len(set((r['campaign'], r['run']) for r in rows))} trials)\n{'='*70}")
+    print("Kalpit's question: does the fault signature show up in features OTHER than "
+          "position? (TL faults in particular should be clearest in the TL features "
+          "themselves, which the position-only check missed entirely.)\n")
+    for kind_name, kind_mask in [('IMU campaigns', is_imu), ('TL campaigns', is_tl)]:
+        print(f"--- {kind_name} ---")
+        print(f"{'feature':<26}{'clean exceed':>14}{'active exceed':>15}{'post-fault exceed':>19}{'active/clean ratio':>20}")
+        for k in _SERIES_KEYS:
+            exc = np.array([r[f'exceeds_vanilla_{k}'] for r in rows])
+            c = exc[kind_mask & clean_arr].mean() if (kind_mask & clean_arr).any() else float('nan')
+            a = exc[kind_mask & in_fault_arr].mean() if (kind_mask & in_fault_arr).any() else float('nan')
+            p = exc[kind_mask & post_fault_arr].mean() if (kind_mask & post_fault_arr).any() else float('nan')
+            ratio = a / c if c and c > 0 else float('nan')
+            print(f"{k:<26}{c:14.3f}{a:15.3f}{p:19.3f}{ratio:20.2f}")
+        print()
 
     with open(os.path.join(args.output_dir, 'fault_prediction_summary.json'), 'w') as f:
         json.dump(rows, f, indent=2)
