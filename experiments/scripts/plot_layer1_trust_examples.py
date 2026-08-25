@@ -53,11 +53,14 @@ from matplotlib.patches import Circle
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, REPO_DIR)
+sys.path.insert(0, SCRIPT_DIR)
 sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
 
 from st_gat.pipeline import config as cfg  # noqa: E402
 from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 import plotting as plib  # noqa: E402
+import scenario_zones  # noqa: E402
+from conformal_mondrian_calibration import assign_groups  # noqa: E402
 
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'layer1_trust_examples')
 CONFORMAL_REPORT = os.path.join(REPO_DIR, 'experiments', 'analysis',
@@ -199,9 +202,15 @@ def main():
 
     with open(args.conformal_report) as f:
         report = json.load(f)
-    quantiles = {row['feature']: row['mean_fold_quantile_by_step'] for row in report['features']}
-    print(f"Loaded calibrated quantiles from {args.conformal_report} "
-          f"(leave-one-trial-out cross-conformal, alpha={report['alpha']})")
+    is_mondrian = 'by_group' in report
+    if is_mondrian:
+        print(f"Loaded MONDRIAN calibrated quantiles from {args.conformal_report} "
+              f"(groups: {report['groups']}, alpha={report['alpha']}) -- band width will vary "
+              f"per example window depending on which scenario group it falls in.")
+    else:
+        quantiles = {row['feature']: row['mean_fold_quantile_by_step'] for row in report['features']}
+        print(f"Loaded calibrated quantiles from {args.conformal_report} "
+              f"(leave-one-trial-out cross-conformal, alpha={report['alpha']})")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = _load_model(args.model, device)
@@ -224,6 +233,17 @@ def main():
         tag = names[idx]
         preds, future = _forward_one(model, device, ds, idx)
         seq = ds.sequences[idx]
+
+        if is_mondrian:
+            ref_x, ref_y = seq['position_ref']
+            last_past = seq['past'][-1]['position']
+            xy = np.array([[ref_x + last_past[0] * cfg.POSITION_DISPLACEMENT_RANGE_M,
+                             ref_y + last_past[1] * cfg.POSITION_DISPLACEMENT_RANGE_M]])
+            group = assign_groups(xy)[0]
+            quantiles = {feat: report['by_group'][group][feat]['mean_fold_quantile_by_step']
+                         for feat in report['by_group'][group]}
+            print(f"  window {idx} ({tag}): Mondrian group = {group}")
+
         plot_scalar_bands(preds, future, quantiles, idx,
                            os.path.join(args.output_dir, f'{tag}_scalar_bands.png'))
         plot_position_map(preds, future, seq, quantiles['position'], map_data, idx,
