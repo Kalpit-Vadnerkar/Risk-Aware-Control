@@ -190,13 +190,17 @@ def main():
     ap.add_argument('--n-examples', type=int, default=4)
     ap.add_argument('--seed', type=int, default=20260821)
     ap.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR)
+    ap.add_argument('--conformal-report', default=CONFORMAL_REPORT,
+                     help='conformal_report.json to draw calibrated quantiles from -- MUST match '
+                          '--model (a report fit on a different checkpoint\'s residuals gives bands '
+                          'that are not actually calibrated for the model being plotted).')
     args = ap.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    with open(CONFORMAL_REPORT) as f:
+    with open(args.conformal_report) as f:
         report = json.load(f)
     quantiles = {row['feature']: row['mean_fold_quantile_by_step'] for row in report['features']}
-    print(f"Loaded calibrated quantiles from {CONFORMAL_REPORT} "
+    print(f"Loaded calibrated quantiles from {args.conformal_report} "
           f"(leave-one-trial-out cross-conformal, alpha={report['alpha']})")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
