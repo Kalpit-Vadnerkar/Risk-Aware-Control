@@ -115,14 +115,15 @@ def main():
                              'instead of only widening the calibrated interval there (which would trade '
                              'away detection sensitivity exactly where fault_injector.py targets faults). '
                              'See experiments/lib/scenario_zones.py for the weighting formula.')
-    parser.add_argument('--turn-boost', type=float, default=3.0,
-                        help='Extra sample weight (on top of 1.0 baseline) for a window whose OWN actual '
-                             'future turn severity hits --turn-cap-deg or more; scales linearly below that.')
-    parser.add_argument('--tl-boost', type=float, default=2.0,
-                        help='Extra flat sample weight for a window starting within a real TL/intersection zone.')
-    parser.add_argument('--turn-cap-deg', type=float, default=20.0,
-                        help='Turn severity (degrees of heading change over the horizon) at which --turn-boost '
-                             'reaches its full value.')
+    parser.add_argument('--n-turn-bins', type=int, default=10,
+                        help='Binning resolution for the data-driven inverse-frequency sample weighting '
+                             '(2026-08-25) -- NOT a tuned "how much should turns matter" constant, a '
+                             'structural choice; the actual weight magnitudes are derived fresh from the '
+                             'current training set\'s own turn-severity distribution every run, not hardcoded.')
+    parser.add_argument('--weight-cap-percentile', type=float, default=95.0,
+                        help='Self-referential cap on the inverse-frequency weights (percentile of the '
+                             'weights themselves, not an external ceiling) -- prevents one near-empty '
+                             'scenario bin from dominating the sampler.')
     args = parser.parse_args()
 
     if args.var_reg_weight is not None:
@@ -157,12 +158,10 @@ def main():
     # per-epoch respawn overhead this brings back is a much better trade
     # than periodic OOM kills.
     if args.zone_weighted_sampling:
-        print(f"[train] Computing zone-weighted sample weights "
-              f"(turn_boost={args.turn_boost}, tl_boost={args.tl_boost}, turn_cap_deg={args.turn_cap_deg})...")
+        print(f"[train] Computing data-driven zone-weighted sample weights "
+              f"(n_turn_bins={args.n_turn_bins}, weight_cap_percentile={args.weight_cap_percentile})...")
         weights = scenario_zones.compute_train_sample_weights(
-            train_ds, cfg, turn_boost=args.turn_boost, tl_boost=args.tl_boost, turn_cap_deg=args.turn_cap_deg)
-        print(f"[train] Sample weight stats: min={weights.min():.2f} max={weights.max():.2f} "
-              f"mean={weights.mean():.2f} (baseline 1.0)")
+            train_ds, cfg, n_turn_bins=args.n_turn_bins, weight_cap_percentile=args.weight_cap_percentile)
         sampler = WeightedRandomSampler(weights, num_samples=len(train_ds), replacement=True)
         train_loader = DataLoader(
             train_ds, batch_size=args.batch, sampler=sampler,

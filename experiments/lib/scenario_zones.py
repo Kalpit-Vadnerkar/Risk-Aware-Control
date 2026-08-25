@@ -135,14 +135,35 @@ def window_start_xy(dataset, cfg):
     return xy
 
 
-def compute_train_sample_weights(dataset, cfg, turn_boost=3.0, tl_boost=2.0, turn_cap_deg=20.0):
-    """Per-window training sample weight (2026-08-24, for
-    st_gat/train.py's --zone-weighted-sampling): 1.0 baseline, +turn_boost
-    scaled by the window's OWN actual future turn severity (capped at
-    turn_cap_deg, so a 20+ degree turn gets the full boost and severity
-    beyond that doesn't runaway-dominate the sampler), +tl_boost flat if
-    the window starts within a real TL/intersection zone (see module
-    docstring for why TL stays binary while turn severity is continuous).
+def compute_train_sample_weights(dataset, cfg, n_turn_bins=10, weight_cap_percentile=95.0, verbose=True):
+    """Per-window training sample weight, DATA-DRIVEN (2026-08-25, replaces
+    the 2026-08-24 version's fixed turn_boost=3.0/tl_boost=2.0/
+    turn_cap_deg=20.0 constants per Kalpit's explicit direction: "I dont
+    want to hard-code values as we plan to get more data and so our
+    pipeline should be ready for that"). Classic inverse-class-frequency
+    reweighting instead of hand-picked multipliers:
+
+    1. Bin windows by (turn-severity decile, tl-zone membership) -- bin
+       EDGES are the CURRENT dataset's own quantiles (rank-based, not
+       fixed degree thresholds), so as more/different data is collected
+       the bins re-derive themselves automatically, no manual retuning.
+    2. weight_i = 1 / frequency(bin_i), i.e. rarer combined scenarios get
+       proportionally more weight -- automatically tracks whatever the
+       actual imbalance ratio in the current dataset is, rather than
+       asserting a fixed multiplier that may over- or under-correct as
+       the data distribution shifts.
+    3. Capped at the `weight_cap_percentile`-th percentile of the weights
+       THEMSELVES (self-referential, not an external hardcoded ceiling)
+       to prevent one near-empty bin from dominating the sampler, then
+       renormalized to mean 1.0 so the effective dataset size stays
+       stable regardless of how skewed the underlying distribution is.
+
+    n_turn_bins/weight_cap_percentile are binning-RESOLUTION choices, not
+    tuned "how much should turns matter" constants -- reasonable to leave
+    at their defaults across retrains; expose them for the sweep in
+    experiments/scripts/sweep_zone_weighting.py rather than the boost
+    magnitudes the old version exposed.
+
     Returns an (N,) float array suitable for
     torch.utils.data.WeightedRandomSampler."""
     n = len(dataset)
@@ -154,8 +175,34 @@ def compute_train_sample_weights(dataset, cfg, turn_boost=3.0, tl_boost=2.0, tur
     xy = window_start_xy(dataset, cfg)
     trees = load_zone_trees()
     membership = zone_membership(xy, trees)
+    tl_flag = membership['tl_zones'].astype(int)
 
-    weights = np.ones(n)
-    weights += turn_boost * np.clip(turn_deg / turn_cap_deg, 0.0, 1.0)
-    weights += tl_boost * membership['tl_zones'].astype(float)
-    return weights
+    # Rank-based (not value-based) quantile binning of the nonzero turn-
+    # severity tail: most windows are ~0 deg (straight driving), so a
+    # plain value-quantile split would collapse most bin edges at 0.
+    # Ranking only the nonzero subset spreads the tail into n_turn_bins-1
+    # genuinely distinct bins; bin 0 is reserved for ~straight driving.
+    nonzero = turn_deg > 0.01
+    turn_bin = np.zeros(n, dtype=int)
+    if nonzero.sum() >= n_turn_bins:
+        order = np.argsort(np.argsort(turn_deg[nonzero]))
+        ranks = order / max(1, nonzero.sum() - 1)
+        turn_bin[nonzero] = 1 + np.clip((ranks * (n_turn_bins - 1)).astype(int), 0, n_turn_bins - 2)
+
+    category = turn_bin * 2 + tl_flag
+    cats, counts = np.unique(category, return_counts=True)
+    freq = dict(zip(cats.tolist(), (counts / n).tolist()))
+
+    raw_weight = np.array([1.0 / freq[c] for c in category])
+    cap = float(np.percentile(raw_weight, weight_cap_percentile))
+    weight = np.clip(raw_weight, None, cap)
+    weight = weight / weight.mean()
+
+    if verbose:
+        print(f"[scenario_zones] auto sample weights: {len(cats)} combined (turn-severity-bin x "
+              f"tl-zone) cells over {n} windows; raw inverse-frequency range "
+              f"[{raw_weight.min():.2f}, {raw_weight.max():.2f}], capped at "
+              f"p{weight_cap_percentile:.0f}={cap:.2f}, final normalized range "
+              f"[{weight.min():.2f}, {weight.max():.2f}] (mean 1.0)")
+
+    return weight
