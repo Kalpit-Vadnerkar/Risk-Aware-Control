@@ -468,6 +468,22 @@ Layer 1's UNCERTAINTY signal — the actual margin/consequence rollout
 Layer 2 needs is still unbuilt and completely unvalidated by this check.
 Full data: `experiments/analysis/fault_prediction_inspection/`.
 
+**Independent novelty verdict + fault-injection redesign plan (2026-08-25)**
+— a fresh (not session-colored) agent independently verdicted Layer 1
+alone (calibration + geometry-grounded audit + training-level fix +
+Mondrian-vs-embedding comparison + fault validation), once a TL severity
+sweep and more nominal data land, as dissertation-worthy on its own —
+closest prior work is Reuter et al., ITSC 2026 (arXiv:2605.19655), genuinely
+close but missing the training-level fix, the multi-category real-geometry
+grouping, and the discrete-vs-continuous comparison. Real caveat: 7 nominal
+trials is load-bearing-weak for the coverage-guarantee claims, not optional
+polish. Supports splitting into two papers (Layer 1 alone; Layer 2 building
+on it), each independently sufficient. Also audited `fault_injector.py`
+end-to-end for a possible TL severity-sweep redesign: the existing "S1-S4"
+tiers are different fault MECHANISMS, not a real parametric sweep — use
+`tl_confidence`'s `confidence_scale` at many levels instead. Full detail in
+project memory (`project_open_world_safety_reframe_2026-08-20.md`).
+
 **Multi-feature extension (2026-08-25, same day)** — Kalpit's catch: "is
 there a reason we're only looking at position?" Extended the same script
 to all 7 series and it decisively mattered — position was NOT the most
