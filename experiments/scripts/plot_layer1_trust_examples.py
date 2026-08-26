@@ -203,7 +203,11 @@ def main():
     with open(args.conformal_report) as f:
         report = json.load(f)
     is_mondrian = 'by_group' in report
-    if is_mondrian:
+    is_embedding = report.get('method') == 'embedding_knn'
+    if is_embedding:
+        print(f"Loaded EMBEDDING (h_last k-NN, k={report['k']}) calibrated quantiles from "
+              f"{args.conformal_report} -- band width is computed per-window directly, not per group.")
+    elif is_mondrian:
         print(f"Loaded MONDRIAN calibrated quantiles from {args.conformal_report} "
               f"(groups: {report['groups']}, alpha={report['alpha']}) -- band width will vary "
               f"per example window depending on which scenario group it falls in.")
@@ -234,7 +238,13 @@ def main():
         preds, future = _forward_one(model, device, ds, idx)
         seq = ds.sequences[idx]
 
-        if is_mondrian:
+        if is_embedding:
+            if str(idx) not in report['windows']:
+                raise ValueError(f"window {idx} has no embedding-calibrated quantile in {args.conformal_report} "
+                                  f"-- run conformal_embedding_calibration.py --windows {idx} first")
+            quantiles = report['windows'][str(idx)]
+            print(f"  window {idx} ({tag}): embedding (h_last k-NN) quantile")
+        elif is_mondrian:
             ref_x, ref_y = seq['position_ref']
             last_past = seq['past'][-1]['position']
             xy = np.array([[ref_x + last_past[0] * cfg.POSITION_DISPLACEMENT_RANGE_M,
