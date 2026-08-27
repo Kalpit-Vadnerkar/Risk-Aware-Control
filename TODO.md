@@ -13,6 +13,23 @@ deleted, not current.
 
 ---
 
+## Status block (2026-08-26 update — read this first)
+
+**Next lab session (Kalpit back at the lab): a concrete, runnable plan
+exists.** `docs/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md` —
+exact commands, in order, for the TL fault severity sweep (24 new AWSIM
+trials: 6 matched nominal control + 18 fixed-severity fault, across
+goal_007/012/026) plus the one verification step that actually matters
+(confirming the new nominal trials land in the HELD-OUT calibration set,
+not training — the gap that limited the 2026-08-25 pilot to one clean
+goal). `collect.sh` already has the new `tl_fault_fixed_030/050/070`
+campaigns; `tl_severity_sweep_analysis.py` already handles both fixed and
+ramp severity trials. Read `docs/research_notes/
+layer1_paper_structure_2026-08-25.md` for why this is Paper 1's last
+missing comparison (C6).
+
+---
+
 ## Status block (2026-08-24 update — read this first, then the 2026-08-20 block below)
 
 The "89.7-90.2% pooled coverage, all 7 series" claim below is real but was

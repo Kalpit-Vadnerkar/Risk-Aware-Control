@@ -73,7 +73,13 @@ OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'tl_severity_swee
 _SERIES_KEYS = [s[0] for s in _SERIES]
 
 GOALS = ['goal_007', 'goal_012', 'goal_026']
-RAMP_CAMPAIGN = 'tl_fault_ramp'
+# All TL-fault campaigns worth folding into the dose-response curve. The
+# fixed-severity tiers (added 2026-08-26, see collect.sh) give the clean
+# result; tl_fault_ramp is kept as the original pilot for comparison/sanity-
+# checking, not because it's still needed to cover intermediate severities --
+# confidence_scale_for_trial() reads each trial's OWN fault_type and computes
+# severity correctly regardless of which of these produced it.
+TL_FAULT_CAMPAIGNS = ['tl_fault_fixed_030', 'tl_fault_fixed_050', 'tl_fault_fixed_070', 'tl_fault_ramp']
 NOMINAL_CAMPAIGN = 'nom_v11'
 
 
@@ -87,11 +93,36 @@ def _load_model(model_path):
     return model, device
 
 
-def reconstruct_confidence_scale(t_rel, fault_windows, events, rate, floor):
+def confidence_scale_for_trial(t_rel, fault_windows, events):
+    """confidence_scale(t) for every window -- dispatches on which TL fault
+    mode this trial actually used (2026-08-26, added once the fixed-severity
+    campaigns existed to analyze): `tl_confidence` holds one FIXED
+    confidence_scale for the whole fault-active window (read straight from
+    the trial's own tl_fault_start event -- no reconstruction, no ramp
+    confound); `tl_confidence_ramp` decays continuously and must be
+    reconstructed from the known rate/floor (see reconstruct_ramp below,
+    kept as the original 2026-08-25 pilot's method, unchanged)."""
+    fault_type = next((e.get('fault_type') for e in events if e['event'] == 'tl_fault_start'), None)
+    if fault_type == 'tl_confidence':
+        fixed_scale = next(e['params']['confidence_scale'] for e in events if e['event'] == 'tl_fault_start')
+        conf = np.ones(len(t_rel))
+        for i, t in enumerate(t_rel):
+            if any(w['start'] <= t <= w['end'] for w in fault_windows):
+                conf[i] = fixed_scale
+        return conf
+    elif fault_type == 'tl_confidence_ramp':
+        rate = next(e['params'].get('confidence_ramp_rate_per_s', 0.1) for e in events if e['event'] == 'tl_fault_start')
+        floor = next(e['params'].get('min_confidence_scale', 0.0) for e in events if e['event'] == 'tl_fault_start')
+        return reconstruct_ramp(t_rel, fault_windows, rate, floor)
+    else:
+        # nominal trial (kind='tl', no fault ever configured) -- always confidence_scale=1.0
+        return np.ones(len(t_rel))
+
+
+def reconstruct_ramp(t_rel, fault_windows, rate, floor):
     """confidence_scale(t) for every window, exact (deterministic ramp) --
     1.0 outside any fault window, decaying at `rate` per second since that
     cycle's own tl_fault_start, floored at `floor`, inside one."""
-    starts = sorted(e['wall_time'] for e in events if e['event'] == 'tl_fault_start')
     conf = np.ones(len(t_rel))
     for i, t in enumerate(t_rel):
         # which fault window (if any) contains t
@@ -146,34 +177,26 @@ def main():
     all_clean = []    # bool: is the nominal reference for this goal held-out (True) or train-contaminated (False)
 
     for goal in GOALS:
-        goal_clean = None
-
-        # --- ramp trials ---
-        ramp_dir = os.path.join(DATA_DIR, RAMP_CAMPAIGN, goal)
-        for run_dir in sorted(glob.glob(os.path.join(ramp_dir, 't*'))):
-            print(f"\n[ramp] {goal}/{os.path.basename(run_dir)}")
-            out = process_trial(run_dir, RAMP_CAMPAIGN, shared_builder, kind='tl')
-            if out is None:
-                continue
-            events = load_fault_log(run_dir)
-            rate = 0.1
-            floor = 0.0
-            for e in events:
-                if e['event'] == 'tl_fault_start':
-                    rate = e['params'].get('confidence_ramp_rate_per_s', rate)
-                    floor = e['params'].get('min_confidence_scale', floor)
-                    break
-            conf = reconstruct_confidence_scale(out['t_rel'], out['fault_windows'], events, rate, floor)
-            resid = residuals_for_sequences(model, device, out['sequences'])
-            n = len(out['sequences'])
-            all_conf.append(conf)
-            for k in _SERIES_KEYS:
-                all_resid[k].append(resid[k])
-            all_goal.append(np.full(n, goal, dtype=object))
-            all_source.append(np.full(n, 'ramp', dtype=object))
-            all_clean.append(np.ones(n, dtype=bool))   # ramp trials are never in TRAIN_DIR (fault data)
-            print(f"  {n} windows, confidence_scale range experienced: "
-                  f"[{conf.min():.2f}, {conf.max():.2f}], {(conf < 0.99).sum()} windows with fault active")
+        # --- TL-fault trials (fixed-severity tiers + the original ramp pilot) ---
+        for campaign in TL_FAULT_CAMPAIGNS:
+            campaign_dir = os.path.join(DATA_DIR, campaign, goal)
+            for run_dir in sorted(glob.glob(os.path.join(campaign_dir, 't*'))):
+                print(f"\n[{campaign}] {goal}/{os.path.basename(run_dir)}")
+                out = process_trial(run_dir, campaign, shared_builder, kind='tl')
+                if out is None:
+                    continue
+                events = load_fault_log(run_dir)
+                conf = confidence_scale_for_trial(out['t_rel'], out['fault_windows'], events)
+                resid = residuals_for_sequences(model, device, out['sequences'])
+                n = len(out['sequences'])
+                all_conf.append(conf)
+                for k in _SERIES_KEYS:
+                    all_resid[k].append(resid[k])
+                all_goal.append(np.full(n, goal, dtype=object))
+                all_source.append(np.full(n, campaign, dtype=object))
+                all_clean.append(np.ones(n, dtype=bool))   # fault trials are never in TRAIN_DIR
+                print(f"  {n} windows, confidence_scale range experienced: "
+                      f"[{conf.min():.2f}, {conf.max():.2f}], {(conf < 0.99).sum()} windows with fault active")
 
         # --- matched nominal trials ---
         nom_dir = os.path.join(DATA_DIR, NOMINAL_CAMPAIGN, goal)

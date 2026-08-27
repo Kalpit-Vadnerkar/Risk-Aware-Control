@@ -22,6 +22,12 @@
 #   tl_fault_s4         TL full blackout — repeats at every TL zone
 #   tl_fault_ramp       TL confidence decays 1.0->0.0 over each 15s cap/cycle
 #                       (gradual, not a step) — repeats at every TL zone
+#   tl_fault_fixed_030  TL confidence FIXED at confidence_scale=0.7 (severity 0.3)
+#   tl_fault_fixed_050  TL confidence FIXED at confidence_scale=0.5 (severity 0.5)
+#   tl_fault_fixed_070  TL confidence FIXED at confidence_scale=0.3 (severity 0.7)
+#                       (added 2026-08-26 for a clean severity dose-response —
+#                       see the case block below for why the ramp doesn't serve
+#                       this specific purpose despite superseding tl_fault_s1)
 #   tl_fault_s1 (fixed confidence x0.5) REMOVED 2026-07-24 — tl_fault_ramp's
 #   decay passes through and beyond S1's exact severity level within a single
 #   trial, so it subsumes what S1 could show. Mirrors the imu_bias tiers'
@@ -114,7 +120,7 @@ if [[ $# -eq 0 ]]; then
     echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--fault-min-runway-m M] [--arm A|B] [--yes] [--dry-run]${NC}"
     echo ""
     echo "Campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
-    echo "           tl_fault_s2..s4  tl_fault_ramp  imu_fault_s1  imu_fault_s3  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
+    echo "           tl_fault_s2..s4  tl_fault_ramp  tl_fault_fixed_030/050/070  imu_fault_s1  imu_fault_s3  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
     echo ""
     echo "--fault-min-runway-m M: fallback-only straight-line runway distance,"
     echo "used only if map TL zone points fail to load (normally they do, and"
@@ -382,6 +388,51 @@ case "$CAMPAIGN" in
             --fault-duration 15
         ;;
 
+    # ── Fixed-severity TL confidence tiers (added 2026-08-26) ───────────────────
+    # Deliberately REINTRODUCES what tl_fault_s1 (fixed confidence_scale=0.5)
+    # was removed for on 2026-07-24, for a specific, scoped reason the removal
+    # didn't need to consider. That removal's own reasoning was correct for its
+    # purpose (fault-signal verification / discriminability: the ramp visits
+    # every severity level within one trial, so a fixed tier adds nothing
+    # THERE). This campaign exists for a DIFFERENT purpose: a clean residual
+    # dose-response curve for Layer 1 calibration validation
+    # (docs/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md). The ramp
+    # is unsuitable for THAT purpose specifically because it confounds severity
+    # with elapsed-time-since-fault-onset, which itself correlates with
+    # physical proximity to the actual intersection (early-cycle = still
+    # approaching, easy; late-cycle = at the decision point, hard) — confirmed
+    # directly by reconstructing confidence_scale from the existing tl_fault_ramp
+    # data and finding a non-monotonic dip-then-spike residual curve instead of
+    # a clean dose-response (see experiments/scripts/tl_severity_sweep_analysis.py's
+    # 2026-08-25 result). Holding severity FIXED for a whole zone dwell removes
+    # that confound. Three levels chosen to bracket the ramp pilot's finding
+    # that traffic_light_confidence residual becomes clearly elevated above
+    # ~0.5 severity (1 - confidence_scale): a below-threshold point (0.3), a
+    # near-threshold point (0.5), and an above-threshold point (0.7).
+    tl_fault_fixed_030)
+        echo -e "${BLUE}TL fault FIXED severity 0.3 (confidence_scale=0.7) — 15s cap/cycle${NC}"
+        run tl_fault_fixed_030 tl_fault_fixed_030 \
+            --tl-fault tl_confidence \
+            --tl-params '{"confidence_scale":0.7}' \
+            --fault-duration 15
+        ;;
+
+    tl_fault_fixed_050)
+        echo -e "${BLUE}TL fault FIXED severity 0.5 (confidence_scale=0.5) — 15s cap/cycle${NC}"
+        run tl_fault_fixed_050 tl_fault_fixed_050 \
+            --tl-fault tl_confidence \
+            --tl-params '{"confidence_scale":0.5}' \
+            --fault-duration 15
+        ;;
+
+    tl_fault_fixed_070)
+        echo -e "${BLUE}TL fault FIXED severity 0.7 (confidence_scale=0.3) — 15s cap/cycle${NC}"
+        run tl_fault_fixed_070 tl_fault_fixed_070 \
+            --tl-fault tl_confidence \
+            --tl-params '{"confidence_scale":0.3}' \
+            --fault-duration 15
+        ;;
+
     # ── IMU fault campaigns ────────────────────────────────────────────────────
     # Constant-bias tiers (old imu_fault_s1..s4) REMOVED 2026-07-24. Root cause
     # traced (docs/design_decisions.md item 7 / TODO.md): autoware_ekf_localizer
@@ -549,7 +600,7 @@ case "$CAMPAIGN" in
     *)
         echo -e "${RED}Unknown campaign: ${CAMPAIGN}${NC}"
         echo "Valid campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
-        echo "                 tl_fault_s2..s4  tl_fault_ramp  imu_fault_s1  imu_fault_s3  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
+        echo "                 tl_fault_s2..s4  tl_fault_ramp  tl_fault_fixed_030/050/070  imu_fault_s1  imu_fault_s3  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
         exit 1
         ;;
 esac
