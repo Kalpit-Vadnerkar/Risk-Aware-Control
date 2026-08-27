@@ -1,5 +1,25 @@
-Three additional calibration fixes worth mentioning if asked about model quality: (1) position was scaled relative to each window's own bounding box, which is invisible to the model and made a trivial constant-velocity baseline outperform the trained model by 30x — fixed by switching to a fixed-scale relative-displacement representation. (2) beta-NLL reweighting (Seitzer et al., ICLR 2022) fixed the standard Gaussian NLL's pathology of down-weighting gradients by 1/variance, which was preventing the model from learning to widen its variance appropriately at longer horizons. (3) a variance floor bug (VAR_FLOOR=1e-4) was pinning position's predicted uncertainty at exactly 1.0m regardless of input, once the representation fix shrank real error below that floor — lowered to 1e-8 and stress-tested against synthetic near-zero-residual data before retraining.
+This slide's most important beat is the abandoned-approach admission — it
+is a real, useful part of the narrative, not a weakness to hide. It sets
+up exactly why conformal calibration was chosen (a decisive calibration
+win) while being honest that it did NOT win on point accuracy (mixed,
+actually slightly worse on 4/6 features). If asked "why not just fix the
+distributional head instead of abandoning it" — the pathology (dof-
+collapse under heteroscedastic regression) is a documented, known failure
+mode of jointly training mean+scale+dof in one objective, not a bug
+specific to this implementation; conformal calibration sidesteps the whole
+class of problem rather than patching one instance of it.
 
-Current calibration status (z-score std, want 1.0): position 0.885 (mildly underconfident, and drifts to 1.177 at longer horizons), velocity 1.174, steering 1.101, traffic_light_state 1.332 (the most overconfident remaining, worth watching once conformal calibration is layered on top — that layer should catch and correct this by construction, per docs/research_notes/model_improvement_notes_2026.md, but it's confirmed empirically not just assumed).
+The per-head horizon embedding fix is a real, separate, already-verified
+bug fix (found via direct gradient-attribution analysis, not guessed) —
+worth a sentence if there's time, since it's concrete engineering evidence
+of care taken, not hand-waving.
 
-Known, deliberately deferred limitations (see docs/research_notes/model_improvement_notes_2026.md, not hidden): route/goal information reaches the model via path_node graph flags but gets diluted by uniform mean-pooling over ~150 graph nodes; no deep ensemble yet (variance is aleatoric-only, no epistemic decomposition); VAR_FLOOR is one global constant, not per-feature; object encoder is mean-pool-only, not attention-weighted. None of these are blocking — logged as the honest punch list for later.
+If asked about model size/compute: 507,249 parameters — small enough that
+compute cost is not a constraint on any of this cycle's experiments
+(training a full point-predictor variant takes under an hour).
+
+Don't imply the whole model is "map-anchored" the way the old belief-
+divergence slide risked — the map contributes as ROUTE/GRAPH CONTEXT via
+the graph encoder for every feature, it is not a verification oracle for
+any single channel the way the old traffic_light_discrepancy mechanism
+was. That old, narrower claim is fully retired (slide 1/5).

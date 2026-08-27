@@ -1,3 +1,18 @@
-These two plot types (fault_plan.py, fault_impact.py) come from the existing experiments/lib/plotting.py shared module, built this session by consolidating three previously-separate, cross-importing scripts (plot_routes.py, plot_fault_plan.py, plot_fault_impact.py) into one reusable set of map-loading/zone-drawing/outcome-styling primitives — the same module plot_predictions.py (slide 10) and the signal-quality tables (slide 11) build on.
+This slide's content and plots are unchanged from the prior deck — the
+message-level verification step didn't need to change with the
+calibration pivot, it's a lower-level check that everything else depends
+on regardless of which uncertainty framework sits on top of it.
 
-Good concrete example to have ready if asked "how do you know the fault actually worked": the whole project's philosophy (see CLAUDE.md's "before trusting newly-collected experiment data" section) is not to trust result.json's status field alone — every campaign gets checked with a chain of verification scripts (analyse_experiments.py, analyze_mrm_diagnostics.py, compare_fault_vs_nominal.py, verify_imu_zone_arming.py / verify_tl_zone_arming.py) before being used for anything downstream. This slide's plot is the visual version of that discipline.
+The explicit "necessary but not sufficient" closing line is new and
+important — it's the bridge to slide 13, and it preempts the obvious
+follow-up question ("so does the fault actually matter to the model")
+before it's asked here prematurely; slide 13 is where that's actually
+answered, with real numbers.
+
+If asked for a concrete example of the "fault ran but never reached the
+signal" failure mode mentioned: an early TL fault campaign subscribed to
+a topic Autoware never actually publishes (assumed a raw/final split that
+doesn't exist in this Autoware install) — every trial completed
+normally, fault_log.jsonl looked fine, and the injected fault reached
+zero real messages the whole time. Found only by this exact
+message-level check, not by anything at the trial-outcome level.

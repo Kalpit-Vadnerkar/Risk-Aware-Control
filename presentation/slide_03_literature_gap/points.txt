@@ -1,24 +1,38 @@
-LITERATURE GAP: CALIBRATED CONFIDENCE + LEAD TIME, NOT ANOTHER DETECTOR
+LITERATURE GAP: TWO TRADITIONS THAT DON'T TALK TO EACH OTHER
 
-Body 1 — AV fault/anomaly detection (well-studied, including our own prior work):
-  → Residual-based, learned, and rule-based fault detectors for AV sensors
-  → Reports accuracy / F1 / feature importance on a fixed test set
-  → Representative: our T-ITS 2025 paper; broader anomaly-detection literature
+Tradition 1 — Uncertainty quantification / anomaly detection:
+  → Monitors a model's own uncertainty, raises a flag past a threshold
+  → Treats uncertainty as an ALARM MAGNITUDE — a number to threshold, not
+    a quantity to reason further about
+  → Split-conformal prediction for AV trajectory forecasting exists here
+    (e.g. CUQDS) — but calibrates GLOBALLY (pooled), never checks whether
+    that guarantee holds per real-world scenario
 
-Body 2 — Trajectory prediction for AVs (well-studied, actively moving fast):
-  → VectorNet, LaneGCN, HiVT, Wayformer, QCNet — architecture-focused,
-    optimized for point/multimodal accuracy, not calibrated uncertainty
-  → Heteroscedastic regression pitfalls (Seitzer et al., beta-NLL, ICLR 2022)
-    are directly relevant to this project's own model — see below
+Tradition 2 — Risk-aware planning / reachability:
+  → Computes physical consequence (Waymo's "Field of Safe Motion," 2026:
+    forward reachability sets, a collision-free "out" at every instant)
+  → ASSUMES its own prediction/state estimate is correct — doesn't
+    question whether the input it's propagating is trustworthy right now
 
-Body 3 — Conformal prediction / distribution-free calibration (active, growing):
-  → Strong theory for i.i.d. or exchangeable calibration/test splits
-  → Lindemann et al. (2023) connects conformal bounds to control decisions —
-    closest precedent for turning a calibrated bound into a safety claim
-  → Rarely applied to a map-grounded AV fault signal with a lead-time claim
+Neither tradition alone answers: "my model is uncertain in this SPECIFIC
+way, right now — therefore this specific driving behavior is unsafe, by
+THIS much." That translation is the actual gap.
 
-The gap — calibrated, map-grounded, lead-time-aware fault verification:
-  → No framework combines: (a) a mechanistic, map-grounded divergence signal,
-    (b) a distribution-free confidence guarantee on that signal, and
-    (c) a measured, severity-dependent lead time against a real safety outcome
-  → This is what Stage 4 (conformal calibration + lead time) is built to close
+The closest prior work found (Reuter et al., ITSC 2026) — genuinely
+close, worth knowing precisely how this differs:
+  → Also finds pooled conformal coverage hides a per-scenario gap on a
+    real AV (curvature-based grouping)
+  → But: ONE binary grouping variable (not real map-zone categories),
+    fixes the gap only by RECALIBRATING (never retrains the model), a
+    single scalar output (not a 7-feature trajectory), synthetic actuator
+    degradation (not injected sensor/perception faults), no comparison
+    against a continuous/embedding alternative
+
+Independent verdict (a fresh literature-review agent, not primed with
+this project's own framing, tasked to find fault with the claim if
+possible): the SPECIFIC COMBINATION here — geometry-grounded audit +
+training-level fix + discrete-vs-continuous conditional calibration
+comparison + real fault validation with cross-feature diagnosticity —
+was not located anywhere in the literature. Verdict: dissertation-worthy
+as a standalone contribution once a severity sweep and more nominal data
+land (in progress — see slide 15).

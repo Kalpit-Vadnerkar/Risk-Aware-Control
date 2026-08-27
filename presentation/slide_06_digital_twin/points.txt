@@ -1,33 +1,40 @@
-THE DIGITAL TWIN: ST-GAT ARCHITECTURE (updated this session)
+THE DIGITAL TWIN: ST-GAT + CONFORMAL CALIBRATION (revised this cycle)
 
-Encoder: GCN graph encoder (HD map lanelets) + BatchNorm, fused with a
-Transformer temporal encoder + LSTM over a 3-second (30-step, 10Hz) window.
+Encoder: graph attention over the HD-map lanelet graph (route-aware node
+selection, learned attention pooling — not a uniform mean) + LSTM temporal
+encoder over a 3-second (30-step, 10Hz) window, + a permutation-invariant
+object-set encoder (up to 8 tracked objects, masked attention pooling).
 
-Input features (14, redesigned this session to fix real bugs found in the
-prior repo's approach — not anchored to it):
-  → Ego state: position (relative displacement, fixed-scale — NOT per-window
-    bbox-relative, a scale-inconsistency bug fixed this session), velocity,
-    steering, acceleration
-  → Traffic light: detected (map fact), state (perception report),
-    discrepancy (map-vs-perception mismatch) — the negative-evidence channel
-  → Object context: permutation-invariant set encoder (masked mean-pool over
-    up to 8 tracked objects), replacing a collapsed nearest-object heuristic
-    that silently discarded multi-object information
-  → Scene context: adjacent-lane flag, EKF position uncertainty
+Predicted features (7, point predictions — mean only):
+  → position, velocity (longitudinal/lateral split), steering,
+    acceleration, traffic-light color, traffic-light confidence
 
-Output heads (Gaussian mean/variance, or Bernoulli where appropriate):
-  → position, velocity, steering, acceleration — Gaussian, beta-NLL weighted
-  → traffic_light_state — Gaussian (NEW head this session — previously
-    computed as an input but never actually predicted)
-  → traffic_light_discrepancy, traffic_light_detected — Bernoulli/BCE
+Per-horizon-step decoding: each feature's head takes [shared hidden state
+; that feature's OWN learned horizon-step embedding] — fixed a real bug
+this cycle where every head shared ONE embedding table and effectively
+fought over it (route-ahead position information owned 40-44% of that
+table's gradient, actively hurting every other head).
 
-Two real bugs fixed this session (not hypothetical — reproduced and verified):
-  → Entity-collapse: TL extraction was pooling across every currently-tracked
-    light group instead of the one the vehicle is actually governed by —
-    silently muted the model's own strongest signal
-  → Missing output heads: the negative-evidence channel (tl_state,
-    tl_discrepancy) was computed as an input but had no way to be predicted,
-    so no residual/NLL was computable on the signal that matters most
+THE APPROACH THAT WAS TRIED AND ABANDONED — worth stating plainly, not
+glossing over:
+  → Originally: jointly-trained Student-t distributional heads
+    (mean+scale+dof), the "obvious" way to get uncertainty from a neural
+    predictor
+  → Measurably failed to calibrate: coverage-curve max gap 0.066-0.376,
+    a statistical test (KS) decisively rejects calibration for every
+    feature — the model's own reported confidence didn't mean what it
+    claimed
+  → Root cause: a known pathology in jointly training a network to BOTH
+    predict AND self-report confidence in one objective (dof-collapse,
+    scale/residual mismatch)
 
-Horizon is a variable, not a fixed hyperparameter — cache/checkpoint paths
-are horizon-tagged (h30_30) so a horizon sweep doesn't silently collide.
+THE FIX — conformal calibration wraps the point predictor instead:
+  → No joint optimization, no distribution-family assumption to fight
+  → Take the plain mean-only predictor (point accuracy was solid the
+    whole time — the problem was never accuracy) and derive a calibrated
+    interval directly from held-out residuals
+  → Result: coverage-curve max gap 0.004-0.011 — a decisive calibration
+    improvement, even though point accuracy is actually MIXED (the
+    abandoned approach is slightly better on 4/6 features) — say this
+    plainly, calibration quality is the reason for the switch, not
+    accuracy

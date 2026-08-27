@@ -1,20 +1,28 @@
-FAULT PLANS AND IMPACTS
+FAULT PLANS AND IMPACTS: DOES THE INJECTION ACTUALLY WORK
 
 Fault plan (Plot: fault_plan_example_tl_fault_s3.png):
-  → Shows a campaign's actual gating zone/radius overlaid on the route map
-    before any data is collected — a visual sanity check that the fault is
-    scoped to the right physical location (e.g., the one traffic light the
-    vehicle's own route is governed by, not every light in the scene)
+  → Shows a campaign's actual gating zone/radius overlaid on the route
+    map BEFORE any data is collected — a visual sanity check that the
+    fault is scoped to the right physical location (the one traffic
+    light the vehicle's own route is governed by, not every light in the
+    scene)
 
-Fault impact (Plot: fault_impact_example_imu_fault_s3.png):
-  → Overlays the nominal reference signal against the faulted trial's actual
-    signal (e.g., EKF-vs-ground-truth divergence for IMU faults, TL
-    color/confidence for TL faults), with the fault-active window shaded
-  → Confirms the fault mechanism actually changed the signal it targets —
-    not just that fault_log.jsonl recorded an event
+Fault impact, message level (Plot: fault_impact_example_imu_fault_s3.png):
+  → Overlays the nominal reference signal against the faulted trial's
+    actual signal (EKF-vs-ground-truth divergence for IMU faults, TL
+    color/confidence for TL faults), fault-active window shaded
+  → Confirms the fault mechanism actually changed the raw signal it
+    targets — not just that fault_log.jsonl recorded an event
 
-Why this verification step matters:
-  → A fault campaign can "run" (events logged, trial completes) without the
-    injected fault ever actually reaching the signal it's supposed to affect
-  → Every campaign in this project is checked this way before being trusted
-    as input to any downstream model-reaction analysis
+Why this verification step matters, and still matters:
+  → A fault campaign can "run" (events logged, trial completes) without
+    the injected fault ever reaching the signal it's supposed to affect
+    — this has actually happened before in this project's history (a
+    topic-name bug once made an entire campaign silently a no-op) and is
+    exactly the kind of failure this check catches
+  → Every campaign is verified this way before being trusted as input to
+    any downstream analysis — including everything on slide 13
+
+This is necessary but not sufficient: confirming the fault changes the
+RAW SIGNAL is a different question from whether the CALIBRATED MODEL's
+own uncertainty notices — that's the new result on slide 13.

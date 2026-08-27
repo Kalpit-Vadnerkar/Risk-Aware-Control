@@ -1,0 +1,39 @@
+NEXT STEPS: CLOSING LAYER 1, STARTING LAYER 2
+
+Immediate — closing Paper 1 (concrete, planned, ready to execute):
+  1. TL severity sweep, redesigned: fixed severity (not continuously
+     ramped, per slide 13's confound finding), matched fault-vs-no-fault
+     pairs at the SAME intersections, 3 levels x 3 goals x 2 repeats —
+     ~24 new trials, a bounded and plannable number, not open-ended
+  2. Matched nominal control runs double as new HELD-OUT calibration
+     data — directly closes the 7-trial gap (slide 14), with an explicit
+     verification step this time so new trials actually land held-out
+
+Layer 2 — consequence estimation, the core remaining thesis claim:
+  → Roll Layer 1's calibrated residuals forward as counterfactual futures
+    (bootstrap-resampled, preserving real cross-feature/temporal
+    correlation — no new distributional assumption)
+  → Check against a REACHABILITY-STYLE safety margin (bounded reachable
+    sets for nearby objects + true lane-containment) — pivoted from an
+    earlier static lane-distance design after finding it structurally
+    thinner than the literature's actual practice (Waymo's own "Field of
+    Safe Motion," 2026, is the template)
+  → Output: a calibrated P(safety-margin-violation within horizon H) —
+    not a bare anomaly magnitude, a number a planner could act on
+
+Target result shape for Layer 2 (what "done" should look like):
+  1. Reliability diagram for P(violation) itself — closest to buildable,
+     generalizes this update's own coverage-checking machinery
+  2. Lead-time vs. false-alarm curve — the headline result, needs the
+     severity sweep + fault data + Layer 2 built
+  3. Fault-type x margin x lead-time table
+  4. Detection-threshold vs. fault-magnitude sweep (stretch goal)
+
+Two real, non-rhetorical questions for the advisor:
+  → Does the two-paper split (Layer 1 standalone, Layer 2 building on
+    it) match committee expectations, or is one combined paper preferred?
+  → A new, deliberately scoped idea surfaced this cycle — AWSIM traffic
+    density (currently fixed) as a direct modulator of Layer 2's
+    consequence claim (the same fault matters more with real
+    cross-traffic present than on an empty road) — worth pursuing as
+    part of Layer 2, or keep it out of scope for now?

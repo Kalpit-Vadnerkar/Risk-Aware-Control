@@ -1,0 +1,29 @@
+This slide exists specifically to avoid overselling either technique —
+the "Mondrian isn't a free win" finding was caught by checking the SIZE-
+WEIGHTED net effect before presenting the width comparison, not assumed;
+the first draft of this result nearly presented Mondrian as an
+unambiguous win before that check was done. Say this directly if it comes
+up: it's a genuine example of catching an overclaim before it went out,
+not an incidental detail.
+
+If asked "which one should the dissertation actually use" — honest
+answer, not yet decided: Mondrian is simpler, has an actual finite-sample
+guarantee per group (not just approximately, the way the continuous
+method does), and is the safer default. The continuous approach is more
+elegant and compounds with future model improvements for free, but is
+less mature (noisier, not yet monotonic in its one tuning parameter). This
+is presented as live, ongoing methodology, not a settled choice — that's
+accurate, not a hedge.
+
+This slide is also where the standard statistical-prediction literature
+gets cited most directly if asked for related work: Mondrian conformal
+regressors (Boström & Johansson, 2020) for approach A; localized/kNN
+conditional conformal prediction (Guan, 2023) as the principled version
+of approach B's current ad hoc k-nearest-neighbor implementation — a
+named next step, not yet built.
+
+Numbers to have ready: net width ratio (Mondrian/pooled) — 0.849 for
+traffic-light-color (tighter), 1.114 for steering (wider), 1.194 for
+traffic-light-confidence (wider). Embedding approach: turn-window steering
+coverage 82.3% -> 86.7% after the slide-11 retrain, position width on
+turns tightened 26% where the pooled calibration was already adequate.

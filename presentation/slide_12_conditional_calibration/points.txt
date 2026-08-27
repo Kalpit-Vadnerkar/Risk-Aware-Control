@@ -1,0 +1,43 @@
+MAKING THE INTERVAL SCENARIO-AWARE: TWO APPROACHES, COMPARED HONESTLY
+
+Once the model itself is better (slide 11), a sharper calibration
+question remains: should the interval WIDTH itself vary by scenario, not
+just be validated per scenario? Two approaches, built and compared:
+
+Approach A — Mondrian (discrete group-conditional) conformal calibration:
+  → Partition calibration data into the same real zone categories
+    (turn / intersection / curved-road / open-road), fit a SEPARATE
+    calibrated interval per group instead of one pooled number
+
+(Plot: mondrian_vs_vanilla_width.png — grey dashed = pooled global width;
+colored = per-group width)
+
+Every group now lands close to the 90% target — the hidden gap from
+slide 11 (before the retrain) is resolved. But: NOT a free win.
+Size-weighted across how common each group actually is, steering and
+traffic-light-confidence intervals are actually ~11-19% WIDER on average
+under this scheme, not tighter — smaller per-group sample sizes need more
+statistical padding. Real, honest cost, not hidden.
+
+Approach B — continuous conditioning on the model's own learned scene
+representation (no hand-defined groups):
+  → Find the k most similar past scenes by the model's own internal
+    representation of "what kind of situation is this," calibrate
+    against just that neighborhood
+
+(Plot: embedding_turn_scalar_bands.png, embedding_steering_width_vs_turn.png)
+
+Distinguishing property discrete grouping structurally cannot match: this
+approach improves AUTOMATICALLY when the underlying model improves — no
+manual re-definition of group boundaries needed. Directly confirmed:
+after the slide 11 retrain, BOTH the baseline and this approach's result
+improved together with zero changes to the calibration scheme itself. It
+can also tighten a feature where the pooled calibration was already fine,
+not just widen where needed — Mondrian's fixed categories can't do that.
+Honest cost: noisier per-step estimates (visible as a real, sudden
+widening on an otherwise calm example) from having less data per estimate.
+
+Where this leaves things: neither is a strictly better default — the
+right choice likely depends on how much data is available and how
+consequential the target scenario is. Both are documented, reproducible,
+and available.

@@ -1,0 +1,29 @@
+This slide closes the deck the same way the prior version did — real,
+open questions for the advisor, not rhetorical ones dressed up as
+questions. Both are genuine forks where the committee's expectations
+matter more than this project's own preference.
+
+If asked for a timeline: the TL severity sweep is scoped for the very
+next lab session (a concrete runbook already exists, not a vague
+intention) — 24 trials is realistic for one to two sessions depending on
+how collection goes. Layer 2's reachability-margin redesign is a real
+engineering task (the previous static lane-distance attempt had a known
+bug — adjacent-lane contamination — that's being fixed by redesigning
+the margin's shape, not patching the old one) with no fixed timeline yet.
+
+If asked why NPC density is framed as a Layer 2 question, not a Layer 1
+one: it's a modulator of true PHYSICAL CONSEQUENCE, not of calibration
+quality — it doesn't change whether Layer 1's uncertainty estimate is
+correct, it changes how much a given uncertainty level actually matters.
+That's exactly Layer 2's job, not Layer 1's. Also worth mentioning if
+asked about feasibility: changing AWSIM's NPC count requires a real
+Unity Editor rebuild (not a config toggle) since the deployed build is a
+packed binary — a nontrivial but bounded engineering task, already
+scoped in project notes, not started.
+
+If asked about the target-result-shape list's priority: item 1
+(reliability diagram for P(violation)) is genuinely close to buildable
+today, reusing this update's own coverage machinery almost directly.
+Items 2-4 need real fault severity data first (item 1's dependency chain
+is honest, not hedged) — item 2 is the actual headline claim once
+buildable, items 3-4 are progressively more stretch.

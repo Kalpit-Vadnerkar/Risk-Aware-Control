@@ -1,0 +1,40 @@
+FINDING AND FIXING THE GAP AT THE MODEL LEVEL, NOT JUST RECALIBRATING
+
+Systematic audit, grounded in real geometry (not guessed categories):
+every calibration window labeled by proximity to real map zones — turn
+zones, intersection zones, curved-road zones, open road — the SAME
+geometry that gates fault injection (slide 8), reused rather than
+invented.
+
+The hidden gap, quantified: pooled steering coverage reads ~90% (looks
+fine) — but splits into 94.2% on calm driving and only 75.6% near real
+intersections. A single aggregate number cannot see this; the audit can.
+
+The fix — retrain, don't just widen the interval:
+  → Oversample turn/intersection-proximate windows during training,
+    weighted by each window's OWN actual difficulty
+  → Fully data-driven: weights are inverse-frequency-derived from
+    whatever the CURRENT training set's distribution actually is — no
+    hand-picked "make turns matter 3x more" constant to go stale as more
+    data is collected
+
+Why fix the model instead of just widening the calibrated band there:
+widening the interval near intersections is statistically honest but
+costs detection sensitivity exactly where faults are most often relevant
+(slide 8's zone geometry is literally where faults are gated to occur) —
+a wider-but-honest band there is a worse trade than a model that's
+actually better at turns.
+
+(Plot: v2_turn_scalar_bands.png, v2_turn_position_map.png — SAME sharpest-
+turn window as slide 10, after the fix)
+
+Directly compare to slide 10's v1 plot of the identical window: the
+predicted trajectory now visibly hugs the actual curve, and steering/
+lateral-velocity predictions clearly rise and peak with the real
+maneuver instead of staying flat.
+
+Validated, not just visually — intersection steering coverage: 75.6% →
+87.3%. Position residual on the hardest turn cases: down 47%. Real,
+measured, expected trade-off: calm-driving accuracy costs a few percent
+(the model is now mildly biased toward expecting more curvature
+everywhere) — an honest, worthwhile trade given what improved.

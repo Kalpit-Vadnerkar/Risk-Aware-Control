@@ -1,6 +1,6 @@
 A Probabilistic Framework for Safe and Reliable Autonomous Vehicles as Digital Twins
 
-Calibrated Confidence and Lead Time for Belief-Divergence Fault Detection
+Calibrated Uncertainty and Consequence Estimation for Open-World AV Safety
 
 Kalpit Vadnerkar — PhD Candidate
 Advisor: Dr. Pierluigi Pisu

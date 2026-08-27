@@ -1,120 +1,110 @@
-# Presentation story, slide by slide
+# Presentation story, slide by slide (rewritten 2026-08-26)
 
-A narrative walkthrough of the deck's flow, for reviewing structure before diving
-into per-slide detail (`points.txt`/`notes.txt` in each `slide_NN_*/` folder).
-Not slide content itself — this is the "why does slide N lead to slide N+1" layer.
+A narrative walkthrough of the deck's flow — the bird's-eye view, for
+getting the whole story in one pass before diving into per-slide detail
+(`points.txt`/`notes.txt` in each `slide_NN_*/` folder). Not slide content
+itself.
 
-**01 — Title.** Same core framing as the last presentation: AI safety in AVs via
-digital twins. Subtitle signals what's new this cycle (calibrated confidence +
-lead time), not a change of subject.
+This deck replaces the prior "belief-divergence fault detection" story
+entirely (retired slides preserved in `_retired_pre_pivot/` for history).
+The core message: **Layer 1 (a calibrated, validated uncertainty signal)
+is close to done. Layer 2 (translating that signal into physical
+consequence) is the real remaining thesis work, and this deck exists to
+show the concrete path from one to the other.**
 
-**02 — Motivation.** Opens with a deliberately narrow claim: our prior T-ITS
-paper proved the twin CAN detect faults, accurately. This slide argues that
-accuracy alone doesn't answer whether the detector should be *trusted* — sets
-up the reframe from "can it detect" to "can it be verified."
+**01 — Title.** Same core framing as every prior presentation — AI safety
+in AVs via digital twins. The subtitle is what changed again: calibrated
+uncertainty and consequence estimation, not fault detection or belief
+divergence. Signals a maturation of the claim, not a change of subject.
 
-**03 — Literature gap.** Places the work in context: fault detection (mature,
-including our own prior paper) and trajectory prediction (mature, fast-moving)
-are both crowded. The underserved combination — a mechanistic map-grounded
-signal + a distribution-free calibration guarantee + an actual lead-time
-measurement — is the gap. Sets up why this is a genuine contribution, not a
-rerun of the paper.
+**02 — Motivation.** Opens with the same move as before: our prior T-ITS
+paper proved the twin CAN detect faults accurately — but accuracy alone
+doesn't answer whether a prediction's confidence can be trusted. Reframes
+"can it detect" into "does it know what it doesn't know, and does that
+self-knowledge respond correctly when something goes wrong."
 
-**04 — Problem statement.** The thesis statement itself. Explicitly separates
-what's banked (detection, from the paper) from what's new (calibrated
-confidence, lead time, severity). Introduces the two-arm design and flags
-honestly that Arm B isn't collected yet — a limitation stated up front, not
-discovered later.
+**03 — Literature gap.** Two traditions that don't talk to each other:
+uncertainty quantification (treats confidence as an alarm to threshold)
+and risk-aware planning (assumes its own predictions are correct). Names
+the closest real prior work (Reuter et al., ITSC 2026) precisely and
+states exactly how this differs. Reports an independent literature-review
+agent's verdict: the specific combination here wasn't found anywhere.
 
-**05 — Framework.** The mechanism: belief divergence under a map-grounded
-prior, with the "epistemic stance" language explaining *why* this counts as a
-legitimate check and not the model grading its own homework. This is the
-slide flagged for a clarity pass (see your question 4) — right now it risks
-implying the whole model is map-anchored when really only the TL channel is.
+**04 — Problem statement.** The three-layer architecture (Detect /
+Consequence / Respond) and the thesis statement. States plainly what's
+banked (Layer 1, this update) vs. what's the real remaining claim (Layer
+2). Introduces the decision to split into two papers rather than one,
+and why that's not a hedge.
 
-**06 — Digital twin (architecture).** The concrete ST-GAT model: 14 input
-features, the two new output heads added this session, and the two real bugs
-fixed (entity-collapse, missing heads). This is where "the mechanism from
-slide 5 is actually implemented" lands.
+**05 — Framework.** The mechanism, replacing belief-divergence entirely:
+calibrated interval → bootstrap counterfactual futures → reachability
+margin → calibrated P(violation). Explains precisely why this is the one
+path that doesn't drop the thread between the two literature traditions
+from slide 3.
 
-**07 — Experimental platform.** AWSIM + Autoware, largely unchanged from
-before — establishes this runs on the real production stack, not a toy
-planner. Updates the goal count (26, not 3) and drops the retired obstacle-
-placement framing.
+**06 — Digital twin (architecture).** The ST-GAT model, and — importantly
+— the abandoned approach that came before it: jointly-trained
+distributional heads, which measurably failed to calibrate. States
+plainly that the switch to conformal calibration was about calibration
+quality, not point accuracy (which is actually mixed). A real "we tried
+the obvious thing, here's why it didn't work" narrative beat.
 
-**08 — Data collection.** What's actually been collected: the 26-goal nominal
-baseline and the 8 fault campaigns, plus this session's zone-coverage
-expansion (3→26 goals, analysis-only, the thing that unlocked slide 11's
-tightened guarantee). Also plants the negative-evidence-subtype distinction
-(tl_s3/s4 vs. tl_s2/ramp) that pays off in slide 11.
+**07 — Experimental platform.** AWSIM + Autoware, unchanged from prior
+work. Notes that the same zone geometry built for fault-injection gating
+turned out to be exactly the right taxonomy for this cycle's calibration
+auditing too.
 
-**09 — Fault plans and impacts.** The verification step: did each fault
-mechanism actually change the signal it targets, on the actual driven
-trajectory. (Flagged for regeneration — see your question 5; the example
-plots were stale, generated against a superseded data collection run.)
+**08 — Data collection.** What's actually on disk: the 26-goal nominal
+baseline (with the honest caveat that only 7 trials are truly held out —
+load-bearing, not polish) and the fault taxonomy (IMU state-estimation
+corruption vs. TL perception spoofing, 8 campaigns + 3 new fixed-severity
+ones). Previews the IMU-vs-TL failure-signature distinction that pays off
+on slide 13.
 
-**10 — Model predictions.** What the trained model's output actually looks
-like: a real predicted trajectory + uncertainty on the map, plus the other
-predicted channels. This is the "does the model work at all" sanity check
-before slide 11 asks "does it work under faults." (Map sizing fixed this
-session — see your question 6.)
+**09 — Fault plans and impacts.** The message-level verification step:
+did each fault mechanism actually change the raw signal it targets, on
+the real driven trajectory — necessary but not sufficient, sets up
+slide 13's deeper question.
 
-**11 — How the model reacts to faults.** The payload slide: discriminability
-findings, the calibration-tightening result, and detection-rate/lead-time
-numbers. Framed deliberately as supporting evidence, not a single headline
-number — this is the slide most directly shaped by your pushback on lead time
-not being the centerpiece. (Fatal-moment definition flagged for rework — see
-your question 7; current lead-time numbers are likely inflated.)
+**10 — Calibration baseline, and the gap found.** Shows the good result
+first (reliability diagram, efficiency curve — both real, both
+validated), then the concrete example (the sharpest turn in the dataset)
+that surfaced a real, hidden per-scenario failure the aggregate numbers
+couldn't show. The "before" half of this update's central before/after
+story.
 
-**12 — Interpretation.** Steps back from the numbers to state directly what
-they do and don't support — specifically, that the discriminability finding is
-a refinement of an existing claim, not a new contribution, and that lead time
-should stay a supporting axis. This slide exists specifically to pre-empt
-over-claiming from slide 11's results.
+**11 — Finding and fixing the gap.** The geometry-grounded audit
+quantifies the hidden gap (75.6% intersection coverage inside a 90%
+pooled number), then the fix: retrain the model itself, not just widen
+the interval — a real methodological argument, not just an engineering
+choice. Shows the SAME turn window as slide 10, after the fix — the "after"
+half of the story, and the deck's most persuasive visual.
 
-**13 — Next steps.** What's left given no new data collection for now: the
-severity axis, the CUSUM-search extension, the open TL-fault data gap, and
-the active-rectification idea as an explicit scope question for you, not a
-plan. Ends on two real questions for you, not rhetorical ones.
+**12 — Conditional calibration, compared honestly.** Two ways to make the
+calibrated interval scenario-aware: discrete (Mondrian) vs. continuous
+(the model's own learned scene similarity). Reports the real, quantified
+trade-offs of each — including that Mondrian is NOT a free efficiency win
+once properly weighted, a finding caught and corrected before being
+oversold.
 
----
+**13 — Layer 1 meets real faults.** The fault-validation payload: two
+qualitatively different fault signatures (IMU compounding vs. TL
+contained), and a likely-novel finding that the most diagnostic feature
+isn't the obvious one. Closes with a first-look severity dose-response
+result from data nobody had analyzed this way before, including an
+honestly-reported confound that directly shaped the next data collection
+round's design.
 
-## Open items from your last review (not yet reflected above)
+**14 — Interpretation.** Steps back to state plainly what's solid (the
+methodology, the audit-fix cycle, the fault validation) and what needs to
+be treated as a real limitation (calibration-set size, the sweep's pilot
+status, Mondrian's real cost) — not glossed over. Reports the independent
+novelty verdict's exact conditions. Closes by recommending Layer 2 as the
+next real payoff, not further Layer 1 polish.
 
-- Title: fixed (back to the AI-safety-in-AVs framing, subtitle carries the new angle).
-- Slide 5's "epistemic stance" language: needs a precision pass — see the
-  separate answer to your question 4.
-- Slide 9's example plots: being regenerated against current (non-stale) trial
-  data.
-- Slide 10's example plot: fixed (map now scales to the window's own extent).
-- Slide 11's lead-time numbers: likely need a redefined fatal-moment anchor
-  before they're trustworthy — see the separate answer to your question 7.
-- Whether lead time is paper-shaped on its own, and whether "closing the loop"
-  should shape the current experimental design: see the separate answer to
-  your question 3 — recommend NOT redesigning the current setup for it.
-
----
-
-## 2026-08-06 update — direction reframe + a real calibration finding
-
-Bigger than a slide tweak, flagging here rather than silently editing the
-walkthrough above. Direction reframed away from binary fault detection
-toward a continuous decision-support signal ("operational under
-degradation" — see CLAUDE.md/TODO.md). Following that reframe's own
-prescribed order (ground the model's credibility before anything else)
-surfaced a real, traced problem: the model's predicted uncertainty is
-measurably miscalibrated (leptokurtic residuals — Anderson-Darling
-decisively rejects normality for all 6 Gaussian heads — and non-widening
-variance across the prediction horizon for 5 of 6), and that's the direct
-mechanistic cause of the new SPRT signal saturating under pure nominal
-noise. Full writeup: `docs/research_notes/trust_and_signal_behavior_2026-08-06.md`.
-
-Slides 10 and 11's notes.txt/points.txt are updated in place with the new
-figures and the corrected story — 10 gets the calibration finding, 11 gets
-both the SPRT-replaces-CUSUM code change and an explicit "don't present the
-old detection-rate/lead-time numbers as current" flag. Slide 11 in
-particular reads as two different stories stitched together now (the old
-discriminability/lead-time payload + the new calibration-cascade story) —
-worth deciding whether it should split into two slides once the
-calibration fix is in, not attempted here since that's a real editorial
-call, not a mechanical update.
+**15 — Next steps.** The concrete, already-planned path to closing Paper
+1 (the redesigned severity sweep, matched-pair data collection) running
+in parallel with starting Layer 2 (the reachability-margin redesign, the
+target result shape — four artifacts in priority order). Ends on two real
+questions for the advisor: the two-paper split, and whether NPC/traffic-
+density belongs in Layer 2's scope.

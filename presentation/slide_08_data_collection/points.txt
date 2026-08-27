@@ -1,27 +1,35 @@
-DATA COLLECTED SO FAR
+DATA COLLECTED, AND THE FAULT TAXONOMY
 
-Nominal baseline (nom_v11): 26 goals across the Nishishinjuku map, ~2 trials
-each — the reference distribution everything else is compared against.
+Nominal baseline (nom_v11): 26 goals across the map, ~2 trials each.
 (Plot: route_map_example_goal012.png — one goal's route over the HD map,
 traffic-light zones marked)
 
-Fault campaigns (8 total, run on 3 representative goals: 007, 012, 026):
+IMPORTANT CAVEAT, stated plainly: only 7 of these trials currently sit in
+the HELD-OUT calibration set the model has never seen — the rest were
+used in training. This is the single biggest data-scale limitation on
+every coverage-guarantee claim in this update (flagged independently by
+three separate checks this cycle) — more nominal trials is not optional
+polish, it's load-bearing for how much these results can be trusted.
 
-  IMU faults                        | Traffic-light faults
-  -----------------------------------|-----------------------------------
-  imu_fault_s1  — mild bias          | tl_fault_s2 — oscillating color
-    (deliberate negative control,    | tl_fault_s3 — UNKNOWN classification
-     designed to be harmless)        |   (negative-evidence case)
-  imu_fault_s3  — stronger bias      | tl_fault_s4 — signal blackout
-  imu_fault_scale — gyro scale error |   (negative-evidence case)
-  imu_fault_stuck — gyro frozen      | tl_fault_ramp — confidence decays
-                                     |   continuously to zero
+Fault campaigns (8 total + 3 new this cycle, all on goals 007/012/026):
+
+  IMU faults (state-estimation corruption)   | TL faults (perception spoofing)
+  --------------------------------------------|--------------------------------------------
+  imu_fault_s1    — mild bias (control)       | tl_fault_s2 — oscillating color (5s period)
+  imu_fault_s3    — stronger bias              | tl_fault_s3 — UNKNOWN classification
+  imu_fault_scale — gyro scale error           | tl_fault_s4 — full signal blackout
+  imu_fault_stuck — gyro frozen                | tl_fault_ramp — confidence decays 1.0->0.0
+                                                | tl_fault_fixed_030/050/070 — NEW: confidence
+                                                |   FIXED at severity 0.3/0.5/0.7 for a whole
+                                                |   zone dwell (why fixed, not ramped: slide 15)
 
 All fault campaigns gate on a route-derived zone (turn zone, bias lead-in
-zone, or traffic-light zone) computed from the map + planned route — not a
-live threshold or a wall-clock guess.
+zone, or traffic-light zone) computed from the map + planned route — not
+a live threshold or a wall-clock guess, and the exact same geometry used
+for the calibration audit (slide 10).
 
-This session's addition: zone files (turn_zones.json, tl_zones.json) were
-extended from 3 goals to all 26 nominal goals — analysis-only, reusing
-already-collected rosbags, no new experiments — to grow the nominal
-calibration sample for Stage 4 (see slide 11).
+Two fundamentally different failure signatures, previewed here, shown in
+full on slide 13: IMU faults corrupt STATE ESTIMATION (a slow,
+compounding, non-recovering effect); TL faults corrupt a PERCEPTION VALUE
+(a fast, contained effect). This difference turns out to matter a lot for
+how consequence estimation (Layer 2) needs to be scoped.

@@ -1,0 +1,38 @@
+INTERPRETATION: WHAT THIS ACTUALLY SUPPORTS, AND WHAT IT DOESN'T YET
+
+What's solid:
+  → The calibration methodology itself (conformal over a point predictor)
+    is validated, reproducible, and the right replacement for the
+    abandoned distributional-head approach — not in question
+  → The audit-then-fix methodology (find a hidden per-scenario gap,
+    close it at the training level, validate the closure both
+    quantitatively and on concrete examples) worked exactly as intended
+  → The calibrated signal demonstrably responds to real injected faults,
+    with a real, likely-novel finding about which features carry the
+    clearest evidence
+
+What's real but needs to be stated as a limitation, not glossed over:
+  → Only 7 nominal trials currently sit in the held-out calibration set
+    — flagged independently by three separate checks this cycle as
+    load-bearing-weak for the coverage-guarantee claims specifically,
+    not optional polish. A concrete fix is already planned (slide 15).
+  → The TL severity-sweep result so far is a promising PILOT, not the
+    paper's headline result — a real confound was found and understood,
+    and the design for the clean version already exists.
+  → Mondrian conditional calibration is not a strictly better default
+    than pooled calibration — say this precisely if asked, it's a real,
+    quantified trade-off, not a caveat to bury.
+
+Where this leaves the novelty claim, checked independently (not just
+self-assessed): the specific combination here — geometry-grounded audit +
+training-level fix + honest discrete-vs-continuous calibration comparison
++ real fault validation with cross-feature diagnosticity — was not found
+anywhere in the literature by a fresh reviewer explicitly tasked to argue
+against it. Verdict: dissertation-worthy as Paper 1, once the severity
+sweep and more nominal data land.
+
+What this means for direction: Layer 1 is close enough to finished that
+the next real payoff is Layer 2 (consequence estimation) — not more
+Layer 1 refinement for its own sake. The two remaining Layer 1 items
+(severity sweep, more data) are scoped, planned, and don't block starting
+Layer 2 design work in parallel.

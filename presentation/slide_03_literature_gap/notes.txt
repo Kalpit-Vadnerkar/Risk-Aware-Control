@@ -1,3 +1,30 @@
-Key point for Dr. Pisu: detection and trajectory-prediction accuracy are both mature, competitive literatures — publishing another detector or a marginally-more-accurate trajectory model would be incremental. The genuinely underserved combination is a MECHANISTIC signal (grounded in the HD map's own categorical assertions, not a generic anomaly score) paired with a DISTRIBUTION-FREE calibration guarantee and an actual LEAD-TIME measurement against a real safety outcome (not just a held-out test accuracy). Conformal prediction's theory is mature on its own, but it's rarely wired into an AV fault signal with a stated lead-time claim the way this project does in Stage 4.
+Be precise about what's novel and what isn't if asked — this was checked
+independently and deliberately, twice: once via a broad review of recent
+Waymo safety-research publications (9 papers, read specifically for how
+THEY structure a safety validation claim, not just for citations), and
+once via a fresh agent explicitly tasked to find the closest prior work
+and argue against novelty if it could. Neither individual technique here
+is new — split-conformal prediction, group/Mondrian-conditional conformal
+prediction, kNN/local conformal prediction, and AV fault-injection testing
+are all independently established. What the review couldn't find anywhere
+is this SPECIFIC combination, and specifically not the training-level fix
+(most prior work treats a coverage gap as something to recalibrate around,
+not retrain the model to close) or the live-fault validation with
+cross-feature diagnosticity (which state feature carries the clearest
+fault evidence, and it isn't always the obvious one — see slide 13).
 
-Also worth citing directly: Seitzer et al.'s beta-NLL fix (ICLR 2022) was load-bearing this session — it directly fixed a real miscalibration bug found in this project's own Gaussian heteroscedastic heads (see docs/research_notes/trajectory_prediction_literature_2026.md), which is a nice concrete example of the trajectory-prediction literature actually informing this project's engineering, not just being cited for context.
+Reuter et al. (ITSC 2026, arXiv:2605.19655) is worth naming explicitly and
+by name if asked "isn't this already done" — it's the single closest paper
+found, on a real AV, with the same core coverage-gap-hides-a-failure
+finding. Citing it accurately and explaining the real differences is more
+credible than not knowing it exists.
+
+The Waymo "two traditions" framing (UQ-as-alarm vs. risk-aware-planning-
+assumes-correct) is not this project's own invention — it's a real,
+useful way the literature itself is structured, worth crediting as
+observed-not-invented if asked. The novel claim is specifically the
+BRIDGE: propagating a distribution-free, per-feature, geometry-grounded
+calibrated signal through a consequence model, not the bare fact that
+someone propagates uncertainty forward (some risk-aware planning work
+already does that in a weaker sense — don't overclaim "nobody does this
+at all").

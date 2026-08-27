@@ -1,0 +1,20 @@
+This slide exists specifically to pre-empt over-claiming, same purpose it
+served in the prior deck, just against the current results instead of the
+old CUSUM/lead-time numbers. The three "needs to be stated as a
+limitation" bullets are not modesty — they were independently
+re-discovered by three separate paths this cycle (this project's own
+audits, a research-note reframe, and a fresh literature-review agent
+explicitly tasked to find fault with the work) and should be presented
+with that weight, not softened.
+
+If the advisor pushes on "is this enough for a paper yet" — the honest
+answer is close but not quite: the independent verdict was conditional
+("once a severity sweep and more nominal data land"), not unconditional.
+Both of those are scoped and planned (slide 15), not open-ended
+uncertainty about whether they're achievable.
+
+The closing reframe (Layer 1 is close enough to stop optimizing further
+for its own sake) is a real scoping recommendation worth saying plainly,
+since it sets up slide 15's emphasis on Layer 2 design starting now,
+in parallel with the remaining Layer 1 data collection — not sequenced
+strictly after it.

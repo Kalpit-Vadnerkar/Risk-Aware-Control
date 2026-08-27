@@ -1,3 +1,24 @@
-This is the single most important slide to get across cleanly: detection is NOT what's being defended anymore — it's the given, banked result from the published paper. The three new axes (calibrated confidence, lead time, severity) are what make this a dissertation-level contribution rather than a re-run of the paper with a different model. Be ready to state directly: "if I only re-ran detection and got a similar or better accuracy number, that would be incremental — this chapter's job is to answer questions the accuracy number can't."
+This is the slide to be most precise on if the advisor pushes on scope.
+The honest framing: Layer 1 is "almost low-key done" — the calibration
+methodology, the audit that found a real gap, the training-level fix, the
+conditional-calibration comparison, and a first real-fault validation are
+all built and give a coherent story. What's NOT done yet within Layer 1:
+a proper controlled severity sweep (in progress, concrete lab plan exists
+— slide 15) and more nominal calibration data (currently only 7 held-out
+trials, flagged as load-bearing-weak by three independent checks — say
+this plainly, it's real, not modesty).
 
-Arm B not yet being collected is an honest limitation, not hidden: early testing showed Autoware's own MRM (minimum risk maneuver) already triggers an emergency stop once it detects something is sufficiently wrong, which is Arm B's actual ground-truth signal. Right now all reported lead-time numbers use Arm A's own metrics.json heuristic (permanent_stop_time_s / likely_static_collision) as a self-referential fatal-moment anchor — flagged explicitly in every result, not glossed over. The mrm_first_trigger_rel_s column is already being carried through the pipeline so Arm B data can slot in as an independent oracle later without reworking anything.
+The two-paper split is a genuine scoping decision made this cycle, not a
+hedge — an independent literature-review agent, asked to find fault with
+standalone novelty if it could, verdicted Layer 1 alone as dissertation-
+worthy without Layer 2 in the same paper (slide 3). Splitting lets each
+piece be argued at full depth instead of compressing two non-trivial
+contributions into one paper's space.
+
+If asked "why not just do detection with a threshold, why does Layer 2
+need reachability specifically" — because a raw anomaly magnitude can't
+distinguish "the model is surprised on an empty road" (irrelevant) from
+"the model is equally surprised near a pedestrian crossing" (potentially
+severe) — that distinction is exactly what a physical consequence model
+adds, and it's why Layer 2, not a bigger Layer 1, is the actual thesis
+payload.

@@ -1,0 +1,40 @@
+LAYER 1 BASELINE: A CALIBRATED SIGNAL THAT LOOKED GOOD — UNTIL WE LOOKED CLOSER
+
+(Plot: reliability_diagram.png — nominal vs. empirical coverage, swept
+across confidence levels 50-98%, all 7 predicted features)
+
+What "calibrated" means in plain terms: if we ask for a band that should
+contain the truth 90% of the time, it actually does — not 70%, not 99%,
+90%. This plot sweeps that check across a whole range of confidence
+levels, not just one point, and the result tracks the diagonal (perfect
+calibration) closely for every feature. This is a real, validated result.
+
+(Plot: efficiency_curve.png — interval width vs. target coverage)
+
+A calibrated interval that's absurdly wide is technically "valid" and
+useless — this plot is the honest companion check: how much does the
+interval have to grow to buy more coverage. Both traffic-light features
+show a sharp elbow around 80-85% coverage, which is a real, data-driven
+reason to operate at a 90% target rather than pushing toward 98%.
+
+BUT — a single pooled number can hide a real problem, and it did:
+
+(Plot: v1_turn_scalar_bands.png, v1_turn_position_map.png — the sharpest
+turn in the dataset, predicted vs. actual)
+
+The predicted trajectory visibly undershoots the real turn — steering and
+lateral-velocity predictions barely rise while the vehicle actually turns
+sharply. The model wasn't reading the route ahead well enough to
+anticipate turns it hadn't already started.
+
+Quantified, not just eyeballed: on turns the vehicle hasn't started
+turning into yet, predicted heading change captures only ~48% of the
+actual magnitude (vs. ~65% once already mid-turn) — most of what looked
+like "turn prediction" was the model extrapolating a turn already
+underway, not genuinely anticipating one from the map.
+
+Why this matters for trust, not just accuracy: if ordinary turns produce
+systematically larger errors than calm driving, the SAME pooled coverage
+number above either has to stay wide everywhere to remain valid on turns,
+or — worse — a real fault occurring near a turn gets its effect
+conflated with the turn's own normal difficulty and partially masked.

@@ -1,24 +1,28 @@
-THE PROBLEM: DETECTING A FAULT IS NOT THE SAME AS TRUSTING THE DETECTOR
+THE PROBLEM: A MODEL CAN BE ACCURATE AND STILL NOT BE TRUSTWORTHY
 
-Our prior work (T-ITS 2025) showed a digital twin CAN detect sensor faults
+Our prior work (T-ITS 2025) showed a digital twin can detect sensor faults
 (camera, IMU, LiDAR) from behavioral residuals with high accuracy.
 
-But accuracy alone does not answer the questions a safety case needs:
-  → How confident should we be in a given flagged divergence — a calibrated
-    number, not just "the residual went up"?
-  → How many seconds of warning does the signal give before the fault
-    actually becomes dangerous — is there time to act?
-  → Does that warning degrade gracefully as the fault gets more severe,
-    or does it fail unpredictably past some point?
+But "accurate on average" does not answer the questions a real safety
+case needs:
+  → When the model reports a prediction, how confident should we actually
+    be — a number with a real guarantee, or just "the residual went up"?
+  → Does that confidence estimate hold up EVERYWHERE, or only on the easy
+    majority of driving (and quietly fail exactly where it matters most —
+    turns, intersections)?
+  → If something goes wrong with a sensor, does the model's own
+    uncertainty actually notice — and does it notice in a way we can act on?
 
-None of these are answered by a detection-accuracy number, no matter how high.
-A monitor that is confidently wrong is worse than one that is honestly unsure —
-this is the actual bar a verification layer has to clear.
+None of these are answered by a detection-accuracy number, no matter how
+high. A model that is confidently wrong is worse than one that is
+honestly unsure — that is the actual bar a trustworthy system has to clear.
 
 The reframed question:
-  → Not "can the twin detect faults" (already shown)
-  → But "can the twin's divergence signal be trusted with a stated guarantee,
-    with enough lead time to matter, across a range of fault severities"
+  → Not "can the twin detect faults" (already shown, and detecting a
+    fault you already have a name for is the easy version of the problem)
+  → But "does the twin know what it doesn't know, with a real guarantee,
+    everywhere it drives — and does that self-knowledge respond correctly
+    when something actually goes wrong"
 
-This is a verification claim, not a detection claim — and it is the actual
-gap the dissertation is closing.
+This is a calibration and verification claim, not a detection claim — and
+closing it properly is what this update is about.

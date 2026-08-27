@@ -1,5 +1,27 @@
-This replaces the old three-signal AND-gate classifier entirely — that framework was built for the avoidance-vs-MRC decision problem, which is no longer the claim being defended. The belief-divergence mechanism is the actual explanatory story for WHY the T-ITS paper's own numbers came out the way they did: Traffic Light Status Flag was the dominant feature (29.7% importance) specifically because it's the one signal with a hard map-licensed prior (a signalized intersection either exists or doesn't) — object detections don't have an equivalent categorical ground truth, so they can't produce the same negative-evidence signature. This session's own discriminability analysis (slide 11) tests this mechanism directly and found it holds specifically for the negative-evidence SUBTYPE of TL faults (tl_unknown, tl_blackout — perception reports nothing/unknown) and not for TL faults where perception reports a present-but-wrong value (tl_oscillate, confidence-ramp) — a sharper, more defensible version of the claim than "TL faults in general."
+This slide fully replaces the old belief-divergence/epistemic-stance
+mechanism — not a patch, a real architectural change. The old mechanism
+was specific to the traffic-light channel (an HD-map categorical fact vs.
+perception's report) and needed a name for what kind of fault to look
+for. This framework needs neither: Layer 1's calibration is built from
+the model's own point predictions across every feature, and needs no
+fault data at all to construct (only real faults to VALIDATE it against
+afterward — slide 13). That's a strictly more general mechanism, not a
+narrower replacement for a special case.
 
-Be ready to explain the epistemic-stance point carefully if asked, and be precise about its SCOPE (revised 2026-08-04 after a review question on exactly this point): this is not the model interpreting its own confidence in a circular way — the map is an independent, externally-licensed source of ground truth (Lanelet2 regulatory elements), so comparing perception against it is a legitimate check, not the model grading itself. But this argument only applies to the traffic_light_detected/traffic_light_discrepancy channels specifically. Position/velocity/steering/acceleration are checked against real ground-truth vehicle state (from AWSIM), not the map — for those, the HD map is one input among several (via the graph encoder), not the verification oracle. Don't let the slide imply the whole model's introspection is "anchored against the map" — say precisely which channel that claim covers.
+A richer, presentable version of this diagram (with the "why existing
+traditions each dead-end" comparison drawn out visually, not just stated)
+exists as a published artifact — reference it if useful, don't rebuild it
+in the slide: [artifact link tracked separately, ask if needed].
 
-If asked "is using an HD map even novel" — no, and don't claim it is. HD maps as context/priors for AV perception and planning are completely standard. The specific move that's less common is using one of the map's CATEGORICAL, verifiable assertions (a regulatory element either exists at this lanelet or doesn't) as an INDEPENDENT CROSS-CHECK oracle for one learned perception channel, framed as a belief-divergence/negative-evidence detector — that's a narrower, more defensible claim than "we use HD maps," and it's the thing worth defending precisely rather than leaning on "map-grounded" as a blanket differentiator.
+If asked "isn't propagating uncertainty into a planning-relevant quantity
+already done" — yes, partially, and say so precisely rather than
+overclaiming novelty (slide 3's Reuter et al. and the broader "risk-aware
+planning" tradition both do a version of this). The specific, narrower,
+defensible claim is propagating a CALIBRATED, DISTRIBUTION-FREE, PER-
+FEATURE, MAP-GROUNDED signal specifically — the quality and structure of
+what gets propagated, not the bare act of propagation.
+
+If asked about Layer 3 — explicitly out of scope this cycle, a scoping
+question flagged for the advisor's own call (does "graceful response"
+need an actual controller, or just define the signal's shape) — not
+being decided in this update.

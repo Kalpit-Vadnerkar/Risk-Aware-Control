@@ -1,28 +1,27 @@
-EXPERIMENTAL PLATFORM
+EXPERIMENTAL PLATFORM (unchanged from prior work)
 
-Simulation stack (unchanged from prior work):
+Simulation stack:
   → Simulator:  AWSIM Labs (Unity-based, ROS2 native, physics-accurate sensors)
   → AV stack:   Autoware Universe (production-grade; same stack used in
                 real-vehicle deployments — not a toy planner)
   → Interface:  ROS2 Humble; all data logged via rosbag2 at 10 Hz
   → Map:        Nishishinjuku (Tokyo) HD map (Lanelet2 OSM), urban multi-lane
 
-Goal set: 26 captured goals across the map (expanded from the 3-goal set
-used in the last presentation), each with its own route, turn zones, and
-traffic-light zones — computed directly from the map + planned route, not
-guessed from a bounding box.
-
-Two-arm toggle (README.md, switch_diagnostic_arm.sh):
-  → Arm A: perception/planning/localization stripped from Autoware's
-    autonomous-mode gate — the science condition, lets faults propagate
-  → Arm B: stock gate — restores Autoware's default MRM linkage exactly —
-    not yet collected this session
+Goal set: 26 captured goals across the map, each with its own route, turn
+zones, and traffic-light zones — computed directly from the map + planned
+route, not guessed from a bounding box. This same zone geometry is now
+doing double duty: it still gates fault injection (unchanged), and it's
+also the scenario taxonomy the calibration audit and conditional
+calibration comparison are built on (slides 10-12) — one definition of
+"near a turn/intersection," reused everywhere instead of redefined per
+analysis.
 
 Data collection procedure (per trial):
   1. Launch AWSIM + Autoware for the target goal
   2. Run nominal, or arm a fault campaign gated on a route-derived zone
   3. Save rosbag; compute metrics.json (stuck/collision heuristics, MRM events)
-  4. Process through the ST-GAT pipeline → per-timestep divergence trace CSV
+  4. Extract per-timestep frames + build ST-GAT sequences via the same
+     pipeline for both nominal and fault trials — no separate code path
 
 Per-trial output: rosbag, result.json, metadata.json, metrics.json,
-fault_log.jsonl (only for fault trials), plus the derived divergence trace.
+fault_log.jsonl (only for fault trials).

@@ -1,1 +1,15 @@
-Title kept deliberately close to the last presentation's ("A Probabilistic Framework for Safe and Reliable AVs as Digital Twins") — the dissertation's core is AI safety in AVs via digital twins, and that does not change. The subtitle is what changed: direction reframed since the last meeting (2026-07-24 pivot, see docs/theoretical_framework.md). Detection itself is already banked from the published T-ITS 2025 paper (93.7% fault detection accuracy across Camera/IMU/LiDAR). This chapter's contribution is verification, not detection: does the digital twin's divergence signal come with a calibrated confidence guarantee, how much lead time does it give before a fault becomes safety-relevant, and how does that lead time trade off against fault severity. The prior "avoidance vs. MRC decision" framing from the last presentation has been retired — it was a control-layer extension (RISE) that turned out not to be the core defensible claim; this deck presents the replacement direction end to end, under the same core title.
+Title kept identical to prior presentations — the dissertation's core is
+AI safety in AVs via digital twins, and that has not changed across any of
+the reframes. The subtitle is what changed, again, since the last meeting:
+"belief-divergence fault detection" is retired language (that framing
+assumed a fixed set of known fault classes to detect and classify — see
+slide 3). The subtitle now says what the work actually is: a calibrated
+uncertainty signal (Layer 1, the bulk of this update) that a later stage
+(Layer 2, next-steps) will translate into physical consequence. If asked
+"didn't the title used to say fault detection" — yes, and the reframe is
+itself part of the story worth being upfront about: the project moved from
+"which known fault is this" to "how far off-nominal am I, and does that
+matter," because the former can't say anything about a failure mode nobody
+thought to name in advance, and doesn't need labeled fault data to work at
+all for its first stage. This is a maturation of the claim, not a change of
+subject or a retreat from a result that didn't pan out.

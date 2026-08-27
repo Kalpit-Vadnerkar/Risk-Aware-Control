@@ -1,31 +1,43 @@
 PROBLEM STATEMENT & CONTRIBUTION
 
 One-sentence thesis:
-  The digital twin detects faults through belief divergence under a
-  map-grounded prior — not generic residual anomaly detection — and this
-  work verifies that signal with calibrated confidence, measured lead time,
-  and a severity axis, rather than another detection-accuracy number.
+  A digital twin's own predictive uncertainty, once properly calibrated
+  and validated against real faults, is the substrate for translating
+  "how off-nominal is this vehicle behaving" into "what physical
+  consequence does that imply" — without needing a catalog of known fault
+  types to work.
+
+Three-layer architecture:
+  (1) DETECT — a continuous, calibrated anomaly signal. No fault data
+      needed to build. THIS UPDATE'S FOCUS — nearly complete.
+  (2) CONSEQUENCE — roll that signal forward through the digital twin
+      against a physical safety margin (reachability-based). THE CORE
+      REMAINING THESIS WORK — not yet built, scoped next (slide 15).
+  (3) RESPOND — graceful behavioral modulation. Explicit future work,
+      out of current scope.
 
 What's already banked (from the T-ITS 2025 paper, not re-argued here):
   → Fault detection itself: 93.7% accuracy, Camera/IMU/LiDAR faults
   → Traffic Light Status Flag as the dominant feature (29.7% importance)
 
-What this chapter adds (the actual new claim):
-  (1) Calibrated confidence — a distribution-free coverage guarantee via
-      conformal prediction, not an accuracy number on a fixed test set
-  (2) Lead time — seconds of warning before a fault becomes safety-relevant,
-      measured against a real fatal-moment anchor, not just "detected: yes/no"
-  (3) Severity — does the guarantee and lead time hold as fault magnitude
-      increases, or does it degrade, and how
+What this update adds (Layer 1, the actual new claim):
+  (1) A calibrated point predictor with a real, distribution-free
+      coverage guarantee (conformal prediction) — not a jointly-trained
+      distributional head, which was tried and demonstrably failed to
+      calibrate (slide 6)
+  (2) Proof that a POOLED guarantee can hide a real per-scenario failure
+      — found, then FIXED at the model-training level, not just
+      recalibrated around (slides 10-11)
+  (3) Two competing ways to make the calibrated interval scenario-aware,
+      compared honestly, trade-offs stated precisely (slide 12)
+  (4) Validation against REAL injected sensor/perception faults in the
+      live simulator — the calibrated signal responds, and not always
+      through the feature you'd expect (slide 13)
 
-Claim to defend:
-  This framework detects when the autonomy stack's perceptual belief has
-  diverged from a map-grounded, independently derived expectation of the
-  world; it reports that divergence with calibrated confidence and a bounded
-  number of seconds of lead time before the divergence degrades vehicle safety.
-
-Two-arm design (unchanged from prior work, still the experimental backbone):
-  → Arm A: Autoware safety gate disabled — the science condition, lets
-    injected faults actually propagate to a real safety outcome
-  → Arm B: stock safety gate enabled — the ground-truth oracle for
-    independent lead-time validation (not yet collected — see Next Steps)
+Scoping decision: split into two papers, not one.
+  → Paper 1 (Layer 1, this update): calibration + audit + fix + fault
+    validation — independently verdicted as dissertation-worthy on its
+    own, once a severity sweep and more nominal data land
+  → Paper 2 (Layer 2): consequence estimation, building on Paper 1's
+    validated calibration as its input — a distinct mechanism, not a
+    fragment of one story

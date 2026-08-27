@@ -1,0 +1,26 @@
+This is the slide to spend real time on if the advisor wants depth — it's
+the clearest example of the full methodology working end to end: found a
+gap via careful auditing (not luck), understood WHY it existed (route
+context wasn't being used well, verified via a separate diagnostic
+correlating predicted vs. actual turn severity), fixed it at the right
+layer, and validated the fix both quantitatively and visually on the
+exact same concrete example as before. The side-by-side with slide 10's
+plot is the single most persuasive visual in this deck — consider showing
+them together if slide real estate allows.
+
+The "why fix the model, not just widen the interval" point is a real,
+load-bearing methodological argument, not just an engineering
+preference — say it plainly if asked. A calibration-only fix would have
+been faster; it would also have been the WRONG call given faults are
+specifically injected at these same zones.
+
+If asked about the exact retraining mechanism: inverse-class-frequency
+reweighting over quantile bins derived from the training set's own
+turn-severity distribution — standard, well-established technique
+(imbalanced-learning literature), the contribution here is applying it
+specifically to close a gap FOUND via geometry-grounded auditing, not the
+reweighting technique itself.
+
+Numbers to have ready: 75.6% -> 87.3% (tl_zones steering coverage), 47%
+residual reduction on hard-turn windows, ~3-6% calm-window cost (mild,
+expected, worthwhile trade).

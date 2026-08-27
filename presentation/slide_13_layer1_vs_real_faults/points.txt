@@ -1,0 +1,43 @@
+DOES THE CALIBRATED SIGNAL ACTUALLY NOTICE A REAL FAULT?
+
+First time this whole project checked the calibrated model against LIVE
+injected faults (not synthetic held-out perturbation) — across all 8
+fault campaigns, all 20 available trials, every predicted feature.
+
+Two genuinely different failure signatures found — not one:
+
+(Plot: imu_fault_trace.png — position residual over time, fault window shaded)
+
+IMU faults corrupt STATE ESTIMATION. Residual triples during the fault
+window, then KEEPS GROWING afterward instead of recovering — from 44%
+exceeding the calibrated band right after the fault "ends" to 78% by
+60-120 seconds later. A corrupted internal position estimate doesn't
+self-heal once poisoned.
+
+(Plot: tl_fault_trace.png — position residual over time, fault windows shaded)
+
+TL faults corrupt a PERCEPTION VALUE. Far more contained — clean 4%,
+active 17%, recovering to 24% shortly after. Real, but a fundamentally
+different (much faster) timescale than IMU faults.
+
+The feature that carries the clearest evidence isn't the obvious one —
+likely a genuinely new finding, not previously reported anywhere found in
+the literature review:
+  → IMU faults: ACCELERATION shows a 13.7x exceed-rate jump (vs.
+    position's only 1.7x) — acceleration is closer to what IMU
+    corruption directly touches; position is a laggier, downstream
+    consequence
+  → TL faults: VELOCITY beats the directly spoofed traffic-light
+    features themselves — a miscalibrated light shows up more in the
+    resulting driving behavior than in the model's residual on the
+    signal that was actually spoofed
+
+First look at a real severity relationship (Plot: tl_severity_dose_response.png):
+
+Discovered that already-collected data (a confidence-decay fault variant)
+contains ~26 independent severity sweeps never analyzed this way before.
+traffic_light_confidence shows a clean, near-monotonic rise with severity
+— a real, encouraging dose-response. Other features show a confound
+(severity correlates with how far into the intersection approach the
+vehicle is) — caught, understood, and already fixed in the design for
+the next data collection round (slide 15).

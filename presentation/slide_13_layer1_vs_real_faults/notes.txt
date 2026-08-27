@@ -1,0 +1,27 @@
+This is the payload slide for Paper 1's fault-validation claim — the
+independent literature review specifically flagged the multi-feature
+diagnosticity finding as likely genuinely new (no located prior work
+checks a calibrated signal against live faults AND asks which state
+feature carries the clearest evidence). Say this confidently but
+precisely: "likely new" based on a real, deliberate search, not "we
+assume this is new."
+
+The IMU-vs-TL distinction matters directly for how Layer 2 gets scoped
+(slide 15) — a 3-second consequence-estimation horizon is well-matched to
+TL's fast timescale and structurally cannot see IMU's 100+-second
+compounding effect coming in time. This is presented here as a finding,
+not yet as the Layer 2 design decision — that's slide 15's job.
+
+The severity-sweep pilot result needs the confound explained honestly if
+asked why it isn't cleaner: the existing fault variant used for this
+first look ramps severity continuously WITHIN a single approach to an
+intersection, so how severe the fault is and how close the vehicle is to
+the actual decision point are entangled in that specific data. This
+isn't a flaw in the finding, it's exactly the kind of thing careful
+analysis is supposed to catch — and it directly justifies why the next
+data collection (slide 15) uses a fixed-severity design instead.
+
+Numbers to have ready: IMU exceed-rate 44%->78% over 0-120s post-fault;
+acceleration 13.7x vs. position 1.7x diagnosticity ratio for IMU; TL
+clean/active/post-fault exceed rates 4%/17%/24%; velocity_lateral 4.6x
+vs. traffic_light_color 2.4x diagnosticity ratio for TL faults.

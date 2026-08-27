@@ -1,3 +1,19 @@
-The concrete reframe: the T-ITS 2025 paper reported 93.7% fault detection accuracy and identified Traffic Light Status Flag as the single most important feature (29.7% importance) with TL Status Flag x CUSUM as the top feature-residual combination (22%). Those numbers say the mechanism works — they say nothing about whether a specific flagged divergence should be trusted, or how far in advance it fires relative to when the fault actually becomes dangerous. That's the gap this chapter closes: conformal calibration (a distribution-free coverage guarantee, not an accuracy number) plus a lead-time measurement against a real fatal-moment anchor, plus a severity axis (does the guarantee hold as faults get worse, or only for mild ones).
+This slide's job is unchanged from last time — set up why "it detects
+faults accurately" isn't the finish line — but the destination it points
+to has changed. Previously this led to a belief-divergence detector with
+lead-time claims; now it leads to a calibrated-uncertainty signal (Layer
+1) that a second stage will translate into physical consequence (Layer
+2). Say plainly if asked: the underlying intuition "confidently wrong is
+worse than honestly unsure" never changed — what changed is HOW we get to
+"honestly unsure" (conformal calibration, a distribution-free statistical
+guarantee) instead of a hand-built divergence signal, and WHAT we do with
+it (roll it forward into consequence, not just alarm on it).
 
-Framing this for Dr. Pisu: this is the same move risk-assessment practice makes going from "we can detect anomalies" to "we can state a false-alarm rate and a time-to-detection with a guarantee" — the second is what a safety case actually needs, and it's the part the prior paper didn't attempt.
+If asked why the destination changed: the belief-divergence framing
+needed a fixed catalog of "what should the map/perception agree on," which
+only ever covered the traffic-light channel well and required knowing in
+advance which fault types to look for. Conformal calibration needs neither
+— it gives a coverage guarantee on the model's OWN point predictions
+directly, works for every predicted feature, and needs no labeled fault
+data to build at all (only real faults to VALIDATE it against, which is
+this update's newest result — see slide 13).

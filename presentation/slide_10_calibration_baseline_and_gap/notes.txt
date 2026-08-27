@@ -1,0 +1,27 @@
+This slide's narrative arc is deliberate: show the good result first
+(reliability + efficiency), let it look convincing, THEN show exactly how
+looking at one specific concrete example (not a random one — the single
+sharpest turn in the dataset) surfaced a real problem the aggregate
+numbers hid. This mirrors how the finding was actually made this cycle —
+the visual trust-example plots (built specifically because "show me a
+concrete example, not just statistics" was asked for) are what surfaced
+this, not the aggregate numbers, which looked fine on their own.
+
+If asked "so was the reliability diagram wrong" — no, and be precise
+here: it's not wrong, it's an AVERAGE-CASE statement. It pools every
+window, fold, and horizon step into one number per confidence level. The
+turn-anticipation gap is a real, specific, findable pattern that a pooled
+average can hide via cancellation (turns being worse is compensated for
+by calm driving being better than needed) without the pooled number ever
+being false. This distinction (pooled/average validity vs. per-scenario
+validity) is the thread the rest of this section pulls on.
+
+The efficiency-curve elbow finding is small but worth having ready as a
+concrete, defensible answer if asked "why 90%, why not 95% or 99%" — it's
+not an arbitrary choice, the data itself shows diminishing returns
+sharply past that point for the traffic-light features specifically.
+
+Numbers to have ready if pressed: reliability diagram max gap across all
+7 features is 0.004-0.011 (essentially exact); the turn-anticipation
+finding's exact numbers (48% vs. 65% magnitude captured) come from
+diagnose_turn_learning.py, ~1000 sampled calibration windows.

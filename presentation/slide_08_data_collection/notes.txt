@@ -1,5 +1,21 @@
-imu_fault_s1 is deliberately a negative control, not an oversight — 0.03 rad/s gyro bias is designed to be absorbed by EKF/localization's noise-rejection band even during a turn, so a LOW detection rate on this campaign specifically is a pass, not a miss (see slide 11's results table, color-coded accordingly).
+The held-out-calibration-set caveat is the single most important honest
+caveat in the whole deck — say it plainly here and don't let it come as a
+surprise on slide 14. It was found by checking, directly, which specific
+trial files landed in the training split vs. the calibration split (not
+assumed): goal_026's two nominal trials are properly held out, goal_007
+and goal_012's are not (used in training). This directly limited how much
+of the 2026-08-25 TL severity pilot could be trusted (slide 13) and is
+exactly what the upcoming lab session is designed to fix (slide 15) —
+new nominal trials at goal_007/012, with an explicit verification step
+this time to make sure they actually land in the held-out set.
 
-tl_fault_s3 (tl_unknown) and tl_fault_s4 (tl_blackout) are the two campaigns where perception genuinely stops reporting a categorical fact the map asserts should be there — the actual negative-evidence case the mechanism (slide 5) is built around. tl_fault_s2 (oscillate) and tl_fault_ramp (confidence decay) are real faults but NOT negative-evidence cases — perception still reports a present value, just a wrong or degrading one. This distinction turned out to matter a lot in this session's discriminability results (slide 11) — worth setting up here so it lands cleanly later in the deck.
+The IMU-vs-TL failure-signature distinction (state estimation vs.
+perception value) is worth setting up clearly here since it's the
+throughline for slide 13's finding and slide 15's Layer 2 scoping
+decision — don't let it feel like a surprise introduced late.
 
-The zone-file expansion (3 goals -> 26) is a good example of genuine methodology tightening that required zero new data collection, which matters practically since Kalpit can't run new AWSIM/Autoware sessions for a while — this was the first thing tackled this session for exactly that reason.
+If asked why only 3 goals (007/012/026) get fault campaigns instead of
+all 26: cost — each fault campaign at each goal is a full AWSIM trial,
+and 8 campaigns x 26 goals was never going to be tractable; 3 goals were
+chosen to give real route diversity (different turn/intersection
+geometry) without an unbounded collection cost.

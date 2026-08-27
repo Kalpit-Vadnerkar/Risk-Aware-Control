@@ -1,5 +1,13 @@
-AWSIM + Autoware remains the right platform for the same reason as before: the full production stack runs unmodified, so behaviors seen in simulation (MRM triggers, stuck/collision outcomes) are representative of a real vehicle running the same software, not a toy planner's approximation.
+Mostly unchanged from the last presentation — platform choice hasn't
+moved. The one addition worth calling out if there's time: the zone
+geometry (turn_zones.json/tl_zones.json) originally built purely for
+fault-injection gating turned out to be exactly the right taxonomy for
+this cycle's calibration auditing too — a real example of infrastructure
+paying off twice, not planned that way originally.
 
-What changed since the last presentation: the obstacle-placement/avoidance-scenario framing (obs_recovery, obs_noescape, single obstacle at 30m) is retired along with the avoidance-decision problem it supported. The current experimental design is fault injection (IMU and traffic-light faults) across a much larger goal set (26 vs. 3), with route-derived zone files (turn_zones.json, tl_zones.json) that were this session extended from 3 goals to all 26 — an analysis-only change (reused already-collected nominal rosbags + the static map, no new AWSIM/Autoware runs) that meaningfully tightened the conformal calibration guarantee (see slide 11).
-
-Arm B (stock safety gate) is a real, planned difference from Arm A, but not yet collected — early Arm A testing already showed Autoware's own MRM triggers an emergency stop once something is sufficiently wrong, which is exactly what Arm B would independently confirm. Not a blocker for this session's results, which all use Arm A's own fatal-moment heuristic as ground truth, flagged as such everywhere it's reported.
+The old Arm A/B (safety-gate-disabled vs. stock) toggle from prior
+presentations is not a focus of this update — nothing this cycle depended
+on it, and it isn't mentioned elsewhere in this deck. Don't bring it up
+unless asked; if asked, it's still available infrastructure, just not
+exercised this cycle since the current claim doesn't need a lead-time-vs-
+MRM comparison.
