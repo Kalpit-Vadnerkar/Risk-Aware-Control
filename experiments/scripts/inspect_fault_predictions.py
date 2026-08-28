@@ -56,12 +56,16 @@ from st_gat.pipeline.sequence_builder import SequenceBuilder, extract_route_from
 from st_gat.pipeline.State_Estimator.GraphBuilder import GraphBuilder  # noqa: E402
 from st_gat.pipeline.State_Estimator.MapProcessor import MapProcessor  # noqa: E402
 from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
+from torch.utils.data import DataLoader  # noqa: E402
 from compare_fault_vs_nominal import load_fault_log, extract_fault_windows, in_any_window  # noqa: E402
 import scenario_zones  # noqa: E402
 from conformal_mondrian_calibration import assign_groups  # noqa: E402
-from conformal_horizon_calibration import _SERIES  # noqa: E402
+from conformal_horizon_calibration import _SERIES, _extract_series, conformal_quantile  # noqa: E402
+from conformal_scene_conditioning import _collect as _collect_embeddings  # noqa: E402
 
 _SERIES_KEYS = [s[0] for s in _SERIES]
+_EMBEDDING_K = 150   # same k as conformal_embedding_calibration.py / conformal_scene_conditioning.py
+_EMBEDDING_ALPHA = 0.1
 
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_prediction_inspection')
@@ -178,6 +182,15 @@ def main():
     with open(MONDRIAN_REPORT) as f:
         mondrian = json.load(f)
 
+    print("Collecting calibration-set embeddings + residuals for embedding-conditioned "
+          "width (2026-08-26, per Kalpit: add the embedding calibration alongside "
+          "vanilla/Mondrian on these trace plots)...")
+    cal_ds = TrajectoryDataset(cfg.CAL_DIR)
+    cal_loader = DataLoader(cal_ds, batch_size=256, shuffle=False, num_workers=0)
+    cal_errs, cal_h_all = _collect_embeddings(model, device, cal_loader)
+    cal_resid = _extract_series(cal_errs)   # {report_key: (N, T_out)}
+    print(f"  {len(cal_h_all)} calibration windows embedded")
+
     print("Loading map (one-time)...")
     map_processor = MapProcessor(cfg.MAP_FILE)
     shared_builder = SequenceBuilder(map_processor.map_data, route=[])
@@ -219,6 +232,7 @@ def main():
                 # TL faults in particular should show up most directly in the TL
                 # features themselves, which the position-only check would completely miss).
                 resid = {k: np.zeros(len(sequences)) for k in _SERIES_KEYS}
+                embedding_width = {k: np.zeros(len(sequences)) for k in _SERIES_KEYS}
                 xy = np.zeros((len(sequences), 2))
                 with torch.no_grad():
                     for i, seq in enumerate(sequences):
@@ -241,12 +255,27 @@ def main():
                                 r = np.abs(pred[:, axis] - actual[:, axis]).mean()
                             resid[report_key][i] = r
 
+                        # Embedding-conditioned width (2026-08-26): find this window's k
+                        # nearest neighbors by h_last distance among the FULL calibration
+                        # pool -- no trial-exclusion needed here (unlike
+                        # conformal_scene_conditioning.py's LOO-CV validation), since fault
+                        # trials are never part of the calibration set to begin with, so
+                        # there's no leakage risk in using every calibration window as the
+                        # neighbor pool.
+                        h_last = model.encode_scene(past, graph)[0].cpu().numpy()
+                        dists = np.linalg.norm(cal_h_all - h_last[None, :], axis=1)
+                        nn = np.argsort(dists)[:_EMBEDDING_K]
+                        for report_key in _SERIES_KEYS:
+                            neigh_resid = cal_resid[report_key][nn]   # (k, T_out), NORMALIZED units
+                            q = np.array([conformal_quantile(neigh_resid[:, t], _EMBEDDING_ALPHA)
+                                          for t in range(neigh_resid.shape[1])])
+                            scale = cfg.POSITION_DISPLACEMENT_RANGE_M if report_key == 'position' else 1.0
+                            embedding_width[report_key][i] = q.mean() * scale
+
                         ref_x, ref_y = seq['position_ref']
                         last_past = seq['past'][-1]['position']
                         xy[i, 0] = ref_x + last_past[0] * cfg.POSITION_DISPLACEMENT_RANGE_M
                         xy[i, 1] = ref_y + last_past[1] * cfg.POSITION_DISPLACEMENT_RANGE_M
-                position_resid = resid['position']
-
                 groups = assign_groups(xy)
                 in_fault = np.array([in_any_window(t, fault_windows) for t in t_rel])
                 # seconds since the most recent fault window ENDED (inf if none yet) --
@@ -286,21 +315,31 @@ def main():
                         row[f'resid_{k}'] = float(resid[k][i])
                         row[f'exceeds_vanilla_{k}'] = bool(resid[k][i] > vanilla_width[k])
                         row[f'exceeds_mondrian_{k}'] = bool(resid[k][i] > mondrian_width[k][i])
+                        row[f'exceeds_embedding_{k}'] = bool(resid[k][i] > embedding_width[k][i])
                     rows.append(row)
 
                 if trace_plots_saved < args.max_trace_plots and len(fault_windows) > 0:
-                    fig, ax = plt.subplots(figsize=(11, 4.5))
-                    ax.plot(t_rel, position_resid, color='#1f77b4', linewidth=1.2, label='position residual (mean over horizon, m)')
-                    ax.axhline(vanilla_width['position'], color='#7f7f7f', linestyle='--', linewidth=1.3, label='vanilla calibrated width')
-                    ax.plot(t_rel, mondrian_width['position'], color='#2ca02c', linewidth=1.0, linestyle=':', label='Mondrian calibrated width (per-window group)')
-                    for w in fault_windows:
-                        ax.axvspan(w['start'], w['end'], color='#d62728', alpha=0.15)
-                    ax.axvspan(np.nan, np.nan, color='#d62728', alpha=0.15, label='fault active')
-                    ax.set_xlabel('seconds since trial start')
-                    ax.set_ylabel('position residual (m)')
-                    ax.set_title(f'{campaign} / {os.path.basename(goal_dir)} / {run_name}  (outcome: {status})', fontsize=11)
-                    ax.legend(fontsize=8, loc='upper left')
-                    fig.tight_layout()
+                    # All 7 features, all 3 calibration schemes (2026-08-26, per Kalpit:
+                    # "the plots only show vanilla and Mondrian... let's plot all the
+                    # features not just position, it'll be good to see the complete picture").
+                    ncols = 3
+                    nrows = math.ceil(len(_SERIES_KEYS) / ncols)
+                    fig, axes = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 3.8 * nrows), squeeze=False)
+                    for ax, k in zip(axes.flat, _SERIES_KEYS):
+                        ax.plot(t_rel, resid[k], color='#1f77b4', linewidth=1.0, label='residual')
+                        ax.axhline(vanilla_width[k], color='#7f7f7f', linestyle='--', linewidth=1.2, label='vanilla')
+                        ax.plot(t_rel, mondrian_width[k], color='#2ca02c', linewidth=0.9, linestyle=':', label='Mondrian')
+                        ax.plot(t_rel, embedding_width[k], color='#9467bd', linewidth=0.9, linestyle='-.', label='embedding')
+                        for w in fault_windows:
+                            ax.axvspan(w['start'], w['end'], color='#d62728', alpha=0.15)
+                        ax.set_title(k, fontsize=9.5)
+                        ax.set_xlabel('seconds since trial start', fontsize=7.5)
+                        ax.tick_params(labelsize=7)
+                    for ax in axes.flat[len(_SERIES_KEYS):]:
+                        ax.axis('off')
+                    axes.flat[0].legend(fontsize=6.5, loc='upper left')
+                    fig.suptitle(f'{campaign} / {os.path.basename(goal_dir)} / {run_name}  (outcome: {status})', fontsize=11)
+                    fig.tight_layout(rect=[0, 0, 1, 0.95])
                     out_path = os.path.join(args.output_dir, f'{campaign}_{os.path.basename(goal_dir)}_{run_name}_trace.png')
                     fig.savefig(out_path, dpi=130)
                     plt.close(fig)

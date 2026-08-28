@@ -25,3 +25,18 @@ Numbers to have ready: IMU exceed-rate 44%->78% over 0-120s post-fault;
 acceleration 13.7x vs. position 1.7x diagnosticity ratio for IMU; TL
 clean/active/post-fault exceed rates 4%/17%/24%; velocity_lateral 4.6x
 vs. traffic_light_color 2.4x diagnosticity ratio for TL faults.
+
+If asked why all three calibration schemes are shown together here rather
+than picking one: this is deliberately the same real fault data viewed
+through each of slide 10-12's three methods at once, not a new dataset —
+it's the connective tissue between the calibration-methodology section
+and the fault-validation section, showing all three approaches are live,
+comparable, and consistent with each other on data none of them were
+tuned against. Mondrian's visible step-jumps line up with the same real
+zone boundaries as slide 12; the embedding band's responsiveness here is
+the same property demonstrated on nominal data in slide 12, just under a
+harder test. Don't over-read the embedding band's tighter tracking as
+proof it's "better" for fault detection specifically — that comparison
+(which scheme actually detects faults best, at matched false-alarm rates)
+hasn't been run yet; what this slide shows is that it's live and behaving
+sensibly, not a head-to-head detection benchmark.

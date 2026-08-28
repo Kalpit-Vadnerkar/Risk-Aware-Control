@@ -6,7 +6,11 @@ fault campaigns, all 20 available trials, every predicted feature.
 
 Two genuinely different failure signatures found — not one:
 
-(Plot: imu_fault_trace.png — position residual over time, fault window shaded)
+(Plot: imu_fault_trace.png — ALL 7 predicted features, residual over time,
+fault window shaded, all THREE calibration schemes overlaid: vanilla
+(flat grey), Mondrian (stepped green, jumps at real zone boundaries), and
+embedding (purple, tracks the residual's own shape closely — visibly the
+most locally-adaptive of the three))
 
 IMU faults corrupt STATE ESTIMATION. Residual triples during the fault
 window, then KEEPS GROWING afterward instead of recovering — from 44%
@@ -14,11 +18,17 @@ exceeding the calibrated band right after the fault "ends" to 78% by
 60-120 seconds later. A corrupted internal position estimate doesn't
 self-heal once poisoned.
 
-(Plot: tl_fault_trace.png — position residual over time, fault windows shaded)
+(Plot: tl_fault_trace.png — same full-feature, three-scheme layout)
 
 TL faults corrupt a PERCEPTION VALUE. Far more contained — clean 4%,
 active 17%, recovering to 24% shortly after. Real, but a fundamentally
 different (much faster) timescale than IMU faults.
+
+Worth a beat on its own: across BOTH plots, the embedding-conditioned
+band (slide 12) visibly hugs the residual's own ups and downs far more
+than vanilla's flat line or Mondrian's step function — a direct visual
+of the same "improves automatically, adapts locally" property claimed on
+slide 12, now shown under real fault conditions, not just nominal data.
 
 The feature that carries the clearest evidence isn't the obvious one —
 likely a genuinely new finding, not previously reported anywhere found in
