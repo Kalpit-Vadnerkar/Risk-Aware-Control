@@ -27,6 +27,15 @@ docs/papers/
 # memory) — operational output, not a data artifact worth tracking
 logs/
 
+# Per-window fault-inspection data (2026-08-27): regenerable by re-running
+# inspect_fault_predictions.py, grows every time a field is added (44,908
+# rows -- one per calibration window across every fault trial), already
+# past 68MB and climbing -- tripped GitHub's 50MB size warning twice.
+# Not meaningful to diff or review in git history; the trace PNGs and the
+# printed aggregate summary (in commit messages / research notes) are the
+# things worth keeping under version control, not this file.
+experiments/analysis/fault_prediction_inspection/fault_prediction_summary.json
+
 # OS and editor files
 .DS_Store
 .vscode/
