@@ -53,15 +53,27 @@ independent sources (see `CLAUDE.md` limitations). The severity-sweep
 session above is a partial step (goal_007/012 specifically); still worth
 collecting more nominal trials generally beyond that.
 
-## 3. Layer 2 — rebuild around forward reachability
+## 3. Layer 2 — a priori (2a) + a posteriori (2b) reachability-set optimization
 
-Not yet started in its intended form. Replace the paused static-margin v1
-prototype (`experiments/lib/margin.py`,
-`experiments/scripts/layer2_consequence_estimation.py`) with a
-reachability-style margin (bounded reachable sets for tracked objects,
-pruned by lane-containment) — see `CLAUDE.md`'s decision log and
-`docs/research_notes/open_world_safety_reframe_2026-08-20.md` §9(c) for the
-full design rationale. Depends on richer margin-violation logging
+**2026-09-03 reframe** (advisor feedback — see `CLAUDE.md` decision log and
+`docs/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`):
+Layer 2 is not an independent reachability-set construction, it's
+trimming/optimizing Layer 1's calibrated envelope using HD-map/scene cues,
+in two stages.
+
+**2a (a priori) — done, just relabeled.** Mondrian
+(`conformal_mondrian_calibration.py`) and embedding k-NN
+(`conformal_embedding_calibration.py`) conditional calibration already
+shape the interval using zone/scene context before it's emitted — see
+slide 12 / `CLAUDE.md` decision log. No new work here, just correct framing
+in the writeup.
+
+**2b (a posteriori) — not yet started.** Replace the paused static-margin
+v1 prototype (`experiments/lib/margin.py`,
+`experiments/scripts/layer2_consequence_estimation.py`) with geometric
+trimming of the bootstrap-rolled tube against real map/object constraints —
+see `docs/research_notes/open_world_safety_reframe_2026-08-20.md` §9(c) for
+the full design rationale. Depends on richer margin-violation logging
 (continuous time-to-collision / lane-boundary-margin traces, not just
 binary collision/stuck heuristics — `experiments/lib/metrics.py`'s current
 `static_collision`/stuck logic is too rare/unreliable to build an
@@ -70,6 +82,11 @@ evaluation around).
 - [ ] Design the reachable-set computation against real tracked-object data
       and `lanelet2.geometry.inside` lane-containment (not nearest-5
       lanelet heuristics).
+- [ ] Consume Autoware's own `PredictedObjects.kinematics.predicted_paths`
+      (`/perception/object_recognition/objects` — already recorded in every
+      trial's rosbag via `RECORDING_TOPICS`, just not read by the ST-GAT
+      pipeline) as the tracked-object reachable-set input, rather than
+      needing the model to predict object futures itself.
 - [ ] Add continuous margin-violation logging.
 - [ ] Decompose along aleatoric (Layer 1 residual bootstrap) vs. epistemic
       (cross-member disagreement) contribution — the v1 prototype's

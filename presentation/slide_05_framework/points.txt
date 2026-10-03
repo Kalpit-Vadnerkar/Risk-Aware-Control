@@ -1,34 +1,59 @@
 THE FRAMEWORK: FROM CALIBRATED SURPRISE TO PHYSICAL CONSEQUENCE
 
   ┌────────────────────────────────────────────────────────────────────┐
-  │  Observed past + HD map  →  ST-GAT point predictor  →  conformal   │
-  │  calibration  →  CALIBRATED INTERVAL, per feature, per horizon step│
-  │                              (LAYER 1 — this update)                │
+  │  Observed past + HD map  →  ST-GAT point predictor                  │
   │                                    │                                │
   │                                    ▼                                │
-  │  Bootstrap-resample calibrated residuals → counterfactual futures  │
-  │  Reachability margin (lane-containment + object reachable sets)    │
-  │  Roll futures against margin → CALIBRATED P(safety violation)      │
+  │  Conformal calibration (LOO-CV residuals)                           │
+  │    → CALIBRATED INTERVAL, per feature, per horizon step             │
+  │                              (LAYER 1 — this update)                 │
+  │                                    │                                │
+  │                                    ▼                                │
+  │  ┌─ LAYER 2a — A PRIORI (scene-conditioned band shaping) ───────┐  │
+  │  │  Mondrian (discrete zone) / embedding k-NN (continuous scene   │  │
+  │  │  similarity) conditioning → tighter interval where context     │  │
+  │  │  allows                                                        │  │
+  │  └─────────────────────────────────────────────────────────────┘  │
+  │                                    │                                │
+  │                                    ▼                                │
+  │  Bootstrap-resample calibrated residuals → counterfactual futures   │
+  │  (preserves real cross-feature/temporal correlation)                │
+  │                                    │                                │
+  │                                    ▼                                │
+  │  ┌─ LAYER 2b — A POSTERIORI (map-grounded trimming) ─────────────┐ │
+  │  │  Prune rolled-forward tube against: lane-containment            │ │
+  │  │  (lanelet2.geometry.inside), tracked-object reachable sets,     │ │
+  │  │  kinematic feasibility                                          │ │
+  │  └─────────────────────────────────────────────────────────────┘  │
+  │                                    │                                │
+  │                                    ▼                                │
+  │  Check trimmed set against safety margin → CALIBRATED P(violation)  │
   │                              (LAYER 2 — the core remaining thesis)  │
   │                                    │                                │
   │                                    ▼                                │
-  │  Graceful behavioral response (LAYER 3 — explicit future work)     │
+  │  Graceful behavioral response (LAYER 3 — explicit future work)      │
   └────────────────────────────────────────────────────────────────────┘
 
 Why this is the gap, not just a new pipeline (see slide 3):
   Existing UQ/anomaly work stops at the first box's output — an alarm
   magnitude to threshold. Existing risk-aware planning starts from the
-  THIRD box's assumptions (a trustworthy prediction) without the first
-  two. This framework is the one path that doesn't drop the thread
+  fifth box's assumptions (a trustworthy prediction) without the first
+  four. This framework is the one path that doesn't drop the thread
   between them: the SAME calibrated signal Layer 1 validates is what
-  Layer 2 rolls through the physical margin — not a generic, assumed-
-  correct trajectory.
+  Layer 2 optimizes and rolls through the physical margin — not a
+  generic, assumed-correct trajectory, and not an independently
+  re-derived uncertainty object.
 
-Two intuitions worth stating plainly:
+Three intuitions worth stating plainly:
   → A calibrated interval alone doesn't know when it MATTERS — a wide
     interval on an empty road and the same width near cross-traffic are
     not equally dangerous. Layer 2 exists specifically to make that
     distinction.
+  → Layer 2 does NOT construct a second, independent reachability set —
+    the calibrated interval, swept across the horizon, already IS a raw
+    reachable tube. Layer 2's job is optimizing/trimming that tube with
+    map and scene cues, in two stages (before rollout / after rollout),
+    not re-deriving it from scratch.
   → Which features carry a fault's evidence isn't obvious in advance
     (slide 13) — this is why the pipeline is per-feature, not a single
     collapsed anomaly score, from the start.

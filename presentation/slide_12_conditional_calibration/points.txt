@@ -1,8 +1,13 @@
 MAKING THE INTERVAL SCENARIO-AWARE: TWO APPROACHES, COMPARED HONESTLY
+(THIS IS LAYER 2a — A PRIORI REACHABILITY-SET SHAPING)
 
 Once the model itself is better (slide 11), a sharper calibration
 question remains: should the interval WIDTH itself vary by scenario, not
-just be validated per scenario? Two approaches, built and compared:
+just be validated per scenario? Two approaches, built and compared. As of
+the 2026-09-03 reframe (slide 5), this scenario-conditioning step IS
+Layer 2's a priori stage — shaping the calibrated envelope using map/scene
+context BEFORE it's rolled forward and geometrically trimmed (Layer 2b,
+not yet built).
 
 Approach A — Mondrian (discrete group-conditional) conformal calibration:
   → Partition calibration data into the same real zone categories

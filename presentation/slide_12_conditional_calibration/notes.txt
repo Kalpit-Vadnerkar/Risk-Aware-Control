@@ -1,3 +1,11 @@
+Framing note (2026-09-03): this slide's two techniques are now presented
+as Layer 2a (a priori reachability-set shaping), not a Layer 1 side quest
+— the advisor flagged that Layer 2 as previously framed (a separately
+constructed reachability margin) was redundant with the calibrated
+interval itself; resolving that redundancy is what promoted this slide's
+content to explicitly be half of Layer 2. See slide 5's notes and
+`docs/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`.
+
 This slide exists specifically to avoid overselling either technique —
 the "Mondrian isn't a free win" finding was caught by checking the SIZE-
 WEIGHTED net effect before presenting the width comparison, not assumed;

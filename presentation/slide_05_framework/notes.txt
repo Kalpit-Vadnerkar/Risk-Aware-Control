@@ -25,3 +25,14 @@ If asked about Layer 3 — explicitly out of scope this cycle, a scoping
 question flagged for the advisor's own call (does "graceful response"
 need an actual controller, or just define the signal's shape) — not
 being decided in this update.
+
+If asked "isn't the reachability margin just a second calibration step,
+redundant with Layer 1" — this is exactly the advisor's own 2026-09-03
+critique, and the honest answer is: it WOULD be redundant if Layer 2 built
+an independent reachable set from the raw calibrated interval. It doesn't
+— Layer 2a shapes the interval itself using scene context (before
+rollout), Layer 2b geometrically trims the rolled-forward tube against
+real map/object constraints (after rollout). Both operate ON Layer 1's
+envelope, neither constructs a new one. See
+`docs/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md` for
+the full resolution if pressed on this.

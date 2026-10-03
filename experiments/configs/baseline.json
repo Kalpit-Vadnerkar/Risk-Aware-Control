@@ -5,7 +5,8 @@
   },
   "simulationConfiguration": {
     "useTraffic": true,
-    "timeScale": 1.0
+    "timeScale": 1.0,
+    "targetVehicleCount": -1
   },
   "egoConfiguration": {
     "egoVehicleName": "Lexus RX450h 2015 Sample Sensor",

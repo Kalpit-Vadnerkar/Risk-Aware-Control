@@ -37,10 +37,14 @@ banked (Layer 1, this update) vs. what's the real remaining claim (Layer
 and why that's not a hedge.
 
 **05 — Framework.** The mechanism, replacing belief-divergence entirely:
-calibrated interval → bootstrap counterfactual futures → reachability
-margin → calibrated P(violation). Explains precisely why this is the one
-path that doesn't drop the thread between the two literature traditions
-from slide 3.
+calibrated interval → **Layer 2a** (a priori, scene-conditioned band
+shaping) → bootstrap counterfactual futures → **Layer 2b** (a posteriori,
+map-grounded trimming against lane-containment + object reachable sets) →
+calibrated P(violation). Reframed 2026-09-03 per advisor feedback: Layer 2
+optimizes/trims Layer 1's calibrated envelope in two stages rather than
+constructing an independent reachability set — explains precisely why this
+is the one path that doesn't drop the thread between the two literature
+traditions from slide 3.
 
 **06 — Digital twin (architecture).** The ST-GAT model, and — importantly
 — the abandoned approach that came before it: jointly-trained
@@ -82,10 +86,11 @@ half of the story, and the deck's most persuasive visual.
 
 **12 — Conditional calibration, compared honestly.** Two ways to make the
 calibrated interval scenario-aware: discrete (Mondrian) vs. continuous
-(the model's own learned scene similarity). Reports the real, quantified
-trade-offs of each — including that Mondrian is NOT a free efficiency win
-once properly weighted, a finding caught and corrected before being
-oversold.
+(the model's own learned scene similarity) — as of the 2026-09-03 reframe,
+this IS Layer 2a (a priori reachability-set shaping), not a Layer 1 side
+quest. Reports the real, quantified trade-offs of each — including that
+Mondrian is NOT a free efficiency win once properly weighted, a finding
+caught and corrected before being oversold.
 
 **13 — Layer 1 meets real faults.** The fault-validation payload: two
 qualitatively different fault signatures (IMU compounding vs. TL
@@ -104,7 +109,10 @@ next real payoff, not further Layer 1 polish.
 
 **15 — Next steps.** The concrete, already-planned path to closing Paper
 1 (the redesigned severity sweep, matched-pair data collection) running
-in parallel with starting Layer 2 (the reachability-margin redesign, the
-target result shape — four artifacts in priority order). Ends on two real
-questions for the advisor: the two-paper split, and whether NPC/traffic-
-density belongs in Layer 2's scope.
+in parallel with starting **Layer 2b** (the a posteriori, map-grounded
+trimming redesign — Layer 2a already exists as slide 12's conditional
+calibration), the target result shape — four artifacts in priority order.
+Ends on two real questions for the advisor: the two-paper split, and
+whether NPC/traffic-density belongs in Layer 2's scope (still open —
+2026-09-03: not recommended for the near-term collection plan, since its
+purpose can't be evaluated until 2b's violation-checking exists).

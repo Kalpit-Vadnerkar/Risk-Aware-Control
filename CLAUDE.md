@@ -34,11 +34,16 @@ about to do something unsafe."** Three layers:
   data**; checked against real injected faults with a real, useful (if
   partial) result — see "Current state" below.
 - **Layer 2 — consequence estimation (THE thesis).** Map anomaly to actual
-  risk by rolling counterfactual futures forward through the digital twin —
-  same residual signal, asking "so what happens" instead of "which bin."
-  **Not yet built** in its current intended form (a reachability-based
-  design) — a v1 prototype using a simpler static margin exists but is
-  paused/superseded, see decision log.
+  risk by trimming/optimizing Layer 1's calibrated envelope against HD-map
+  and scene context — not building an independent reachability set from
+  scratch (2026-09-03 advisor reframe, see decision log). Two stages:
+  **2a, a priori** (scene-conditioned band shaping, before the interval is
+  emitted) — already built, this is the Mondrian/embedding conditional
+  calibration listed under Layer 1 below, relabeled; **2b, a posteriori**
+  (geometric trimming of the rolled-forward tube against lane-containment,
+  object reachable sets, kinematic feasibility) — **not yet built**. A v1
+  prototype using a simpler static margin exists but is paused/superseded,
+  see decision log.
 - **Layer 3 — graceful response.** Continuous behavior modulation
   proportional to quantified ignorance, not limp-mode/ODD binning. Whether
   this pulls the descoped active-control (RISE) work back into scope is an
@@ -76,7 +81,9 @@ See `docs/research_notes/layer1_paper_structure_2026-08-25.md` for Paper
   (`experiments/scripts/conformal_horizon_calibration.py`), a systematic
   per-scenario coverage audit, a training-level fix for the scenario gap it
   found, and two conditional-calibration variants (Mondrian and embedding
-  k-NN) — see decision log for what each found.
+  k-NN) — see decision log for what each found. These two variants now also
+  serve as **Layer 2a** (a priori reachability-set shaping, 2026-09-03
+  reframe, see decision log).
 - Layer 1 checked against real injected faults across all 8 fault campaigns
   and all 7 feature series (`experiments/scripts/inspect_fault_predictions.py`).
 - `experiments/scripts/promote_model.py` — gates every model swap (refuses
@@ -92,8 +99,11 @@ See `docs/research_notes/layer1_paper_structure_2026-08-25.md` for Paper
    Paper 1's last missing result (comparison C6).
 2. More nominal calibration data generally (only 7 trials currently in
    `CAL_DIR` — see limitations below).
-3. Layer 2, rebuilt around forward reachability sets rather than the
-   paused static-margin v1 prototype.
+3. Layer 2b, built around geometric trimming of Layer 1's calibrated
+   envelope (lane-containment + object reachable sets, not an
+   independently-constructed reachability set) rather than the paused
+   static-margin v1 prototype — Layer 2a (conditional calibration) already
+   exists, see decision log.
 4. A broader (non-Waymo-only) literature review to confirm the
    calibration-x-reachability novelty claim before writing it up.
 5. Layer 3 scoping decision (does active control come back into the core
@@ -186,6 +196,33 @@ note first.
   paused v1 prototype, not the design to build on — see decision log entry
   above on the two-paper split and `open_world_safety_reframe_2026-08-20.md`
   §9(c).
+- **Layer 2 split into a priori (2a) and a posteriori (2b) reachability-set
+  optimization, not one combined reachability construction (2026-09-03).**
+  Advisor feedback on the 2026-08-26 deck: the calibrated interval Layer 1
+  already produces, swept across the horizon, IS already a raw reachable
+  tube — building a separate reachability margin on top re-derives the same
+  object instead of reasoning about it. Resolved by treating Layer 2 as
+  trimming/optimizing Layer 1's envelope in two stages rather than
+  constructing an independent one: **2a (a priori)** shapes the interval
+  using scene/zone context *before* it's emitted — a relabeling, not new
+  work, of the Mondrian/embedding conditional calibration already built
+  (entry above); **2b (a posteriori)** geometrically trims the
+  bootstrap-rolled tube against real map/object constraints *after*
+  rollout (lane-containment, tracked-object reachable sets, kinematic
+  feasibility) — the actual not-yet-built reachability work, now explicitly
+  framed as pruning rather than constructing. Also surfaced two
+  data-availability findings for 2b's design: Autoware's own
+  `PredictedObjects.kinematics.predicted_paths` is already recorded in
+  every trial's rosbag (`/perception/object_recognition/objects`,
+  `RECORDING_TOPICS`) but not consumed by the ST-GAT pipeline (which only
+  reads `TrackedObjects`, current state only) — 2b should read it directly
+  at rollout time rather than needing the model to predict object futures;
+  and the route-info dilution issue (route reaches the model via
+  `path_node` graph flags but gets blurred by static per-window pooling) is
+  a known, separately-tracked item (TODO.md §7's graph-cadence entry), not
+  new, and not a 2b blocker since 2b grounds against `lanelet2.geometry`
+  directly. See `docs/research_notes/
+  layer2_apriori_aposteriori_split_2026-09-03.md`.
 - **Multi-feature fault check, not position-only (2026-08-25).** Checking
   all 7 series against real fault campaigns found position is NOT the most
   diagnostic feature for either fault family: acceleration's active/clean
@@ -317,6 +354,21 @@ note first.
   loads (or half-loads) without necessarily erroring loudly. `config.py`
   flags stale checkpoints, but confirm dimensionality matches before
   trusting a loaded model's output.
+
+- **AWSIM NPC density is now config-driven, not a Unity-rebuild-required
+  hardcoded value** — a prior assessment (memory, corrected 2026-09-03)
+  overstated this. `Assets/AWSIM/Scripts/Loader/{AWSIMConfiguration,
+  SimulationManager,SimConfiguration}.cs` in `../Awsin-Source-code/
+  AWSIM-Labs-1.6.1/` (vendored AWSIM source, sibling to this repo, not
+  git-tracked) were patched to read a `targetVehicleCount` field from the
+  same `--config` JSON `Run_AWSIM.sh` already uses for the map
+  (`experiments/configs/baseline.json` now has it, default `-1` = no
+  override). **Still requires one Unity Editor rebuild** (2022.3.62f1,
+  pinned in the source's `ProjectVersion.txt`) to compile the patch into
+  `awsim_labs_v1.6.1/`'s Linux player binary — no Editor is installed on
+  this machine yet, and building one is an interactive/GUI step for
+  Kalpit, same as never launching AWSIM itself via Bash. See
+  `docs/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`.
 
 ## Environment — sourcing order matters
 
