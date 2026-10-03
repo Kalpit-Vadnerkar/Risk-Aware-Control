@@ -6,7 +6,11 @@
 # AWSIM (Terminal 1) and Autoware (Terminal 2) must already be running.
 #
 # Usage:
-#   ./collect.sh <campaign> [--trials N] [--goals GOALS] [--dry-run]
+#   ./collect.sh <campaign> [--trials N] [--goals GOALS] [--max-batch N] [--dry-run]
+#
+# Caps experiments-per-invocation at 12 by default (--max-batch to override,
+# 12-15 is the validated-safe range) — restart Autoware manually between
+# batches, see the MAX_BATCH comment below for why.
 #
 # Campaigns:
 #   nom_v5              Nominal driving, 5 m/s velocity cap
@@ -114,10 +118,16 @@ ARM="A"   # A = safety features disabled (science condition, this repo's long-st
           # default). B = stock/full diagnostic gate (ground-truth oracle) — requires
           # switch_diagnostic_arm.sh B + an Autoware restart FIRST; this flag only
           # labels the data, it does not itself change what Autoware is running.
+MAX_BATCH=12   # hard cap on experiments run against one Autoware process without
+               # a restart (2026-10-04, per Kalpit — deliberately NOT trying to
+               # detect/auto-restart behavior_path_planner's state-exhaustion
+               # (README item 5, ~18-36 experiments); a manual restart between
+               # batches is simpler and Kalpit is physically present anyway).
+               # Override with --max-batch N (12-15 is the validated-safe range).
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
-    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--fault-min-runway-m M] [--arm A|B] [--yes] [--dry-run]${NC}"
+    echo -e "${RED}Usage: ./collect.sh <campaign> [--trials N] [--goals GOALS] [--goals-file FILE] [--fault-min-runway-m M] [--arm A|B] [--max-batch N] [--yes] [--dry-run]${NC}"
     echo ""
     echo "Campaigns: nom_v5  nom_v7  nom_v11  obs_stuck  obs_recovery  obs_noescape  obs_singlelane  obs_tooclosetoreact"
     echo "           tl_fault_s2..s4  tl_fault_ramp  tl_fault_fixed_030/050/070  imu_fault_s1  imu_fault_s3  imu_fault_ramp  imu_fault_scale  imu_fault_stuck"
@@ -145,6 +155,7 @@ while [[ $# -gt 0 ]]; do
         --goals-file)         GOALS_FILE="$2";        shift 2 ;;
         --fault-min-runway-m) FAULT_MIN_RUNWAY="$2";  shift 2 ;;
         --arm)                ARM="$2";               shift 2 ;;
+        --max-batch)   MAX_BATCH="$2";  shift 2 ;;
         --yes|-y)      YES="--yes";     shift ;;
         --dry-run)     DRY_RUN="--dry-run"; shift ;;
         *) echo -e "${RED}Unknown argument: $1${NC}"; exit 1 ;;
@@ -153,6 +164,24 @@ done
 
 if [[ "$ARM" != "A" && "$ARM" != "B" ]]; then
     echo -e "${RED}--arm must be A or B, got: ${ARM}${NC}"; exit 1
+fi
+
+# ── Batch-size cap (2026-10-04) ────────────────────────────────────────────────
+# Approximates via $GOALS's comma count — if goals actually come from
+# --goals-file instead, this undercounts; pass --max-batch explicitly in that
+# case rather than relying on the default catching it.
+# (awk, not `grep -o | wc -l`: grep exits 1 on zero matches — i.e. the common
+# single-goal case — which `set -e -o pipefail` would otherwise treat as this
+# whole script failing, silently, with no message.)
+N_GOALS=$(awk -F',' '{print NF}' <<< "$GOALS")
+N_EXPERIMENTS=$((N_GOALS * TRIALS))
+if [[ $N_EXPERIMENTS -gt $MAX_BATCH ]]; then
+    echo -e "${RED}ERROR: this would run ${N_EXPERIMENTS} experiments (${N_GOALS} goals x ${TRIALS} trials)${NC}"
+    echo -e "${RED}       against one Autoware process — over the ${MAX_BATCH}-experiment cap.${NC}"
+    echo -e "${YELLOW}Split into smaller --trials/--goals batches and restart Autoware manually${NC}"
+    echo -e "${YELLOW}between them (auto-resume means re-running this exact command afterward${NC}"
+    echo -e "${YELLOW}just picks up the remaining trials), or pass --max-batch N to raise the cap.${NC}"
+    exit 1
 fi
 
 # ── Source environment ────────────────────────────────────────────────────────

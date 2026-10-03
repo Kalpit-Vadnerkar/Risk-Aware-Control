@@ -84,6 +84,9 @@ YES="--yes"
 FAULT_MIN_RUNWAY=""   # empty = collect.sh/fault_injector.py default (150m, GT-gated)
 ARM="A"
 DO_RESTART=0
+MAX_BATCH=12   # see collect.sh's MAX_BATCH comment — same cap, but computed here
+               # across ALL chained campaigns, since collect.sh only sees one
+               # campaign per invocation and can't catch the cumulative total.
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -93,6 +96,7 @@ while [[ $# -gt 0 ]]; do
         --campaigns)          CAMPAIGNS="$2";          shift 2 ;;
         --fault-min-runway-m) FAULT_MIN_RUNWAY="$2";   shift 2 ;;
         --arm)                ARM="$2";                shift 2 ;;
+        --max-batch)     MAX_BATCH="$2"; shift 2 ;;
         --confirm-each)  YES="";          shift ;;
         --restart)       DO_RESTART=1;    shift ;;
         --no-restart)    DO_RESTART=0;    shift ;;   # default now — kept as a harmless explicit no-op
@@ -102,6 +106,26 @@ while [[ $# -gt 0 ]]; do
 done
 
 cd "$SCRIPT_DIR"
+
+# ── Batch-size cap (2026-10-04) ────────────────────────────────────────────────
+# Skipped entirely when --restart is passed — restarting between every
+# campaign already keeps each Autoware process's experiment count low by
+# construction, so there's nothing for this cap to protect against.
+if [[ $DO_RESTART -eq 0 ]]; then
+    N_CAMPAIGNS=$(awk '{print NF}' <<< "$CAMPAIGNS")
+    N_GOALS=$(awk -F',' '{print NF}' <<< "$GOALS")
+    N_EXPERIMENTS=$((N_CAMPAIGNS * N_GOALS * TRIALS))
+    if [[ $N_EXPERIMENTS -gt $MAX_BATCH ]]; then
+        echo -e "${RED}ERROR: this would chain ${N_EXPERIMENTS} experiments (${N_CAMPAIGNS} campaigns x${NC}"
+        echo -e "${RED}       ${N_GOALS} goals x ${TRIALS} trials) against one Autoware process without a${NC}"
+        echo -e "${RED}       restart — over the ${MAX_BATCH}-experiment cap.${NC}"
+        echo -e "${YELLOW}Split --campaigns into smaller groups and restart Autoware manually between${NC}"
+        echo -e "${YELLOW}invocations (auto-resume means re-running the remaining campaigns afterward${NC}"
+        echo -e "${YELLOW}just picks up where you left off), pass --max-batch N to raise the cap, or${NC}"
+        echo -e "${YELLOW}pass --restart to go back to automatic restarts between every campaign.${NC}"
+        exit 1
+    fi
+fi
 
 # ── Autoware restart (copied from experiments/scripts/run_nominal_batches.sh —
 #    proven 3-attempt retry with a ROS2 daemon reset between attempts; keep the
