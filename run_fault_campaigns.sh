@@ -9,23 +9,30 @@
 # Usage:
 #   ./run_fault_campaigns.sh [--goals GOALS] [--goals-file FILE] [--trials N]
 #                            [--campaigns "c1 c2 ..."] [--arm A|B] [--confirm-each]
-#                            [--no-restart] [--dry-run]
+#                            [--restart] [--dry-run]
 #
 # Runs unattended by default (no "Press Enter" prompt between campaigns) since
 # the whole point of this script is chaining several campaigns in one command.
 # Pass --confirm-each to restore the per-campaign confirmation pause.
 #
-# Restarts Autoware between every campaign by default (added 2026-07-26,
-# reusing run_nominal_batches.sh's proven restart_autoware — same 3-attempt
-# retry + ROS2 daemon reset). The 2026-07-25 run deliberately skipped this to
-# test whether a more powerful machine avoids README item 5's
-# behavior_path_planner state-exhaustion (~18-36 experiments) without it — it
-# didn't: all 4 IMU campaigns + part of tl_fault_s2 completed (~45
-# experiments) before every remaining TL campaign started failing almost
-# immediately. Pass --no-restart to go back to that (not recommended for an
-# unattended/overnight run — a stall with no restart can burn hours before
-# anyone notices, whereas run_experiments.py's 2026-07-26 auto-resume means
-# a restart-covered failure just re-runs cleanly next time anyway).
+# Does NOT restart Autoware between campaigns by default (changed 2026-10-04,
+# per Kalpit — running Autoware manually in its own terminal keeps its logs
+# separate and readable instead of interleaved with/backgrounded by this
+# script). AWSIM (Terminal 1) and Autoware (Terminal 2) must already be
+# running and are YOUR responsibility to keep healthy across campaigns now —
+# this script no longer restarts Autoware if it stalls partway through.
+#
+# Pass --restart to bring back the old auto-restart-between-every-campaign
+# behavior (added 2026-07-26, reusing run_nominal_batches.sh's proven
+# restart_autoware — 3-attempt retry + ROS2 daemon reset). That was added
+# because the 2026-07-25 run, without it, hit README item 5's
+# behavior_path_planner state-exhaustion (~18-36 experiments) — all 4 IMU
+# campaigns + part of tl_fault_s2 completed (~45 experiments) before every
+# remaining TL campaign started failing almost immediately. If you're running
+# this unattended/overnight without babysitting Autoware yourself, --restart
+# is the safer choice — a stall with no restart can burn hours before anyone
+# notices (run_experiments.py's auto-resume still means a failed campaign
+# just re-runs cleanly next time, but only once someone's there to re-run it).
 #
 # Auto-resume (run_experiments.py, 2026-07-26): --trials means "N trials
 # total per goal" — a campaign that already has some trials on disk (e.g.
@@ -76,7 +83,7 @@ DRY_RUN=""
 YES="--yes"
 FAULT_MIN_RUNWAY=""   # empty = collect.sh/fault_injector.py default (150m, GT-gated)
 ARM="A"
-DO_RESTART=1
+DO_RESTART=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -87,7 +94,8 @@ while [[ $# -gt 0 ]]; do
         --fault-min-runway-m) FAULT_MIN_RUNWAY="$2";   shift 2 ;;
         --arm)                ARM="$2";                shift 2 ;;
         --confirm-each)  YES="";          shift ;;
-        --no-restart)    DO_RESTART=0;    shift ;;
+        --restart)       DO_RESTART=1;    shift ;;
+        --no-restart)    DO_RESTART=0;    shift ;;   # default now — kept as a harmless explicit no-op
         --dry-run)       DRY_RUN="--dry-run"; shift ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
