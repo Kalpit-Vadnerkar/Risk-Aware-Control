@@ -172,6 +172,7 @@ re-running any of these, several already have a done/measured verdict:
 | Parameter | Value | Notes |
 |---|---|---|
 | Velocity | 11.11 m/s (map limit) | Single operating condition, all experiments |
+| NPC density | 10 (AWSIM GUI slider) | Single condition, all data collected so far (confirmed 2026-10-04) — config-driven override now exists (see `CLAUDE.md`'s AWSIM gotcha) but not yet used; plan is to keep it at 10 for now and collect a higher-density round later, once Layer 2b exists to evaluate it |
 | Conformal target coverage | 90% (δ=0.10) | Headline is the reliability diagram, coverage is the secondary check |
 | ST-GAT features | 14 | Includes `traffic_light_discrepancy`; retrain required after any further feature-vector change |
 | Fault goals | goal_007, goal_012, goal_026 | Most TL-zone entries per trial |
