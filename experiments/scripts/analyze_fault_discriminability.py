@@ -49,6 +49,7 @@ sys.path.insert(0, SCRIPT_DIR)                                       # for compa
 sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))     # its own dependencies
 
 from compare_fault_vs_nominal import load_fault_log, extract_fault_windows, in_any_window  # noqa: E402
+from fault_log import campaign_fault_kind  # noqa: E402
 from st_gat.pipeline import config as cfg  # noqa: E402
 
 TRACES_DIR = os.path.join(REPO_DIR, 'st_gat', 'results', cfg.HORIZON_TAG, 'traces')
@@ -106,7 +107,7 @@ def analyze_trial(campaign: str, goal_id: str, trial_dirname: str, trace_csv: st
 
     trial_dir = os.path.join(cfg.DATA_ROOT, campaign, goal_id, trial_dirname)
     events = load_fault_log(trial_dir)
-    kind = 'tl' if campaign.startswith('tl_fault') else 'imu'
+    kind = campaign_fault_kind(os.path.join(cfg.DATA_ROOT, campaign))
     # bag_start_abs_sec / bag_duration derived from the trace's own t_sim/
     # t_bag_rel (t_bag_rel = t_sim - bag_start_abs_sec is a constant offset
     # for every row) — avoids re-reading the rosbag just for this.
@@ -123,7 +124,7 @@ def analyze_trial(campaign: str, goal_id: str, trial_dirname: str, trace_csv: st
               f'({int(in_mask.sum())}/{len(in_mask)} rows) — skipping')
         return None
 
-    row = {'campaign': campaign, 'goal_id': goal_id, 'trial': trial_dirname, 'n_windows': len(windows)}
+    row = {'campaign': campaign, 'kind': kind, 'goal_id': goal_id, 'trial': trial_dirname, 'n_windows': len(windows)}
     for feat in CANDIDATE_FEATURES:
         if feat not in df.columns:
             continue
@@ -172,8 +173,7 @@ def main():
     per_campaign = per_trial.groupby('campaign')[delta_cols].mean()
     per_campaign.to_csv(os.path.join(args.output_dir, 'per_campaign_summary.csv'))
 
-    per_trial['fault_class'] = per_trial['campaign'].apply(
-        lambda c: 'TL/camera' if c.startswith('tl_fault') else 'IMU')
+    per_trial['fault_class'] = per_trial['kind'].map({'tl': 'TL/camera', 'imu': 'IMU'})
     per_class = per_trial.groupby('fault_class')[delta_cols].mean()
     per_class.to_csv(os.path.join(args.output_dir, 'per_class_summary.csv'))
 

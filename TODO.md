@@ -29,20 +29,26 @@ Kalpit runs this manually.
 - [ ] `./run_fault_campaigns.sh --goals goal_007,goal_012,goal_026 --trials 2
       --campaigns "tl_fault_fixed_030 tl_fault_fixed_050 tl_fault_fixed_070"`
       — 18 new fault trials at 3 fixed severities.
-- [ ] **Verify the new goal_007/012 nominal trials actually land in
-      `CAL_DIR`, not `TRAIN_DIR`** — the per-goal 80/20 split does not
-      guarantee this. Check
-      `ls st_gat/data/h30_30/sequences/calibration/` against the new run
-      dirs; if a new trial isn't there, manually move its symlink (see the
-      lab plan's verification section for the exact procedure — this is a
-      deliberate one-off override, not a pipeline change).
+- [ ] **Put goal_007/012's new nominal trials into the calibration set**
+      (2026-10-03: the manual "check CAL_DIR, move the symlink by hand if
+      missing" step this used to say is replaced by an explicit, auditable
+      tool — see `CLAUDE.md`'s directory-conventions entry on
+      `goal_split_manifest.json` and `st_gat/pipeline/goal_split.py`'s
+      docstring for why the old mechanism was unsafe):
+      ```
+      python3 experiments/scripts/manage_goal_split.py set --dataset nom_v11 --goal goal_007 --split cal
+      python3 experiments/scripts/manage_goal_split.py set --dataset nom_v11 --goal goal_012 --split cal
+      ```
 - [ ] Small code change needed before analysis: extend
       `tl_severity_sweep_analysis.py` to read severity directly from the
       new fixed-severity trials' `fault_log.jsonl`
       (`params.confidence_scale`) instead of only reconstructing it from
       `tl_fault_ramp`'s decay formula (a new branch, not a rewrite).
-- [ ] Run `python3 -m st_gat.pipeline.run_pipeline --datasets nom_v11` then
-      `python3 experiments/scripts/tl_severity_sweep_analysis.py`.
+- [ ] Run `python3 -m st_gat.pipeline.run_pipeline --datasets nom_v11`, then
+      `python3 experiments/scripts/manage_goal_split.py verify` (confirms
+      every extracted goal — including the two just reassigned — is
+      actually reflected in `CAL_DIR`/`TRAIN_DIR`, not just recorded in the
+      manifest), then `python3 experiments/scripts/tl_severity_sweep_analysis.py`.
 - [ ] Sanity check: goal_026's new curve should agree directionally with
       the 2026-08-25 ramp-based pilot's goal_026 result.
 

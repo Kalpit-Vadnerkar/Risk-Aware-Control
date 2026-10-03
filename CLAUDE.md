@@ -401,11 +401,25 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
 - `experiments/data/<campaign>/<goal_id>/t<N>_<timestamp>/` — one dir per
   trial (`result.json`, `metadata.json`, `metrics.json`, `fault_log.jsonl`,
   `rosbag/`); campaign-level batch summaries live in `<campaign>/_meta/`.
+  **Campaign naming convention + a glossary of existing (legacy) names**:
+  `docs/data_naming_convention.md` (added 2026-10-03) — read before naming
+  a new campaign; nothing existing has been renamed.
 - `experiments/configs/captured_goals.json` — the **operative** goal set
   (26 goals, edited in place; `captured_goals_original.json` is a frozen
   historical snapshot, never edited). `capture_goals_session.py` always
   **overwrites** `captured_goals.json` with only that session's captures —
   back the file up first, then hand-merge new entries by ID.
+- `experiments/configs/goal_split_manifest.json` — the **explicit,
+  git-tracked** train/calibration split assignment (added 2026-10-03,
+  replaces a recomputed-every-run shuffle that had no record of a goal's
+  prior assignment and could silently drift — see
+  `st_gat/pipeline/goal_split.py`'s docstring). Never edit this file by
+  hand — use `experiments/scripts/manage_goal_split.py` (`seed` /
+  `generate --dataset X` / `set --dataset X --goal Y --split {train,cal}` /
+  `verify`). `run_pipeline.py`'s `assemble_splits()` reads this and
+  reconciles `TRAIN_DIR`/`CAL_DIR` to match it exactly (adds missing
+  symlinks, removes stale ones) — it now fails loudly instead of silently
+  defaulting if an extracted goal has no manifest entry yet.
 - `st_gat/` — the model. `st_gat/pipeline/` (extraction: `bag_reader.py`,
   `sequence_builder.py`, `run_pipeline.py`), `st_gat/model/` (architecture,
   loss, trainer), `st_gat/train.py` (`--warmup-only` = the plain point

@@ -1,0 +1,31 @@
+{
+  "baseline_all": {},
+  "nom_v11": {
+    "goal_001": "train",
+    "goal_002": "train",
+    "goal_003": "train",
+    "goal_004": "train",
+    "goal_005": "train",
+    "goal_006": "train",
+    "goal_007": "train",
+    "goal_008": "train",
+    "goal_009": "train",
+    "goal_010": "cal",
+    "goal_011": "train",
+    "goal_012": "train",
+    "goal_013": "cal",
+    "goal_014": "train",
+    "goal_015": "train",
+    "goal_016": "train",
+    "goal_017": "cal",
+    "goal_018": "train",
+    "goal_019": "train",
+    "goal_020": "cal",
+    "goal_021": "train",
+    "goal_022": "train",
+    "goal_023": "train",
+    "goal_024": "train",
+    "goal_025": "train",
+    "goal_026": "cal"
+  }
+}

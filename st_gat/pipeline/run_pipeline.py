@@ -5,8 +5,13 @@ What it does:
   1. Scans all NOMINAL_DATASETS under DATA_ROOT
   2. For each successful run, reads the rosbag → synchronized frames
   3. Builds sliding-window sequences (past 30 + future 30 at 10 Hz)
-  4. Splits train/cal by CAL_FRACTION, stratified by goal
-  5. Saves .pkl files to TRAIN_DIR and CAL_DIR
+  4. Saves .pkl files to EXTRACTED_DIR/<dataset>/<run_name>.pkl
+  5. Reconciles TRAIN_DIR/CAL_DIR to exactly match the explicit,
+     git-tracked train/cal split assignment in
+     experiments/configs/goal_split_manifest.json (2026-10-03 — see
+     st_gat/pipeline/goal_split.py's docstring; a goal with no assignment
+     yet fails loudly rather than silently defaulting — run
+     `experiments/scripts/manage_goal_split.py generate --dataset X` first)
 
 Usage (with Autoware workspace sourced):
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
@@ -27,49 +32,23 @@ import argparse
 import json
 import os
 import pickle
-import random
 import sys
-from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import List
 
 from . import config as cfg
+from . import goal_split as gs
 from .bag_reader import read_bag
 from .sequence_builder import SequenceBuilder
 
+# Re-exported under their old private names (2026-10-03: moved into
+# goal_split.py, shared with experiments/scripts/manage_goal_split.py, to
+# avoid that module and this one importing each other) — every call site
+# below is unchanged.
+_find_run_dirs    = gs.find_run_dirs
+_goal_from_run_dir = gs.goal_from_run_dir
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
-
-def _find_run_dirs(dataset: str) -> List[str]:
-    """
-    Return sorted list of trial run directories for a dataset.
-
-    Trials are nested by goal: experiments/data/<dataset>/<goal_id>/<trial>/
-    (revised 2026-07-22 — was flat with the campaign name repeated in every
-    trial dirname; see CLAUDE.md's directory-conventions section). Fixed
-    2026-08-01: this previously only looked one level deep
-    (<dataset>/<entry>/rosbag), so it silently found 0 runs for every
-    dataset on the current layout.
-    """
-    dataset_dir = os.path.join(cfg.DATA_ROOT, dataset)
-    if not os.path.isdir(dataset_dir):
-        print(f"  [pipeline] WARNING: dataset dir not found: {dataset_dir}")
-        return []
-
-    runs = []
-    for goal_entry in sorted(os.listdir(dataset_dir)):
-        goal_dir = os.path.join(dataset_dir, goal_entry)
-        if not os.path.isdir(goal_dir) or not goal_entry.startswith('goal_'):
-            continue
-        for trial_entry in sorted(os.listdir(goal_dir)):
-            run_dir = os.path.join(goal_dir, trial_entry)
-            if not os.path.isdir(run_dir):
-                continue
-            bag_dir = os.path.join(run_dir, 'rosbag')
-            if not os.path.isdir(bag_dir):
-                continue
-            runs.append(run_dir)
-    return runs
-
 
 def _load_result(run_dir: str) -> dict:
     result_file = os.path.join(run_dir, 'result.json')
@@ -79,61 +58,6 @@ def _load_result(run_dir: str) -> dict:
         return json.load(f)
 
 
-def _goal_from_run_dir(run_dir: str) -> str:
-    """
-    Extract goal_id for a trial run directory.
-
-    run_dir is a trial dir (e.g. '.../nom_v11/goal_016/t1_20260722_141240') —
-    the goal_id is its PARENT directory's name, not derivable from the trial
-    dirname itself (fixed 2026-08-01, see _find_run_dirs above for why: this
-    used to assume a flat 'goal_XXX_<campaign>_tN_<timestamp>' dirname, which
-    hasn't been the on-disk layout since 2026-07-22).
-    """
-    parent = os.path.basename(os.path.dirname(run_dir))
-    if parent.startswith('goal_'):
-        return parent
-    return os.path.basename(run_dir)
-
-
-def _train_cal_split(
-    run_dirs_by_goal: Dict[str, List[str]],
-    cal_fraction: float,
-    seed: int = 42,
-) -> Tuple[List[str], List[str]]:
-    """
-    Split at the GOAL level: whole goals assigned wholesale to train or cal,
-    not individual runs within a goal.
-
-    Fixed 2026-08-01 — this used to split per-goal-run
-    (`round(len(runs_in_goal) * cal_fraction)`), on the assumption (stated in
-    a since-stale comment here) that nom_v11 would have 5-6 runs/goal, so
-    every goal would naturally contribute >=1 run to cal. The actual
-    collected data (per the 2026-07-21/22 correction to 2 trials/goal — see
-    docs/theoretical_framework.md's project history) has only 1-2 runs/goal,
-    for which `round(n * 0.20)` is 0 for every single goal (round(0.2)=0,
-    round(0.4)=0) — running extraction for the first time on real data
-    produced 39 train / 0 cal runs, which crashes st_gat.train's first
-    validation epoch (empty val_loader -> KeyError on val_losses['total_loss']).
-    Splitting whole goals sidesteps the per-goal-count issue entirely (works
-    the same whether goals have 1, 2, or 20 runs) and is arguably safer
-    against leakage anyway — a held-out goal is a different route/geometry
-    entirely, not just a repeat trial of one already seen in training
-    (matches docs/stgat_pipeline_plan.md Stage 1's "split at the trial level,
-    never post-hoc" principle, one level up).
-    """
-    rng = random.Random(seed)
-    goals = sorted(run_dirs_by_goal.keys())
-    rng.shuffle(goals)
-    n_cal_goals = max(1, round(len(goals) * cal_fraction)) if goals else 0
-    cal_goals = set(goals[:n_cal_goals])
-
-    train_dirs, cal_dirs = [], []
-    for goal, dirs in sorted(run_dirs_by_goal.items()):
-        (cal_dirs if goal in cal_goals else train_dirs).extend(dirs)
-
-    return train_dirs, cal_dirs
-
-
 # ── Main pipeline ──────────────────────────────────────────────────────────
 
 def process_dataset(
@@ -141,10 +65,12 @@ def process_dataset(
     shared_builder: SequenceBuilder,
     verbose: bool = False,
     filter_mrm: bool = False,
-) -> Tuple[List[str], List[str]]:
+) -> None:
     """
-    Process all runs in a dataset. Returns (train_run_dirs, cal_run_dirs).
-    Sequences are saved to EXTRACTED_DIR/<dataset>/<run_name>.pkl.
+    Process all runs in a dataset — extracts sequences to
+    EXTRACTED_DIR/<dataset>/<run_name>.pkl. Does NOT assign a train/cal
+    split (that moved to an explicit, separate step 2026-10-03 — see
+    assemble_splits() and experiments/scripts/manage_goal_split.py).
     """
     os.makedirs(cfg.EXTRACTED_DIR, exist_ok=True)
     # Schema-versioning guard (2026-08-07, see config.py's check_schema_manifest
@@ -158,7 +84,6 @@ def process_dataset(
     run_dirs = _find_run_dirs(dataset)
     print(f"\n[pipeline] Dataset: {dataset}  ({len(run_dirs)} runs found)")
 
-    runs_by_goal: Dict[str, List[str]] = defaultdict(list)
     processed = 0
 
     for run_dir in run_dirs:
@@ -170,10 +95,6 @@ def process_dataset(
         if os.path.exists(out_pkl):
             if verbose:
                 print(f"  [pipeline] skipping (cached): {run_name}")
-            result = _load_result(run_dir)
-            if result.get('status') == 'goal_reached':
-                goal = _goal_from_run_dir(run_dir)
-                runs_by_goal[goal].append(run_dir)
             continue
 
         # Only process successful runs
@@ -222,7 +143,6 @@ def process_dataset(
                 pickle.dump(sequences, f, protocol=4)
 
             print(f"    → {len(sequences)} sequences saved")
-            runs_by_goal[goal_id].append(run_dir)
             processed += 1
 
         except Exception as e:
@@ -233,20 +153,20 @@ def process_dataset(
 
     print(f"  [pipeline] processed {processed} new runs")
 
-    train_dirs, cal_dirs = _train_cal_split(
-        runs_by_goal, cal_fraction=cfg.CAL_FRACTION
-    )
-    return train_dirs, cal_dirs
 
-
-def assemble_splits(
-    all_train_dirs: List[str],
-    all_cal_dirs: List[str],
-    verbose: bool = False,
-):
+def assemble_splits(datasets: List[str], verbose: bool = False):
     """
-    Copy/symlink processed pkl files into TRAIN_DIR and CAL_DIR.
-    Each pkl is a flat list of sequences; the split dirs collect them all.
+    Reconcile TRAIN_DIR/CAL_DIR's symlinks to EXACTLY match
+    experiments/configs/goal_split_manifest.json (2026-10-03 — replaces the
+    old recompute-a-shuffle-and-only-ever-add-symlinks mechanism; see
+    st_gat/pipeline/goal_split.py's module docstring and
+    experiments/scripts/manage_goal_split.py for why). Adds missing
+    symlinks AND removes stale ones, so re-running this after any manifest
+    change (or any dataset subset) converges to the same state every time.
+
+    Fails loudly (does not silently default) if any extracted goal has no
+    manifest entry yet — run `manage_goal_split.py generate --dataset X`
+    first.
     """
     os.makedirs(cfg.TRAIN_DIR, exist_ok=True)
     os.makedirs(cfg.CAL_DIR, exist_ok=True)
@@ -256,23 +176,49 @@ def assemble_splits(
     # this is what actually makes that check meaningful, not just EXTRACTED_DIR's.
     cfg.check_schema_manifest(cfg.SEQUENCES_DIR, write_if_missing=True)
 
-    def _link(run_dirs: List[str], dest_dir: str, tag: str):
-        count = 0
-        for run_dir in run_dirs:
-            run_name = os.path.basename(run_dir)
-            # Find which dataset this run belongs to
-            for dataset in cfg.NOMINAL_DATASETS:
-                src = os.path.join(cfg.EXTRACTED_DIR, dataset, f"{run_name}.pkl")
-                if os.path.exists(src):
-                    dst = os.path.join(dest_dir, f"{run_name}.pkl")
-                    if not os.path.exists(dst):
-                        os.symlink(src, dst)
-                    count += 1
-                    break
-        print(f"  [pipeline] {tag}: {count} pkl files")
+    manifest = gs.load_manifest()
+    expected_cal, expected_train, missing = gs.expected_split(datasets, manifest)
+    if missing:
+        for dataset, goal, n in missing:
+            print(f"  [pipeline] ERROR: {dataset}/{goal} has {n} extracted "
+                  f"run(s) but no split-manifest entry. Run: "
+                  f"experiments/scripts/manage_goal_split.py generate --dataset {dataset}")
+        sys.exit(1)
 
-    _link(all_train_dirs, cfg.TRAIN_DIR,  "train set")
-    _link(all_cal_dirs,   cfg.CAL_DIR,    "cal set")
+    def _src_for(run_name: str):
+        for dataset in cfg.NOMINAL_DATASETS:
+            src = os.path.join(cfg.EXTRACTED_DIR, dataset, f"{run_name}.pkl")
+            if os.path.exists(src):
+                return src
+        return None
+
+    # Every run_name extracted under the datasets THIS call is processing —
+    # scopes stale-symlink removal to those datasets only, so e.g.
+    # `--datasets nom_v11` can't delete baseline_all's legitimate symlinks
+    # just because they're outside nom_v11's expected set.
+    in_scope_names = set()
+    for dataset in datasets:
+        ds_dir = os.path.join(cfg.EXTRACTED_DIR, dataset)
+        if os.path.isdir(ds_dir):
+            in_scope_names.update(os.path.splitext(f)[0] for f in os.listdir(ds_dir) if f.endswith('.pkl'))
+
+    def _reconcile(expected_names, dest_dir: str, tag: str):
+        current = gs.current_symlink_targets(dest_dir)
+        added = removed = 0
+        for run_name in expected_names - current:
+            src = _src_for(run_name)
+            if src is None:
+                continue  # shouldn't happen — expected_split only returns extracted goals
+            os.symlink(src, os.path.join(dest_dir, f"{run_name}.pkl"))
+            added += 1
+        for run_name in (current & in_scope_names) - expected_names:
+            os.remove(os.path.join(dest_dir, f"{run_name}.pkl"))
+            removed += 1
+        print(f"  [pipeline] {tag}: {len(expected_names)} pkl files "
+              f"(+{added} added, -{removed} stale removed)")
+
+    _reconcile(expected_train, cfg.TRAIN_DIR, "train set")
+    _reconcile(expected_cal,   cfg.CAL_DIR,   "cal set")
 
 
 def main():
@@ -297,18 +243,10 @@ def main():
     map_processor = MapProcessor(cfg.MAP_FILE)
     shared_builder = SequenceBuilder(map_processor.map_data, route=[])
 
-    all_train_dirs: List[str] = []
-    all_cal_dirs: List[str]   = []
-
     for dataset in args.datasets:
-        train_dirs, cal_dirs = process_dataset(dataset, shared_builder,
-                                               verbose=args.verbose,
-                                               filter_mrm=False)
-        all_train_dirs.extend(train_dirs)
-        all_cal_dirs.extend(cal_dirs)
+        process_dataset(dataset, shared_builder, verbose=args.verbose, filter_mrm=False)
 
-    print(f"\n[pipeline] Total — train: {len(all_train_dirs)} runs, cal: {len(all_cal_dirs)} runs")
-    assemble_splits(all_train_dirs, all_cal_dirs, verbose=args.verbose)
+    assemble_splits(args.datasets, verbose=args.verbose)
     print("[pipeline] Done.")
 
 

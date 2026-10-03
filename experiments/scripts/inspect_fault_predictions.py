@@ -58,6 +58,7 @@ from st_gat.pipeline.State_Estimator.MapProcessor import MapProcessor  # noqa: E
 from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from compare_fault_vs_nominal import load_fault_log, extract_fault_windows, in_any_window  # noqa: E402
+from fault_log import campaign_fault_kind  # noqa: E402
 import scenario_zones  # noqa: E402
 from conformal_mondrian_calibration import assign_groups  # noqa: E402
 from conformal_horizon_calibration import _SERIES, _extract_series, conformal_quantile  # noqa: E402
@@ -199,11 +200,11 @@ def main():
     trace_plots_saved = 0
 
     for campaign in args.campaigns:
-        kind = 'imu' if campaign.startswith('imu_') else 'tl'
         campaign_dir = os.path.join(DATA_DIR, campaign)
         if not os.path.isdir(campaign_dir):
             print(f"[skip] {campaign}: not found on disk")
             continue
+        kind = campaign_fault_kind(campaign_dir)
         goal_dirs = sorted(d for d in glob.glob(os.path.join(campaign_dir, 'goal_*')) if os.path.isdir(d))
         for goal_dir in goal_dirs:
             run_dirs = sorted(d for d in glob.glob(os.path.join(goal_dir, 't*')) if os.path.isdir(d))
@@ -305,7 +306,7 @@ def main():
 
                 for i in range(len(sequences)):
                     row = {
-                        'campaign': campaign, 'run': run_name, 'status': status,
+                        'campaign': campaign, 'kind': kind, 'run': run_name, 'status': status,
                         't_rel': float(t_rel[i]), 'in_fault': bool(in_fault[i]),
                         't_since_fault_end': float(t_since_fault_end[i]),
                         'post_fault_30s': bool(t_since_fault_end[i] <= 30.0),
@@ -354,8 +355,8 @@ def main():
     in_fault_arr = np.array([r['in_fault'] for r in rows])
     post_fault_arr = np.array([r['post_fault_30s'] for r in rows]) & ~in_fault_arr
     clean_arr = ~in_fault_arr & ~post_fault_arr
-    is_imu = np.array([r['campaign'].startswith('imu_') for r in rows])
-    is_tl = ~is_imu
+    is_imu = np.array([r['kind'] == 'imu' for r in rows])
+    is_tl = np.array([r['kind'] == 'tl' for r in rows])
 
     print(f"\n{'='*70}\nPER-FEATURE SUMMARY ({len(rows)} windows across "
           f"{len(set((r['campaign'], r['run']) for r in rows))} trials)\n{'='*70}")

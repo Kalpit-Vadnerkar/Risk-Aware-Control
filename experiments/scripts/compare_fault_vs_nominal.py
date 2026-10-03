@@ -43,6 +43,7 @@ from autoware_perception_msgs.msg import TrafficLightGroupArray, TrafficLightEle
 
 from metrics import MetricsCollector  # noqa: E402 — needs sys.path insert above
 from fault_injector import _load_tl_group_zones_by_goal, _DEFAULT_TL_ZONE_RADIUS_M  # noqa: E402
+from fault_log import campaign_fault_kind  # noqa: E402
 
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_comparison')
@@ -372,7 +373,7 @@ def main():
     ap.add_argument('--output-dir', default=OUTPUT_DIR)
     args = ap.parse_args()
 
-    kind = 'tl' if args.campaign.startswith('tl_fault') else 'imu'
+    kind = campaign_fault_kind(os.path.join(DATA_DIR, args.campaign))
 
     fault_dirs = find_trial_dirs(args.campaign, args.goal, args.trial)
     if not fault_dirs:

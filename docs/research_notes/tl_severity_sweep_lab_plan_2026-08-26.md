@@ -49,32 +49,33 @@ still matter specifically for goal_007/012.
 
 ## After collection: the one verification step that actually matters
 
-**Before treating any of this as usable calibration data**, confirm the
-new goal_007/012 nominal trials actually land in the HELD-OUT calibration
-set, not the training set. The existing pipeline's train/cal split is a
-per-goal 80/20 stratified split over ALL of that goal's trials (existing +
-new) — it is NOT guaranteed that a freshly-collected trial ends up in
-`CAL_DIR` just because it's new. This is exactly the gap that limited the
-2026-08-25 pilot: goal_007/012's EXISTING nom_v11 trials both landed in
-`TRAIN_DIR` (the model has seen them), only goal_026's landed in `CAL_DIR`.
+**Before treating any of this as usable calibration data**, confirm
+goal_007/012 are actually in the HELD-OUT calibration set, not the training
+set. This used to be a real gap: the pipeline's train/cal split is at the
+GOAL level (a whole goal, not individual trials, is assigned to train or
+cal) — existing goal_007/012 trials both landed in `TRAIN_DIR`, only
+goal_026 landed in `CAL_DIR`, and a goal's assignment didn't move just
+because new trials were added to it. **2026-10-03: this is now an explicit,
+auditable step, not a manual symlink move** — see
+`experiments/scripts/manage_goal_split.py` (`CLAUDE.md`'s directory
+conventions has the full rationale):
 
 ```bash
-# after running the pipeline (python3 -m st_gat.pipeline.run_pipeline):
-ls st_gat/data/h30_30/sequences/calibration/ | xargs -I{} basename {} .pkl
-# cross-reference against experiments/data/nom_v11/goal_007/ and goal_012/'s
-# run directory names -- if NEITHER new goal_007 trial nor NEITHER new
-# goal_012 trial appears, the split didn't do what this experiment needs.
+python3 experiments/scripts/manage_goal_split.py set --dataset nom_v11 --goal goal_007 --split cal
+python3 experiments/scripts/manage_goal_split.py set --dataset nom_v11 --goal goal_012 --split cal
+python3 -m st_gat.pipeline.run_pipeline --datasets nom_v11
+python3 experiments/scripts/manage_goal_split.py verify   # must print OK before trusting CAL_DIR
 ```
 
-If the automatic split doesn't put at least one new goal_007 and one new
-goal_012 trial into `CAL_DIR`: manually move that trial's pkl symlink from
-`TRAIN_DIR` to `CAL_DIR` (delete the `TRAIN_DIR` symlink, create the
-matching one in `CAL_DIR`, pointing at the same
-`st_gat/data/h30_30/extracted/nom_v11/<run_name>.pkl`) and **do not use
-that trial's runs for anything else that assumes it was held out** (i.e.
-don't retrain further using it, or the point becomes moot). This is a
-manual, deliberate override for this specific experiment's needs, not a
-change to the general pipeline's split logic.
+Because the split is now goal-level and explicit, BOTH of goal_007's and
+goal_012's trials (existing AND newly-collected) move into `CAL_DIR`
+together — there is no way to hold out only the new trials while the old
+ones stay in `TRAIN_DIR` (the model has already been trained on those old
+trials, so they're not actually held-out regardless of which directory
+they're symlinked into — **note this for the write-up**: goal_007/012's
+calibration coverage numbers reflect the model having seen some of that
+goal's own trials during training, not a fully novel goal held out from
+scratch like the other `CAL_DIR` goals).
 
 ## Analysis (already built, ready to run once data lands)
 
