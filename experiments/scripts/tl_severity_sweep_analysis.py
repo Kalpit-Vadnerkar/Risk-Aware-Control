@@ -44,7 +44,9 @@ import argparse
 import glob
 import json
 import os
+import re
 import sys
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -68,8 +70,29 @@ from conformal_horizon_calibration import _SERIES  # noqa: E402
 from inspect_fault_predictions import process_trial  # noqa: E402
 
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
-CAL_DIR_TRIALS = {os.path.basename(p)[:-4] for p in glob.glob(os.path.join(cfg.CAL_DIR, '*.pkl'))}
 OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'tl_severity_sweep')
+
+# "Clean" means "the currently-deployed model could not have trained on this
+# trial" -- NOT "is this trial in CAL_DIR today" (fixed 2026-10-04). Those
+# used to coincide (only goal_026 was in CAL_DIR when this script was
+# written), but goal_007/012 were promoted to CAL_DIR today
+# (manage_goal_split.py) while st_gat_rise.pth's last retrain predates that
+# by weeks -- it DID train on goal_007/012's original 2026-07-22 trials, and
+# moving them into CAL_DIR today doesn't retroactively un-train it on them.
+# A trial collected AFTER the model's own mtime is unconditionally clean
+# regardless of which directory it's in now (it didn't exist yet to train
+# on); goal_026 is clean unconditionally (never in TRAIN_DIR at any point).
+_MODEL_MTIME = os.path.getmtime(cfg.MODEL_CONFIG['model_path'])
+
+
+def _trial_is_clean(goal: str, run_name: str) -> bool:
+    if goal == 'goal_026':
+        return True
+    m = re.match(r't\d+_(\d{8})_(\d{6})', run_name)
+    if not m:
+        return False
+    trial_time = datetime.strptime(m.group(1) + m.group(2), '%Y%m%d%H%M%S').timestamp()
+    return trial_time > _MODEL_MTIME
 _SERIES_KEYS = [s[0] for s in _SERIES]
 
 GOALS = ['goal_007', 'goal_012', 'goal_026']
@@ -202,7 +225,7 @@ def main():
         nom_dir = os.path.join(DATA_DIR, NOMINAL_CAMPAIGN, goal)
         for run_dir in sorted(glob.glob(os.path.join(nom_dir, 't*'))):
             run_name = os.path.basename(run_dir)
-            is_clean = run_name in CAL_DIR_TRIALS
+            is_clean = _trial_is_clean(goal, run_name)
             print(f"\n[nominal] {goal}/{run_name}  (held-out/clean: {is_clean})")
             out = process_trial(run_dir, NOMINAL_CAMPAIGN, shared_builder, kind='tl')
             if out is None:
@@ -223,7 +246,7 @@ def main():
     clean_arr = np.concatenate(all_clean)
     resid = {k: np.concatenate(v) for k, v in all_resid.items()}
 
-    # ── Dose-response: severity bins, CLEAN (goal_026 only) vs ALL (caveated) ──
+    # ── Dose-response: severity bins, CLEAN (never-trained-on trials) vs ALL (caveated) ──
     severity = 1.0 - conf   # 0 = no fault, 1 = complete confidence loss
     bins = np.array([0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.001])
     bin_labels = [f'[{bins[i]:.1f},{bins[i+1]:.1f})' for i in range(len(bins) - 1)]
@@ -250,8 +273,8 @@ def main():
     fig, axes = plt.subplots(1, len(check_keys), figsize=(5 * len(check_keys), 4.5))
     bin_centers = [(bins[i] + bins[i + 1]) / 2 for i in range(len(bins) - 1)]
     for ax, k in zip(axes, check_keys):
-        for subset_name, mask_extra, style in [('clean (goal_026 only)', clean_arr, dict(color='#1f77b4', marker='o')),
-                                                 ('all (goal_007/012 nominal is train-contaminated)', np.ones_like(clean_arr), dict(color='#999999', marker='x', linestyle='--'))]:
+        for subset_name, mask_extra, style in [('clean (goal_026 + post-retrain trials only)', clean_arr, dict(color='#1f77b4', marker='o')),
+                                                 ('all (goal_007/012 pre-retrain nominal is train-contaminated)', np.ones_like(clean_arr), dict(color='#999999', marker='x', linestyle='--'))]:
             ys = []
             for b in range(len(bin_labels)):
                 m = (bin_idx == b) & mask_extra

@@ -15,11 +15,11 @@
   "results": {
     "clean_only": {
       "[0.0,0.1)": {
-        "n": 10189,
-        "position": 1.177506446825925,
-        "velocity_lateral": 0.01297714855673969,
-        "traffic_light_color": 0.09043424041923916,
-        "traffic_light_confidence": 0.12217421650891151
+        "n": 50107,
+        "position": 1.4868124312446078,
+        "velocity_lateral": 0.01403973837239686,
+        "traffic_light_color": 0.09672968264724062,
+        "traffic_light_confidence": 0.13176197783057655
       },
       "[0.1,0.3)": {
         "n": 519,
@@ -29,25 +29,25 @@
         "traffic_light_confidence": 0.29333179777529383
       },
       "[0.3,0.5)": {
-        "n": 485,
-        "position": 1.2160590344310267,
-        "velocity_lateral": 0.016938409465605143,
-        "traffic_light_color": 0.047186870308420094,
-        "traffic_light_confidence": 0.34176302956124366
+        "n": 6188,
+        "position": 1.2466825055327275,
+        "velocity_lateral": 0.016937788749551194,
+        "traffic_light_color": 0.07887464488944389,
+        "traffic_light_confidence": 0.20945306675172315
       },
       "[0.5,0.7)": {
-        "n": 456,
-        "position": 0.900312793556511,
-        "velocity_lateral": 0.01618254964986383,
-        "traffic_light_color": 0.07088748829872266,
-        "traffic_light_confidence": 0.3999627968278538
+        "n": 6333,
+        "position": 1.2211340459001296,
+        "velocity_lateral": 0.019505802028975408,
+        "traffic_light_color": 0.09951646507154766,
+        "traffic_light_confidence": 0.27496151875010555
       },
       "[0.7,0.9)": {
-        "n": 391,
-        "position": 0.7145271741349222,
-        "velocity_lateral": 0.02444990098332305,
-        "traffic_light_color": 0.10522494255713975,
-        "traffic_light_confidence": 0.5156048558741126
+        "n": 6074,
+        "position": 1.3271188875342141,
+        "velocity_lateral": 0.019645007888422796,
+        "traffic_light_color": 0.11470506032492986,
+        "traffic_light_confidence": 0.3329849704480954
       },
       "[0.9,1.0)": {
         "n": 1115,
@@ -59,11 +59,11 @@
     },
     "all_including_contaminated": {
       "[0.0,0.1)": {
-        "n": 18779,
-        "position": 1.4554791868159658,
-        "velocity_lateral": 0.012529525600386738,
-        "traffic_light_color": 0.08798342241493357,
-        "traffic_light_confidence": 0.11014020584423473
+        "n": 58697,
+        "position": 1.5304792571150354,
+        "velocity_lateral": 0.013741025354459875,
+        "traffic_light_color": 0.09502428441493935,
+        "traffic_light_confidence": 0.1265088038008124
       },
       "[0.1,0.3)": {
         "n": 519,
@@ -73,25 +73,25 @@
         "traffic_light_confidence": 0.29333179777529383
       },
       "[0.3,0.5)": {
-        "n": 485,
-        "position": 1.2160590344310267,
-        "velocity_lateral": 0.016938409465605143,
-        "traffic_light_color": 0.047186870308420094,
-        "traffic_light_confidence": 0.34176302956124366
+        "n": 6188,
+        "position": 1.2466825055327275,
+        "velocity_lateral": 0.016937788749551194,
+        "traffic_light_color": 0.07887464488944389,
+        "traffic_light_confidence": 0.20945306675172315
       },
       "[0.5,0.7)": {
-        "n": 456,
-        "position": 0.900312793556511,
-        "velocity_lateral": 0.01618254964986383,
-        "traffic_light_color": 0.07088748829872266,
-        "traffic_light_confidence": 0.3999627968278538
+        "n": 6333,
+        "position": 1.2211340459001296,
+        "velocity_lateral": 0.019505802028975408,
+        "traffic_light_color": 0.09951646507154766,
+        "traffic_light_confidence": 0.27496151875010555
       },
       "[0.7,0.9)": {
-        "n": 391,
-        "position": 0.7145271741349222,
-        "velocity_lateral": 0.02444990098332305,
-        "traffic_light_color": 0.10522494255713975,
-        "traffic_light_confidence": 0.5156048558741126
+        "n": 6074,
+        "position": 1.3271188875342141,
+        "velocity_lateral": 0.019645007888422796,
+        "traffic_light_color": 0.11470506032492986,
+        "traffic_light_confidence": 0.3329849704480954
       },
       "[0.9,1.0)": {
         "n": 1115,
