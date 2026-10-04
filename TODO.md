@@ -1,6 +1,6 @@
 # Risk-Aware Control — Task List
 
-**Last updated:** 2026-09-03. For the current architecture, claims, decision
+**Last updated:** 2026-10-04. For the current architecture, claims, decision
 log, and gotchas, read `CLAUDE.md` first — this file is only the actionable
 task list. Retired framings (closed-set fault classification, "belief
 divergence," the original active-control/RISE plan) are not reproduced here
@@ -10,99 +10,114 @@ history has every prior version of this file if more detail is ever needed.
 
 ---
 
-## 1. Next lab session — TL severity sweep (ready to run)
+## 1. TL severity sweep — DONE 2026-10-03/04
 
-A concrete, exact-commands runbook already exists:
-`docs/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md`. **Not yet
-run** — verified 2026-09-03: no `tl_fault_fixed_*` data on disk, no new
-nominal trials at goal_007/012 since 2026-07-22. This is Paper 1's last
-missing result (comparison C6 in `docs/research_notes/
-layer1_paper_structure_2026-08-25.md`).
+Ran to completion: 6 new nominal trials (goal_007/012/026, now 4/goal) +
+18 fixed-severity fault trials (3 severities × 3 goals × 2 trials), all
+`goal_reached`/`fault_validation.valid`, confidence_scale confirmed
+0.7/0.5/0.3 for fixed_030/050/070 in each trial's own `fault_log.jsonl`.
+goal_007/012 promoted to `CAL_DIR` via `manage_goal_split.py` (see
+`CLAUDE.md`'s directory-conventions entry). `tl_severity_sweep_analysis.py`
+run successfully — dose-response result saved to
+`experiments/analysis/tl_severity_sweep/`.
 
-Requires AWSIM + Autoware running (see `README.md`'s startup section) —
-Kalpit runs this manually.
+**Real bug found and fixed in the analysis itself, not just the data**:
+the script's "clean/held-out" check was `run_name in CAL_DIR_TRIALS`
+(today's `CAL_DIR` membership) — but the deployed model
+(`st_gat_rise.pth`, 2026-08-25) trained on goal_007/012's *original*
+2026-07-22 trials back when they were still in `TRAIN_DIR`; promoting them
+to `CAL_DIR` today doesn't retroactively un-train the model on them. Fixed
+to the real rule (`_trial_is_clean()`): clean = goal_026 (never trained on,
+ever) OR collected after the model's training cutoff. Before the fix,
+`clean_only` and `all_including_contaminated` were byte-identical — a
+red flag that got caught, not missed.
 
-- [ ] `./collect.sh nom_v11 --goals goal_007,goal_012,goal_026 --trials 2` —
-      6 new nominal trials (also expands the load-bearing-thin 7-trial
-      calibration set at exactly the two goals that are currently
-      under-represented in `CAL_DIR`).
-- [ ] `./run_fault_campaigns.sh --goals goal_007,goal_012,goal_026 --trials 2
-      --campaigns "tl_fault_fixed_030 tl_fault_fixed_050 tl_fault_fixed_070"`
-      — 18 new fault trials at 3 fixed severities.
-- [ ] **Put goal_007/012's new nominal trials into the calibration set**
-      (2026-10-03: the manual "check CAL_DIR, move the symlink by hand if
-      missing" step this used to say is replaced by an explicit, auditable
-      tool — see `CLAUDE.md`'s directory-conventions entry on
-      `goal_split_manifest.json` and `st_gat/pipeline/goal_split.py`'s
-      docstring for why the old mechanism was unsafe):
-      ```
-      python3 experiments/scripts/manage_goal_split.py set --dataset nom_v11 --goal goal_007 --split cal
-      python3 experiments/scripts/manage_goal_split.py set --dataset nom_v11 --goal goal_012 --split cal
-      ```
-- [ ] Small code change needed before analysis: extend
-      `tl_severity_sweep_analysis.py` to read severity directly from the
-      new fixed-severity trials' `fault_log.jsonl`
-      (`params.confidence_scale`) instead of only reconstructing it from
-      `tl_fault_ramp`'s decay formula (a new branch, not a rewrite).
-- [ ] Run `python3 -m st_gat.pipeline.run_pipeline --datasets nom_v11`, then
-      `python3 experiments/scripts/manage_goal_split.py verify` (confirms
-      every extracted goal — including the two just reassigned — is
-      actually reflected in `CAL_DIR`/`TRAIN_DIR`, not just recorded in the
-      manifest), then `python3 experiments/scripts/tl_severity_sweep_analysis.py`.
-- [ ] Sanity check: goal_026's new curve should agree directionally with
-      the 2026-08-25 ramp-based pilot's goal_026 result.
+**Not done** (lower priority, revisit if time allows — not blocking
+Layer 2 work): the TODO item "goal_026's new curve should agree
+directionally with the 2026-08-25 ramp-based pilot's goal_026 result" —
+the current analysis pools all 3 goals together, so this specific
+goal_026-only comparison against the old pilot hasn't been isolated and
+run separately.
+
+**Operational notes from this session, for the next lab run**:
+- AWSIM itself can get stuck (vehicle stays in Park, Autoware reports
+  itself fully healthy — `DRIVING`/`AUTONOMOUS`/MRM `NORMAL`, NDT/LiDAR
+  fine, velocity pinned at 0) in a way that restarting Autoware alone does
+  NOT fix — restart AWSIM too (`./Run_AWSIM.sh`) when this happens, not
+  just `Run_Autoware_Headless.sh`. `experiments/scripts/diagnose_system.py
+  --continuous` is the fast way to tell "Autoware's own view of itself"
+  from "is the vehicle actually moving."
+- Added a hard cap (`--max-batch`, default 12) on `collect.sh`/
+  `run_fault_campaigns.sh` so a batch can't silently chain past the known
+  behavior_path_planner state-exhaustion threshold (README item 5,
+  ~18-36 experiments) unattended — restart Autoware manually between
+  batches instead of relying on auto-restart.
+- `count_existing_trials()` (auto-resume) counts ANY trial with a
+  `result.json`, regardless of outcome — a leftover `stuck`/`timeout`/
+  `engage_failed` trial directory silently blocks that slot from ever
+  being retried. Delete broken trial directories before re-running, don't
+  just leave them.
+- Across this whole sweep, every failure (6 total: `engage_failed`,
+  `timeout` ×3, `stuck` ×2) was at `goal_026`specifically — goal_007/012
+  never failed once. Not yet root-caused; two live hypotheses (a real
+  goal_026 map/routing issue, vs. goal_026 simply always being listed last
+  in `--goals` so it absorbs whatever degrades with trial count regardless
+  of which goal it is) — worth a real test (run goal_026 first in a batch
+  sometime) before trusting goal_026-specific results at face value.
 
 ## 2. More nominal calibration data (ongoing, not just this session)
 
-Only 7 trials currently in `CAL_DIR` — flagged load-bearing-weak by three
-independent sources (see `CLAUDE.md` limitations). The severity-sweep
-session above is a partial step (goal_007/012 specifically); still worth
-collecting more nominal trials generally beyond that.
+Partially addressed 2026-10-03/04: goal_007/012 each went from 2→4 trials
+and are now in `CAL_DIR` (16 trials there now, up from 7) — still worth
+collecting more nominal trials generally beyond that, at other goals.
 
 ## 3. Layer 2 — a priori (2a) + a posteriori (2b) reachability-set optimization
 
-**2026-09-03 reframe** (advisor feedback — see `CLAUDE.md` decision log and
-`docs/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`):
-Layer 2 is not an independent reachability-set construction, it's
-trimming/optimizing Layer 1's calibrated envelope using HD-map/scene cues,
-in two stages.
+**CURRENT PRIORITY, 2026-10-04**: concrete wiring plan written —
+`docs/research_notes/layer2b_wiring_plan_2026-10-04.md`. Read that first,
+this section is now just the compressed pointer to it.
 
 **2a (a priori) — done, just relabeled.** Mondrian
 (`conformal_mondrian_calibration.py`) and embedding k-NN
 (`conformal_embedding_calibration.py`) conditional calibration already
 shape the interval using zone/scene context before it's emitted — see
-slide 12 / `CLAUDE.md` decision log. No new work here, just correct framing
-in the writeup.
+slide 12 / `CLAUDE.md` decision log.
 
-**2b (a posteriori) — not yet started.** Replace the paused static-margin
-v1 prototype (`experiments/lib/margin.py`,
-`experiments/scripts/layer2_consequence_estimation.py`) with geometric
-trimming of the bootstrap-rolled tube against real map/object constraints —
-see `docs/research_notes/open_world_safety_reframe_2026-08-20.md` §9(c) for
-the full design rationale. Depends on richer margin-violation logging
-(continuous time-to-collision / lane-boundary-margin traces, not just
-binary collision/stuck heuristics — `experiments/lib/metrics.py`'s current
-`static_collision`/stuck logic is too rare/unreliable to build an
-evaluation around).
+**2b (a posteriori) — found to already mostly exist, 2026-10-04.** The
+"not yet started" status on this item (every doc up to and including
+2026-09-03) was an overstatement: `experiments/lib/margin.py`
+(real `lanelet2.geometry` lane-boundary distance + conservative
+object-clearance bound) and `experiments/scripts/
+layer2_consequence_estimation.py` (bootstrap-residuals →
+trim-against-margin → P(violation), already produces time-series traces)
+were built and run once on nominal-only data 2026-08-21, then explicitly
+paused awaiting real fault data — which now exists (TL severity sweep,
+item 1 above, plus existing IMU campaigns). The wiring plan's actual scope
+is narrower than a from-scratch build:
+- [ ] Point `layer2_consequence_estimation.py` at a real fault trial for
+      the first time (reuse `inspect_fault_predictions.py`'s
+      `process_trial()` — same pattern `tl_severity_sweep_analysis.py`
+      already uses for raw-bag fault processing, no extraction-pipeline
+      changes needed).
+- [ ] Wire 2a's conditioning (Mondrian AND embedding, build+compare both
+      per Kalpit's call) into the bootstrap pool selection — currently
+      draws uniformly from the whole calibration pool, which is the actual
+      redundancy the advisor flagged.
+- [ ] Produce the two target artifacts: an envelope-cascade overlay (raw
+      pooled → Mondrian → embedding → lane/object-trimmed, one dramatic
+      frame, real map) and a P(violation)-over-time trace with fault onset
+      marked, for one real fault trial (candidate: `imu_fault_s3`, already
+      has a real recorded lead-time result — pick the specific goal/trial
+      empirically).
+- [ ] Regression-check the existing nominal-only validation path still
+      gives consistent numbers (shared code is being touched).
 
-- [ ] Design the reachable-set computation against real tracked-object data
-      and `lanelet2.geometry.inside` lane-containment (not nearest-5
-      lanelet heuristics).
-- [ ] Consume Autoware's own `PredictedObjects.kinematics.predicted_paths`
-      (`/perception/object_recognition/objects` — already recorded in every
-      trial's rosbag via `RECORDING_TOPICS`, just not read by the ST-GAT
-      pipeline) as the tracked-object reachable-set input, rather than
-      needing the model to predict object futures itself.
-- [ ] Add continuous margin-violation logging.
-- [ ] Decompose along aleatoric (Layer 1 residual bootstrap) vs. epistemic
-      (cross-member disagreement) contribution — the v1 prototype's
-      position-only margin made a per-feature decomposition vacuous; this
-      axis is more meaningful given the reachability margin's structure
-      too, revisit whether per-feature decomposition becomes meaningful
-      once the margin depends on more than position.
-- [ ] Build the reliability diagram for P(violation within H) — needs real
-      violation ground truth, which barely exists in nominal-only data by
-      construction; likely needs fault-condition data run through it.
+**Deferred, explicitly out of scope for the above** (see the wiring plan's
+own "explicitly out of scope" section for why): consuming Autoware's own
+`PredictedObjects.kinematics.predicted_paths` for a real (not worst-case
+conservative) object reachable set; a full reliability diagram for
+P(violation) (needs many fault trials, not one featured example); any new
+data collection.
 
 ## 4. Broader literature review (before writing up Layer 2 as novel)
 
@@ -177,4 +192,4 @@ re-running any of these, several already have a done/measured verdict:
 | ST-GAT features | 14 | Includes `traffic_light_discrepancy`; retrain required after any further feature-vector change |
 | Fault goals | goal_007, goal_012, goal_026 | Most TL-zone entries per trial |
 | Canonical model | `st_gat/models/h30_30/st_gat_rise.pth` | v2 (zone-weighted retrain), gated via `promote_model.py` |
-| Nominal calibration trials | 7 (goal-split `CAL_DIR`) | Load-bearing-thin, see `CLAUDE.md` limitations |
+| Nominal calibration trials | 17 (goal-split `CAL_DIR`, up from 7 as of 2026-10-03) | goal_007/012 added this session; still worth more at other goals, see `CLAUDE.md` limitations |

@@ -92,24 +92,29 @@ See `docs/research_notes/layer1_paper_structure_2026-08-25.md` for Paper
   promotion).
 
 **Planned / pending, in rough priority order:**
-1. TL fault severity sweep — a concrete, ready-to-run lab-session plan
-   exists (`docs/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md`)
-   but has **not been run yet** (verified: no `tl_fault_fixed_*` data on
-   disk, no new nominal trials at goal_007/012 since 2026-07-22). This is
-   Paper 1's last missing result (comparison C6).
-2. More nominal calibration data generally (only 7 trials currently in
-   `CAL_DIR` — see limitations below).
-3. Layer 2b, built around geometric trimming of Layer 1's calibrated
-   envelope (lane-containment + object reachable sets, not an
-   independently-constructed reachability set) rather than the paused
-   static-margin v1 prototype — Layer 2a (conditional calibration) already
-   exists, see decision log.
-4. A broader (non-Waymo-only) literature review to confirm the
+1. **CURRENT PRIORITY (2026-10-04)**: Layer 2b wiring — concrete plan at
+   `docs/research_notes/layer2b_wiring_plan_2026-10-04.md`. Narrower than
+   it sounds: `experiments/lib/margin.py` + `experiments/scripts/
+   layer2_consequence_estimation.py` already implement the full
+   bootstrap→margin→P(violation) mechanism (built, run once on
+   nominal-only data 2026-08-21, paused awaiting real fault data — which
+   now exists). The remaining work is pointing it at a real fault trial
+   and wiring in 2a's conditioning, not a from-scratch build.
+2. More nominal calibration data generally (17 trials now in `CAL_DIR`,
+   up from 7 — see limitations below; still worth more at goals beyond
+   007/012/026).
+3. A broader (non-Waymo-only) literature review to confirm the
    calibration-x-reachability novelty claim before writing it up.
-5. Layer 3 scoping decision (does active control come back into the core
+4. Layer 3 scoping decision (does active control come back into the core
    claim, or stay at "define the signal's shape").
-6. Architecture ablation backlog (P1.6 in TODO.md) — several model
+5. Architecture ablation backlog (P1.6 in TODO.md) — several model
    hyperparameters were set by judgment call, not measured.
+
+**TL fault severity sweep — DONE 2026-10-03/04** (was item 1 here): 6 new
+nominal trials + 18 fixed-severity fault trials collected and validated,
+analysis run (a real contamination-labeling bug was found and fixed along
+the way — see decision log). Paper 1's comparison C6 is no longer
+blocking.
 
 ## Decision log
 
@@ -251,6 +256,32 @@ note first.
   attribute effect to severity alone. Fixed-severity trials plus matched
   same-goal nominal controls isolate severity from that confound. See
   `docs/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md`.
+- **TL severity sweep collected and run; a real analysis bug found and
+  fixed along the way (2026-10-03/04).** 6 new nominal + 18 fixed-severity
+  fault trials collected, all valid. `tl_severity_sweep_analysis.py`'s
+  "clean/held-out" check used to be `run_name in CAL_DIR_TRIALS` — today's
+  `CAL_DIR` membership — but the deployed model (`st_gat_rise.pth`,
+  2026-08-25) trained on goal_007/012's *original* 2026-07-22 trials back
+  when they were still in `TRAIN_DIR`; promoting them to `CAL_DIR` this
+  session doesn't retroactively un-train the model on them. Before the fix,
+  `clean_only` and `all_including_contaminated` came out byte-identical —
+  caught, not missed. Fixed to the real rule: clean = goal_026 (never
+  trained on, ever) OR collected after the model's training cutoff.
+- **Layer 2b's engineering mostly already exists — the "not yet started"
+  status was an overstatement (2026-10-04).** Checking the paused v1
+  artifacts found `experiments/lib/margin.py` (real `lanelet2.geometry`
+  lane-boundary distance + a conservative object-clearance bound) and
+  `experiments/scripts/layer2_consequence_estimation.py` (bootstrap
+  calibrated residuals → trim against that margin → P(violation), already
+  produces time-series traces) already implement the full 2b mechanism —
+  built and run once on nominal-only data 2026-08-21, paused specifically
+  because real fault data didn't exist yet. It does now (TL severity sweep
+  above, plus existing IMU campaigns). Concrete wiring plan:
+  `docs/research_notes/layer2b_wiring_plan_2026-10-04.md` — the remaining
+  work is pointing the existing mechanism at a real fault trial for the
+  first time and wiring in 2a's (Mondrian + embedding, build and compare
+  both, Kalpit's call) conditioning into the bootstrap pool, not building
+  reachable-set computation from scratch.
 
 ## Known gotchas (hit and fixed this repo's history — don't reintroduce)
 
@@ -369,6 +400,32 @@ note first.
   this machine yet, and building one is an interactive/GUI step for
   Kalpit, same as never launching AWSIM itself via Bash. See
   `docs/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`.
+- **AWSIM itself can get stuck in a way restarting Autoware alone does
+  NOT fix** (found 2026-10-03): vehicle stays frozen in Park, velocity
+  pinned at 0, while Autoware reports itself completely healthy
+  (`DRIVING`/`AUTONOMOUS`/MRM `NORMAL`, NDT/LiDAR all fine) —
+  `experiments/scripts/diagnose_system.py --continuous` is the fast way to
+  tell "Autoware's own view of itself" from "is the vehicle actually
+  moving." Fix is restarting AWSIM (`./Run_AWSIM.sh`) too, not just
+  `Run_Autoware_Headless.sh` — they're separate processes and a Terminal-2
+  restart never touches Terminal-1.
+- **`count_existing_trials()` (auto-resume, `run_experiments.py`) counts
+  ANY trial directory with a `result.json`, regardless of outcome** — this
+  is deliberate (a legitimate `mrm_succeeded` fault outcome shouldn't be
+  endlessly re-run), but it means a leftover `stuck`/`timeout`/
+  `engage_failed` trial silently blocks that slot from ever being retried.
+  Delete broken trial directories before re-running a campaign, don't just
+  leave them — auto-resume can't tell the difference between "this trial
+  legitimately finished" and "this trial crashed."
+- **Every live-session failure across the 2026-10-03/04 TL severity sweep
+  was at `goal_026` specifically** (6 total: `engage_failed`, `timeout`
+  ×3, `stuck` ×2) — goal_007/012 never failed once. Not yet root-caused.
+  Two live hypotheses, not mutually exclusive: a real goal_026 map/routing
+  issue, or goal_026 simply always being listed last in
+  `--goals goal_007,goal_012,goal_026` so it absorbs whatever degrades
+  with trial count regardless of which goal it is. Worth testing (run
+  goal_026 first in a batch) before trusting goal_026-specific results at
+  face value.
 
 ## Environment — sourcing order matters
 
@@ -454,12 +511,13 @@ part of the current critical path — see
 
 ## Real, current limitations (qualify any claim made right now)
 
-- **Only 7 trials in the nominal calibration set.** The pooled/aggregate
-  coverage claim is solid; a claim about any single new drive's realized
-  coverage is not, without more nominal data. This is flagged as
-  load-bearing-weak by three independent sources (this project's own
-  notes, the reframe note, and an independent novelty-check agent) — not
-  optional polish, a real scope limit on what's currently defensible.
+- **17 trials in the nominal calibration set** (up from 7 as of
+  2026-10-03 — goal_007/012 promoted to `CAL_DIR`, now with 4 trials
+  each). Better than before, but a claim about realized coverage at any
+  goal beyond 007/012/026 is still thin without more nominal data at
+  those other goals. This was flagged as load-bearing-weak by three
+  independent sources (this project's own notes, the reframe note, and an
+  independent novelty-check agent) — real progress, not a closed item.
 - **`lane_change_zones` has essentially zero matching windows** in the
   current dataset — a data gap, not a calibration gap.
 - **`open_road` (44% of the data) under-covers unexpectedly** (85–86% on
@@ -469,7 +527,10 @@ part of the current critical path — see
   faults are gated to fire only at real intersections, already the
   hardest nominal scenario, so elevated residual near a TL fault can't yet
   be cleanly attributed to "the fault" vs. "the intersection." The severity
-  sweep's matched same-goal nominal controls are the fix, not yet run.
+  sweep's matched same-goal nominal controls are now collected and run
+  (2026-10-03/04) — see `TODO.md` §1 for what the dose-response result
+  showed and what's still not isolated (the goal_026-vs-ramp-pilot
+  sanity check).
 - **IMU-fault consequence keeps growing past 120s post-fault** (compounding
   EKF state-estimation corruption that doesn't self-heal) — Layer 2's
   intended ~3s rollout horizon is plausibly well-matched to TL faults but
@@ -480,10 +541,18 @@ part of the current critical path — see
   stays trustworthy under real out-of-distribution/fault shift, though not
   yet a blocking problem either (no fault data has been run through this
   check yet, only nominal).
-- **`margin.py`'s static lane-boundary distance has a known, unfixed
-  nearest-lanelet-boundary edge case** near lane-change boundaries — moot
-  if Layer 2 fully moves to the reachability design, but be aware if
-  anything still imports it.
+- **`margin.py`'s lane-boundary distance has a known, unfixed
+  nearest-lanelet-boundary edge case** near lane-change boundaries — NOT
+  moot: `margin.py` turned out (2026-10-04) to already be the real 2b
+  mechanism, not a superseded prototype — see the Layer 2b decision log
+  entry and `docs/research_notes/layer2b_wiring_plan_2026-10-04.md`. Carry
+  this caveat forward into that work rather than assuming it was dropped.
+- **`object_clearance()` in `margin.py` is a conservative worst-case
+  placeholder**, not a real per-object trajectory prediction (no
+  persistent object ID across frames, direction-agnostic). Deliberately
+  deferred in the 2026-10-04 wiring plan — upgrading it to use Autoware's
+  own already-recorded `PredictedObjects.kinematics.predicted_paths` is
+  explicit, separable future work, not a blocker for the first result.
 
 ## Don't duplicate context that's already written down
 
