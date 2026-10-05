@@ -1,6 +1,6 @@
 # Risk-Aware Control — Task List
 
-**Last updated:** 2026-10-04. For the current architecture, claims, decision
+**Last updated:** 2026-10-04 (evening). For the current architecture, claims, decision
 log, and gotchas, read `CLAUDE.md` first — this file is only the actionable
 task list. Retired framings (closed-set fault classification, "belief
 divergence," the original active-control/RISE plan) are not reproduced here
@@ -71,53 +71,25 @@ Partially addressed 2026-10-03/04: goal_007/012 each went from 2→4 trials
 and are now in `CAL_DIR` (16 trials there now, up from 7) — still worth
 collecting more nominal trials generally beyond that, at other goals.
 
-## 3. Layer 2 — a priori (2a) + a posteriori (2b) reachability-set optimization
+## 3. Layer 2 — 2b v2 built; blocked on model map-consistency (CURRENT)
 
-**CURRENT PRIORITY, 2026-10-04**: concrete wiring plan written —
-`docs/research_notes/layer2b_wiring_plan_2026-10-04.md`. Read that first,
-this section is now just the compressed pointer to it.
+Full record: `docs/research_notes/layer2b_v2_and_ego_frame_model_2026-10-04.md`.
 
-**2a (a priori) — done, just relabeled.** Mondrian
-(`conformal_mondrian_calibration.py`) and embedding k-NN
-(`conformal_embedding_calibration.py`) conditional calibration already
-shape the interval using zone/scene context before it's emitted — see
-slide 12 / `CLAUDE.md` decision log.
-
-**2b (a posteriori) — found to already mostly exist, 2026-10-04.** The
-"not yet started" status on this item (every doc up to and including
-2026-09-03) was an overstatement: `experiments/lib/margin.py`
-(real `lanelet2.geometry` lane-boundary distance + conservative
-object-clearance bound) and `experiments/scripts/
-layer2_consequence_estimation.py` (bootstrap-residuals →
-trim-against-margin → P(violation), already produces time-series traces)
-were built and run once on nominal-only data 2026-08-21, then explicitly
-paused awaiting real fault data — which now exists (TL severity sweep,
-item 1 above, plus existing IMU campaigns). The wiring plan's actual scope
-is narrower than a from-scratch build:
-- [ ] Point `layer2_consequence_estimation.py` at a real fault trial for
-      the first time (reuse `inspect_fault_predictions.py`'s
-      `process_trial()` — same pattern `tl_severity_sweep_analysis.py`
-      already uses for raw-bag fault processing, no extraction-pipeline
-      changes needed).
-- [ ] Wire 2a's conditioning (Mondrian AND embedding, build+compare both
-      per Kalpit's call) into the bootstrap pool selection — currently
-      draws uniformly from the whole calibration pool, which is the actual
-      redundancy the advisor flagged.
-- [ ] Produce the two target artifacts: an envelope-cascade overlay (raw
-      pooled → Mondrian → embedding → lane/object-trimmed, one dramatic
-      frame, real map) and a P(violation)-over-time trace with fault onset
-      marked, for one real fault trial (candidate: `imu_fault_s3`, already
-      has a real recorded lead-time result — pick the specific goal/trial
-      empirically).
-- [ ] Regression-check the existing nominal-only validation path still
-      gives consistent numbers (shared code is being touched).
-
-**Deferred, explicitly out of scope for the above** (see the wiring plan's
-own "explicitly out of scope" section for why): consuming Autoware's own
-`PredictedObjects.kinematics.predicted_paths` for a real (not worst-case
-conservative) object reachable set; a full reliability diagram for
-P(violation) (needs many fault trials, not one featured example); any new
-data collection.
+- [x] v2 safe set (drivable-area SDF, oriented object footprints,
+      kinematic-feasibility trim) passing the realized-nominal acceptance test.
+- [x] 2a pools (pooled/Mondrian/embedding) + causal Layer1->Layer2 coupling.
+- [x] AWSIM ground-truth pose wired in; lead time vs real departures.
+- [x] `model_safety_benchmark.py` gate + ablation table.
+- [x] ego_v2 graph schema (A: ego frame, B: past-only centring, C: lane
+      direction) — 3/4 gate checks pass, off-road 3.6% (needs <= 2%).
+- [ ] Data-loader speed-up (vectorize graph tensor building, ~9.5 min/epoch).
+- [ ] Stage D: explicit route-ahead polyline input; re-extract, retrain,
+      benchmark (target: intersection off-road + under-turn rate).
+- [ ] Once the gate passes: Layer 2 v2 on all 38 fault trials (every
+      campaign), matched-FAR lead times, featured plots; then promote via
+      `promote_model.py` (wire the benchmark gate into it).
+- [ ] Deferred: Autoware `predicted_paths` for objects; reliability diagram
+      for P(violation) across many trials.
 
 ## 4. Broader literature review (before writing up Layer 2 as novel)
 

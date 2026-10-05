@@ -40,9 +40,10 @@ about to do something unsafe."** Three layers:
   **2a, a priori** (scene-conditioned band shaping, before the interval is
   emitted) — already built, this is the Mondrian/embedding conditional
   calibration listed under Layer 1 below, relabeled; **2b, a posteriori**
-  (geometric trimming of the rolled-forward tube against lane-containment,
-  object reachable sets, kinematic feasibility) — **not yet built**. A v1
-  prototype using a simpler static margin exists but is paused/superseded,
+  (physics trims the rolled-forward tube; the map scores it: drivable-area
+  + object footprints) — **v2 built 2026-10-04**
+  (`layer2_consequence_estimation.py`), currently **blocked on Layer 1
+  map-consistency**, being fixed at the model level (ego_v2 graph schema),
   see decision log.
 - **Layer 3 — graceful response.** Continuous behavior modulation
   proportional to quantified ignorance, not limp-mode/ODD binning. Whether
@@ -92,14 +93,12 @@ See `docs/research_notes/layer1_paper_structure_2026-08-25.md` for Paper
   promotion).
 
 **Planned / pending, in rough priority order:**
-1. **CURRENT PRIORITY (2026-10-04)**: Layer 2b wiring — concrete plan at
-   `docs/research_notes/layer2b_wiring_plan_2026-10-04.md`. Narrower than
-   it sounds: `experiments/lib/margin.py` + `experiments/scripts/
-   layer2_consequence_estimation.py` already implement the full
-   bootstrap→margin→P(violation) mechanism (built, run once on
-   nominal-only data 2026-08-21, paused awaiting real fault data — which
-   now exists). The remaining work is pointing it at a real fault trial
-   and wiring in 2a's conditioning, not a from-scratch build.
+1. **CURRENT PRIORITY (2026-10-04)**: make the ST-GAT forecast map-
+   consistent enough for Layer 2 — `model_safety_benchmark.py`'s gate.
+   ego_v2 (stages A-C) passes 3 of 4 checks (off-road 3.6% vs <= 2%, worst
+   at intersections); next is stage D (explicit route-ahead polyline input)
+   after a data-loader speed-up, then rerun Layer 2 v2 on all 38 fault
+   trials. See `docs/research_notes/layer2b_v2_and_ego_frame_model_2026-10-04.md`.
 2. More nominal calibration data generally (17 trials now in `CAL_DIR`,
    up from 7 — see limitations below; still worth more at goals beyond
    007/012/026).
@@ -282,6 +281,26 @@ note first.
   first time and wiring in 2a's (Mondrian + embedding, build and compare
   both, Kalpit's call) conditioning into the bootstrap pool, not building
   reachable-set computation from scratch.
+
+- **Layer 2b v2 built; v1 margin found invalid; Layer 2 then blocked on a
+  Layer 1 model problem, fixed at the model level (2026-10-04).** v1's
+  margin flagged 48.6% of REALIZED nominal futures as violations (its 0.84
+  nominal P(violation) measured the definition, not risk); replaced by a
+  drivable-area SDF + oriented object footprints + a kinematic-feasibility
+  trim, all passing a realized-nominal acceptance test (physics trims, the
+  map scores — road containment can't be a trim or it defines the risk
+  away). Added a causal Layer 1 -> Layer 2 coupling (tube inflation from
+  observed nonconformity; the wiring plan had none). Found that AWSIM
+  ground-truth pose is in every bag and 3 IMU trials have real road
+  departures the estimated pose never shows. Then: the bbox_v1 ST-GAT's
+  own forecast left the road in 18.6% of held-out nominal windows (phantom
+  turns, wrong-direction turns, map graph essentially unused because nodes
+  were bbox-normalized with no link to ego position, plus a future leak in
+  graph centring). Kalpit's call: fixing Layer 1 issues in Layer 2 is
+  patchwork — fix the model, gate it with `model_safety_benchmark.py`
+  (also the ablation table). ego_v2 schema (`STGAT_GRAPH_FRAME=ego_v2`):
+  off-road 18.6% -> 3.6%, lateral 3s p50 0.98 -> 0.15m. See
+  `docs/research_notes/layer2b_v2_and_ego_frame_model_2026-10-04.md`.
 
 ## Known gotchas (hit and fixed this repo's history — don't reintroduce)
 
@@ -466,6 +485,12 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
   historical snapshot, never edited). `capture_goals_session.py` always
   **overwrites** `captured_goals.json` with only that session's captures —
   back the file up first, then hand-merge new entries by ID.
+- **`STGAT_GRAPH_FRAME` env var** (`bbox_v1` default = canonical model;
+  `ego_v2` = new schema): selects graph schema AND the data/checkpoint/model
+  paths (`h30_30` vs `h30_30_ego`). Set it for every extraction/training/
+  analysis command touching an ego_v2 model — mixing a model with the other
+  schema's data fails loudly (node feature dim / schema hash). `train.py`
+  must be run as `python3 -m st_gat.train`.
 - `experiments/configs/goal_split_manifest.json` — the **explicit,
   git-tracked** train/calibration split assignment (added 2026-10-03,
   replaces a recomputed-every-run shuffle that had no record of a goal's
@@ -541,18 +566,15 @@ part of the current critical path — see
   stays trustworthy under real out-of-distribution/fault shift, though not
   yet a blocking problem either (no fault data has been run through this
   check yet, only nominal).
-- **`margin.py`'s lane-boundary distance has a known, unfixed
-  nearest-lanelet-boundary edge case** near lane-change boundaries — NOT
-  moot: `margin.py` turned out (2026-10-04) to already be the real 2b
-  mechanism, not a superseded prototype — see the Layer 2b decision log
-  entry and `docs/research_notes/layer2b_wiring_plan_2026-10-04.md`. Carry
-  this caveat forward into that work rather than assuming it was dropped.
-- **`object_clearance()` in `margin.py` is a conservative worst-case
-  placeholder**, not a real per-object trajectory prediction (no
-  persistent object ID across frames, direction-agnostic). Deliberately
-  deferred in the 2026-10-04 wiring plan — upgrading it to use Autoware's
-  own already-recorded `PredictedObjects.kinematics.predicted_paths` is
-  explicit, separable future work, not a blocker for the first result.
+- **Layer 2's matched-false-alarm thresholds are still ~0.95 with ego_v2**
+  (nominal P(violation) p99 tail at intersections, where the forecast
+  hedges straight through a planned turn) — lead-time numbers at matched
+  FAR aren't meaningful until that tail drops (stage D target).
+- **v2 object safe set uses constant-velocity objects** with heading from
+  0.5s nearest-neighbour association (lanelet direction fallback) — not
+  Autoware's own `predicted_paths` (still separable future work).
+- **Under IMU faults the object positions are also in the corrupted
+  estimated frame**; only the road-departure ground truth uses AWSIM GT pose.
 
 ## Don't duplicate context that's already written down
 
