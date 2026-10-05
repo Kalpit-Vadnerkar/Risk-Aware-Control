@@ -102,7 +102,7 @@ class TrajectoryDataset(Dataset):
         seq = self.sequences[idx]
         past_t   = self._build_feature_tensors(seq['past'])
         future_t = self._build_feature_tensors(seq['future'])
-        graph_t  = self._build_graph_tensors(seq['graph'])
+        graph_t  = self._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'))
         return past_t, future_t, graph_t, seq['graph_bounds']
 
     # ── Internal helpers ───────────────────────────────────────────────────
@@ -141,11 +141,13 @@ class TrajectoryDataset(Dataset):
             buf['uncertainty'].append(step['uncertainty'])
             buf['objects_set'].append(step['objects_set'])
             buf['objects_mask'].append(step['objects_mask'])
+        if steps and 'yaw' in steps[0]:   # ego_v2 schema only -- rotation input, not a model feature
+            buf['yaw'] = [[float(step['yaw'])] for step in steps]
 
         return {k: torch.tensor(np.asarray(v), dtype=torch.float32) for k, v in buf.items()}
 
     @staticmethod
-    def _build_graph_tensors(G) -> dict:
+    def _build_graph_tensors(G, ref=None, yaw=None) -> dict:
         """Convert a networkx.Graph → node_features, adjacency matrix, and
         node_mask tensors. node_mask added 2026-08-05: graphs are now
         radius-scoped (config.py's GRAPH_RADIUS_M) rather than always padded
@@ -154,14 +156,29 @@ class TrajectoryDataset(Dataset):
         for the attention-pooling mask this feeds."""
         node_features = torch.zeros((_MAX_GRAPH_NODES, _NODE_FEATURES), dtype=torch.float32)
         node_mask     = torch.zeros((_MAX_GRAPH_NODES,), dtype=torch.float32)
+        ego = _cfg.GRAPH_FRAME == 'ego_v2'
+        if ego:
+            # ego_v2 (config.py's GRAPH_FRAME note): raw-metre nodes -> this
+            # window's ego frame (x forward, y left), fixed metric scale.
+            if ref is None or yaw is None:
+                raise ValueError("ego_v2 graphs need position_ref and heading_ref "
+                                 "(_build_graph_tensors(seq['graph'], seq['position_ref'], seq['heading_ref']))")
+            c, s_ = np.cos(-yaw), np.sin(-yaw)
+            sc = _cfg.GRAPH_NODE_SCALE_M
         for node_id, data in G.nodes(data=True):
             if node_id < _MAX_GRAPH_NODES:
-                node_features[node_id] = torch.tensor([
-                    float(data['x']),
-                    float(data['y']),
-                    float(data.get('traffic_light_detection_node', 0)),
-                    float(data.get('path_node', 0)),
-                ], dtype=torch.float32)
+                if ego:
+                    dx, dy = float(data['x']) - ref[0], float(data['y']) - ref[1]
+                    ux, uy = float(data.get('dir_x', 0.0)), float(data.get('dir_y', 0.0))
+                    feats = [(c * dx - s_ * dy) / sc, (s_ * dx + c * dy) / sc,
+                             float(data.get('traffic_light_detection_node', 0)),
+                             float(data.get('path_node', 0)),
+                             c * ux - s_ * uy, s_ * ux + c * uy]
+                else:
+                    feats = [float(data['x']), float(data['y']),
+                             float(data.get('traffic_light_detection_node', 0)),
+                             float(data.get('path_node', 0))]
+                node_features[node_id] = torch.tensor(feats, dtype=torch.float32)
                 node_mask[node_id] = 1.0
 
         raw_adj = nx.to_numpy_array(G)

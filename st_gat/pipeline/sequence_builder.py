@@ -456,7 +456,17 @@ def _with_position(static_feats: dict, frame: dict, ref_x: float, ref_y: float) 
     ego_point = Point(frame['ego']['position']['x'], frame['ego']['position']['y'])
     out = dict(static_feats)
     out['position'] = _scale_position_relative(ego_point, ref_x, ref_y, cfg.POSITION_DISPLACEMENT_RANGE_M)
+    if cfg.GRAPH_FRAME == 'ego_v2':
+        # Map-frame yaw (rad) of the localized pose -- the model rotates its
+        # history/map into the ego frame with the CURRENT frame's yaw (see
+        # config.py's GRAPH_FRAME note). Not a model input feature itself.
+        out['yaw'] = _yaw(frame['ego']['orientation'])
     return out
+
+
+def _yaw(q: dict) -> float:
+    return math.atan2(2.0 * (q['w'] * q['z'] + q['x'] * q['y']),
+                      1.0 - 2.0 * (q['y'] ** 2 + q['z'] ** 2))
 
 
 # ── Main builder ───────────────────────────────────────────────────────────
@@ -615,6 +625,8 @@ class SequenceBuilder:
 
             init_frame = window[0]['ego']
             last_frame  = window[-1]['ego']
+            now_frame   = window[cfg.INPUT_SEQ_LEN - 1]['ego']
+            now_pt = Point(now_frame['position']['x'], now_frame['position']['y'])
 
             # Raw bag-frame Points (see _process_frame_static's fix comment) —
             # this center_position feeds GraphBuilder._get_sorted_lanelets,
@@ -624,21 +636,34 @@ class SequenceBuilder:
             init_pt = Point(init_frame['position']['x'], init_frame['position']['y'])
             last_pt = Point(last_frame['position']['x'], last_frame['position']['y'])
 
-            # Rebuild graph only if window centre shifted significantly
+            # Rebuild graph only if window centre shifted significantly.
+            # ego_v2: the centre is the CURRENT ("now") position -- past-only,
+            # unlike bbox_v1's midpoint of the window's first frame and its
+            # last FUTURE frame, which leaked the 3s-ahead endpoint into
+            # which part of the map the graph covers.
+            anchor = now_pt if cfg.GRAPH_FRAME == 'ego_v2' else init_pt
             rebuild = (
                 G_cached is None
                 or math.sqrt(
-                    (init_pt.x - last_init_pt.x) ** 2 +
-                    (init_pt.y - last_init_pt.y) ** 2
+                    (anchor.x - last_init_pt.x) ** 2 +
+                    (anchor.y - last_init_pt.y) ** 2
                 ) > self._GRAPH_CACHE_DIST
             )
 
             if rebuild:
                 import copy
-                G_raw = self.graph_builder.create_expanded_graph(init_pt, last_pt)
-                G_cached, x_min, x_max, y_min, y_max = _scale_graph(G_raw)
+                if cfg.GRAPH_FRAME == 'ego_v2':
+                    # Raw metres kept; dataset._build_graph_tensors converts to
+                    # the window's own ego frame (position_ref/heading_ref).
+                    G_cached = self.graph_builder.build_graph(now_pt)
+                    xs = [d['x'] for _, d in G_cached.nodes(data=True)] or [now_pt.x]
+                    ys = [d['y'] for _, d in G_cached.nodes(data=True)] or [now_pt.y]
+                    x_min, x_max, y_min, y_max = min(xs), max(xs), min(ys), max(ys)
+                else:
+                    G_raw = self.graph_builder.create_expanded_graph(init_pt, last_pt)
+                    G_cached, x_min, x_max, y_min, y_max = _scale_graph(G_raw)
                 bounds_cache  = (x_min, x_max, y_min, y_max)
-                last_init_pt  = init_pt
+                last_init_pt  = anchor
                 last_last_pt  = last_pt
                 n_rebuilds   += 1
                 # Deep-copy once per rebuild, not once per window (added
@@ -677,6 +702,7 @@ class SequenceBuilder:
                 # can reconstruct them without separately tracking raw
                 # frame indices: real = ref + scaled * POSITION_DISPLACEMENT_RANGE_M.
                 'position_ref': [ref_x, ref_y],
+                **({'heading_ref': past_seq[-1]['yaw']} if cfg.GRAPH_FRAME == 'ego_v2' else {}),
             })
             n_windows += 1
 

@@ -101,6 +101,12 @@ HORIZON_EMBED_DIM = 16
 
 # ── Graph Encoder ──────────────────────────────────────────────────────────
 
+def _rotate(v: torch.Tensor, ang: torch.Tensor) -> torch.Tensor:
+    """Rotate (B, T, 2) vectors by per-sample angle ang (B,)."""
+    c, s = torch.cos(ang)[:, None], torch.sin(ang)[:, None]
+    return torch.stack([c * v[..., 0] - s * v[..., 1], s * v[..., 0] + c * v[..., 1]], dim=-1)
+
+
 class _GCNLayer(nn.Module):
     """Single graph convolution: H' = A · H · W, followed by LayerNorm."""
 
@@ -358,6 +364,12 @@ class STGAT(nn.Module):
         F_total = sum(config['feature_sizes'].values()) + d_obj
 
         self.feature_keys = list(config['feature_sizes'].keys())
+        # ego_v2 graph schema (config.py's GRAPH_FRAME note, 2026-10-04): the
+        # map arrives already in the ego's own frame (x forward, y left);
+        # position history is rotated into that same frame here, and the
+        # position forecast is rotated back to map axes in forward(), so
+        # position_mean means exactly what it always has downstream.
+        self.ego_frame = bool(config.get('ego_frame', False))
 
         # ── Object set branch ────────────────────────────────────────────────
         self.object_encoder = ObjectSetEncoder(
@@ -480,6 +492,8 @@ class STGAT(nn.Module):
         B = node_features.size(0)
 
         # ── 1. Ensure all features are (B, T, dim) ──────────────────────────
+        if self.ego_frame:
+            x = dict(x, position=_rotate(x['position'], -x['yaw'][:, -1, 0]))
         parts = []
         for key in self.feature_keys:
             t = x[key]
@@ -564,6 +578,12 @@ class STGAT(nn.Module):
                 return {f'{key}_mean': mean, f'{key}_scale': scale, f'{key}_dof': dof}
 
         out = {}
+        if self.ego_frame:
+            # Mean rotated back to map axes. The (unused, NLL-arc) scale
+            # stays per-axis in the ego frame -- conformal calibration only
+            # consumes the mean.
+            yaw = x['yaw'][:, -1, 0]
+            pos = torch.cat([_rotate(pos[..., :2], yaw), pos[..., 2:]], dim=-1)
         out.update(_split(pos,      'position',                  2))
         out.update(_split(vel,      'velocity',                  2))
         out.update(_split(steer,    'steering',                  1))

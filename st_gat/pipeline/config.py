@@ -121,6 +121,30 @@ MAP_FILE     = os.path.normpath(os.path.join(REPO_ROOT, '..', 'Map', 'nishishinj
 OUTPUT_ROOT  = os.path.join(REPO_ROOT, 'st_gat', 'data')
 MODEL_ROOT   = os.path.join(REPO_ROOT, 'st_gat', 'models')
 
+# ── Graph coordinate frame (2026-10-04) ────────────────────────────────────
+# 'bbox_v1' (default, the canonical model's schema): graph node x/y are
+#   normalized to [0,1] inside each graph's OWN bounding box (x and y scaled
+#   independently), the graph is centred on the midpoint of the window's
+#   first frame and its LAST FUTURE frame, and nothing tells the model where
+#   the ego sits inside that box (graph_bounds is never fed to it).
+#   model_safety_benchmark.py found the consequence: swapping in a random
+#   other location's graph barely changes the forecast, ~19% of held-out
+#   nominal forecasts leave the drivable area, 35% phantom turns on straights.
+# 'ego_v2': graph centred on the ego's CURRENT position (past-only, no
+#   future leak; same GRAPH_RADIUS_M, which centred on "now" still reaches
+#   far past the 3s horizon), nodes stored in real metres with lane
+#   direction, and converted at tensor time to the ego's own frame (relative
+#   to position_ref, rotated by heading_ref, fixed GRAPH_NODE_SCALE_M) --
+#   the model rotates its position history into the same frame and rotates
+#   its position forecast back, so position_mean keeps its existing meaning
+#   for every downstream consumer.
+# Selected by environment variable so the canonical bbox_v1 stack keeps
+# working unchanged while ego_v2 is trained/benchmarked; ego_v2 data,
+# checkpoints and models live under '<HORIZON_TAG>_ego' paths.
+GRAPH_FRAME = os.environ.get('STGAT_GRAPH_FRAME', 'bbox_v1')
+assert GRAPH_FRAME in ('bbox_v1', 'ego_v2'), GRAPH_FRAME
+GRAPH_NODE_SCALE_M = 50.0   # ego_v2: node offsets in metres / this
+
 # EXTRACTED_DIR/SEQUENCES_DIR/TRAIN_DIR/CAL_DIR/CHECKPOINT_DIR/model_path are
 # defined further down, after HORIZON_TAG (needs INPUT_SEQ_LEN/OUTPUT_SEQ_LEN,
 # in "Sequence parameters" below) — see docs/theoretical_framework.md §4 /
@@ -277,7 +301,7 @@ OBJECT_FEATURE_DIM = 2 + 1 + OBJECT_CLASS_GROUPS   # rel_x, rel_y, speed, class 
 # coarsen node spacing or shrink the radius below what the horizon formula
 # calls for.
 
-NODE_FEATURES          = 4       # x, y, traffic_light_node, path_node
+NODE_FEATURES          = 4 if GRAPH_FRAME == 'bbox_v1' else 6   # x, y, traffic_light_node, path_node[, dir_x, dir_y]
 MAX_GRAPH_NODES        = 1024
 MIN_DIST_BETWEEN_NODES = 5       # metres, lanelet centerline node spacing
 
@@ -308,6 +332,7 @@ STRIDE         = 1
 # INPUT_SEQ_LEN/OUTPUT_SEQ_LEN combinations' extracted sequences and
 # checkpoints to coexist without one silently overwriting another's cache.
 HORIZON_TAG = f"h{INPUT_SEQ_LEN}_{OUTPUT_SEQ_LEN}"
+DATA_TAG = HORIZON_TAG if GRAPH_FRAME == 'bbox_v1' else f"{HORIZON_TAG}_ego"
 
 # Candidate lanelets are scoped to this radius around each graph rebuild's
 # centre position before applying route-first sorting (added 2026-08-05 —
@@ -328,11 +353,11 @@ GRAPH_RADIUS_M = (_GRAPH_RADIUS_ASSUMED_MAX_SPEED_MPS
                   * (INPUT_SEQ_LEN + OUTPUT_SEQ_LEN) * 0.1   # seconds, at 10 Hz
                   + _GRAPH_RADIUS_MARGIN_M)
 
-EXTRACTED_DIR  = os.path.join(OUTPUT_ROOT, HORIZON_TAG, 'extracted')    # Stage 1: per-run 10Hz dicts
-SEQUENCES_DIR  = os.path.join(OUTPUT_ROOT, HORIZON_TAG, 'sequences')    # Stage 2: pkl sequence files
+EXTRACTED_DIR  = os.path.join(OUTPUT_ROOT, DATA_TAG, 'extracted')    # Stage 1: per-run 10Hz dicts
+SEQUENCES_DIR  = os.path.join(OUTPUT_ROOT, DATA_TAG, 'sequences')    # Stage 2: pkl sequence files
 TRAIN_DIR      = os.path.join(SEQUENCES_DIR, 'train')
 CAL_DIR        = os.path.join(SEQUENCES_DIR, 'calibration')
-CHECKPOINT_DIR = os.path.join(REPO_ROOT, 'st_gat', 'checkpoints', HORIZON_TAG)
+CHECKPOINT_DIR = os.path.join(REPO_ROOT, 'st_gat', 'checkpoints', DATA_TAG)
 
 # REFERENCE_POINTS (the T-ITS reference repo's bag-frame -> ~3500,1800 "local
 # frame" affine transform) removed 2026-08-02 — it was calibrated for that
@@ -405,6 +430,9 @@ def compute_schema_hash() -> str:
         'OBJECT_FEATURE_DIM':   OBJECT_FEATURE_DIM,
         'MAX_TRACKED_OBJECTS':  MAX_TRACKED_OBJECTS,
     }
+    if GRAPH_FRAME != 'bbox_v1':   # only added off-default, so existing bbox_v1 caches keep their hash
+        payload['GRAPH_FRAME'] = GRAPH_FRAME
+        payload['GRAPH_NODE_SCALE_M'] = GRAPH_NODE_SCALE_M
     s = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(s.encode()).hexdigest()[:16]
 
@@ -524,6 +552,7 @@ MODEL_CONFIG = {
     # them, but don't treat them as load-bearing.
     'train_data_folder': TRAIN_DIR,
     'cal_data_folder':   CAL_DIR,
-    'model_path':        os.path.join(MODEL_ROOT, HORIZON_TAG, 'st_gat_rise.pth'),
+    'model_path':        os.path.join(MODEL_ROOT, DATA_TAG, 'st_gat_rise.pth'),
+    'ego_frame':         GRAPH_FRAME == 'ego_v2',
     'device':            torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
 }

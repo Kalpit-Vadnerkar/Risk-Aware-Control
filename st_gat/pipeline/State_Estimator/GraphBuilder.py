@@ -1,3 +1,4 @@
+import math
 import networkx as nx
 from ..Data_Curator.Point import Point
 
@@ -85,13 +86,24 @@ class GraphBuilder:
     def _create_lanelet_nodes(self, lanelet, lanelet_id):
         nodes = []
         prev_point = None
-        for point in lanelet.centerline:
-            current_point = Point(point.x, point.y)
+        cl = [(p.x, p.y) for p in lanelet.centerline]
+        for k, (px, py) in enumerate(cl):
+            current_point = Point(px, py)
             if prev_point is None or Point.distance(prev_point, current_point) >= self.min_dist_between_node:
+                # Direction of travel along the centerline at this point
+                # (unit tangent, map frame; lanelets are directional) --
+                # added 2026-10-04 for the ego_v2 graph schema: positions
+                # alone don't say which way a lane flows, which is what
+                # makes a route lane distinguishable from the oncoming one.
+                a, b = (cl[k], cl[k + 1]) if k + 1 < len(cl) else (cl[k - 1], cl[k]) if k > 0 else (cl[k], cl[k])
+                dx, dy = b[0] - a[0], b[1] - a[1]
+                norm = math.hypot(dx, dy) or 1.0
                 nodes.append({
                     'type': "map_node",
                     'x': current_point.x,
                     'y': current_point.y,
+                    'dir_x': dx / norm,
+                    'dir_y': dy / norm,
                     # Real traffic-light nodes are added separately as their
                     # own dedicated nodes (see _add_traffic_light_nodes) --
                     # lane nodes themselves never carry this flag anymore.
