@@ -116,7 +116,8 @@ R_POS = cfg.POSITION_DISPLACEMENT_RANGE_M
 # matters for ego risk once it shows up in the ego's motion anyway.
 KINEMATIC_SERIES = ['position', 'velocity_longitudinal', 'velocity_lateral', 'steering', 'acceleration']
 POOLS = ['pooled', 'mondrian', 'embedding']
-COUPLINGS = ['static', 'adaptive']
+COUPLINGS = ['static', 'adaptive', 'pose']
+WHEELBASE_M = 2.79   # awsim_labs_vehicle_description vehicle_info
 VARIANTS = [f'{p}_{c}' for c in COUPLINGS for p in POOLS]
 A_LONG_MAX = 8.0   # m/s^2, ~0.8g: beyond hard braking on dry asphalt
 A_LAT_MAX = 8.0    # m/s^2, ~friction limit
@@ -282,6 +283,84 @@ def feasible_mask(traj, ref, v0):
     return (a_long.max(1) <= A_LONG_MAX) & (a_lat.max(1) <= A_LAT_MAX)
 
 
+def pose_error(seq):
+    """Live localization-consistency reading (2026-10-05), from the window's
+    own past 3s only (causal). The vehicle's speed and tire-angle reports are
+    physical measurements an IMU/localization fault doesn't touch; dead-
+    reckoning them with a kinematic bicycle model from the ESTIMATED pose 3s
+    ago gives where the car physically went. Comparing with the estimated
+    pose now:
+      psi_acc  accumulated heading error, est - physical (rad)
+      lat_off  lateral offset of the estimate from the dead-reckoned
+               position, along the estimate's left normal (m) -- lateral
+               only: along-track position jitters ~1m from frame-timing slips
+      e_rate   heading-error rate over the last 1s (rad/s)
+    Nominal: est and physical heading changes correlate 0.999; |e_rate| p99
+    0.015 rad/s. Returns None for schemas without per-step yaw (bbox_v1)."""
+    p = seq['past']
+    if 'yaw' not in p[0]:
+        return None
+    yaw = np.array([st['yaw'] for st in p])
+    pos = np.array([st['position'] for st in p]) * R_POS
+    vx_lo, vx_hi = cfg.VELOCITY_X_RANGE
+    st_lo, st_hi = cfg.STEERING_RANGE
+    v = np.array([st['velocity'][0] for st in p]) * (vx_hi - vx_lo) + vx_lo
+    d = np.array([st['steering'] for st in p]) * (st_hi - st_lo) + st_lo
+    rate = v * np.tan(d) / WHEELBASE_M
+    h, x = yaw[0], pos[0].copy()
+    for k in range(len(p) - 1):
+        x = x + v[k] * DT * np.array([math.cos(h), math.sin(h)])
+        h = h + rate[k] * DT
+    wrap = lambda a: (a + math.pi) % (2 * math.pi) - math.pi
+    psi_acc = wrap(yaw[-1] - h)
+    n = np.array([-math.sin(yaw[-1]), math.cos(yaw[-1])])
+    lat_off = float((pos[-1] - x) @ n)
+    e_rate = wrap(yaw[-1] - yaw[-11]) - float(np.sum(rate[-10:]) * DT)
+    return float(psi_acc), lat_off, float(e_rate)
+
+
+def pose_counterfactuals(base, ref, h_est, pe, sig, rng):
+    """'pose' coupling: rigidly move each counterfactual from the ESTIMATED
+    pose to a sampled TRUE pose. base (K,T,2) real-metre trajectories built
+    in the estimated frame. True heading = est - (psi_acc + e_rate*t) (the
+    measured accumulated error, continuing to drift at the measured rate);
+    true position = est - lat_off * n. Nominal-sized Gaussian noise on all
+    three (sig = per-quantity std on nominal calibration windows), so the
+    envelope keeps localization-level spread on normal driving and moves /
+    fans out only when the physical and estimated motion disagree. Rigid
+    rotation/shift preserves each trajectory's own dynamics, so the physics
+    trim leaves these alone (unlike scaling residuals, which it trims).
+    Returns (traj (K,T,2), shift (K,2), dpsi0 (K,)) -- the last two so
+    tracked objects (placed on the map with the same wrong pose) can be
+    moved by the same correction."""
+    K, T = base.shape[:2]
+    psi_acc, lat_off, e_rate = pe
+    psi0 = psi_acc + rng.normal(0, sig[0], K)
+    lat = lat_off + rng.normal(0, sig[1], K)
+    rate = e_rate + rng.normal(0, sig[2], K)
+    t = (np.arange(1, T + 1) * DT)[None, :]
+    dpsi = -(psi0[:, None] + rate[:, None] * t)                     # (K,T)
+    n = np.array([-math.sin(h_est), math.cos(h_est)])
+    shift = -lat[:, None] * n[None, :]                              # (K,2)
+    rel = base - ref
+    c, s_ = np.cos(dpsi), np.sin(dpsi)
+    rot = np.stack([c * rel[..., 0] - s_ * rel[..., 1], s_ * rel[..., 0] + c * rel[..., 1]], -1)
+    return ref + shift[:, None, :] + rot, shift, -psi0
+
+
+def _move_objects(objs, ref, shift, dpsi0):
+    """Apply the mean pose correction to tracked objects (perceived relative
+    to the vehicle, then placed with the same wrong pose)."""
+    oxy, ohd, ocl = objs
+    if not len(ocl):
+        return objs
+    sh, a = shift.mean(0), float(np.mean(dpsi0))
+    rel = oxy - ref
+    c, s_ = math.cos(a), math.sin(a)
+    moved = ref + sh + np.stack([c * rel[..., 0] - s_ * rel[..., 1], s_ * rel[..., 0] + c * rel[..., 1]], -1)
+    return moved, ohd + a, ocl
+
+
 def score(traj, ref, h_past, objs, drivable):
     """traj (K,T,2) real -> (road_viol (K,), obj_viol (K,), min road margin (K,))."""
     rm = margin_lib.road_margin(drivable.signed_distance(traj[..., 0], traj[..., 1]))
@@ -355,6 +434,13 @@ def build_cal_pool(model, device, map_data, args):
     pool['A'] = A
     pool['qA'] = conformal_quantile(A[~np.isnan(A)], 0.1)
     pool['scale'] = np.clip(np.nan_to_num(A / pool['qA'], nan=1.0), 1.0, args.scale_max)
+    # Nominal spread of the live pose-consistency reading (pose coupling).
+    pe = [pose_error(sq) for sq in ds.sequences[::5]]
+    pe = np.array([x for x in pe if x is not None])
+    pool['pose_sigma'] = pe.std(0) if len(pe) else None
+    if pool['pose_sigma'] is not None:
+        print(f"  nominal pose-consistency std: psi_acc {pool['pose_sigma'][0]:.4f} rad, "
+              f"lat_off {pool['pose_sigma'][1]:.3f} m, e_rate {pool['pose_sigma'][2]:.4f} rad/s")
     print(f"  {n} windows, {len(pkl_files)} trials; groups: "
           + ", ".join(f"{g}={int((pool['group'] == g).sum())}" for g in np.unique(pool['group']))
           + f"; q90(A) = {pool['qA']:.3f}")
@@ -380,14 +466,24 @@ def evaluate_window(seq, mu_norm, h, group, scale, pool, map_data, drivable, rng
     objs = window_objects(seq, map_data, cfg.OUTPUT_SEQ_LEN)
     pidx = pool_indices(pool, h, group, exclude_trial, args.k_neighbors)
     u = rng.random(args.k_draws)   # common random numbers across variants
+    pe = pose_error(seq)
+    pose_seed = int(rng.integers(1 << 31))
     out, draws = {}, {}
     for p in POOLS:
         j = pidx[p][(u * len(pidx[p])).astype(int)]
         for c in COUPLINGS:
+            if c == 'pose' and (pe is None or pool.get('pose_sigma') is None):
+                continue
             s = scale if c == 'adaptive' else 1.0
             traj = ref + (mu_norm[None] + s * _rot(pool['err_local'][j], h_past)) * R_POS
+            objs_c = objs
+            if c == 'pose':
+                yaw_now = seq['past'][-1]['yaw']
+                traj, shift, dpsi0 = pose_counterfactuals(traj, ref, yaw_now, pe, pool['pose_sigma'],
+                                                          np.random.default_rng(pose_seed))
+                objs_c = _move_objects(objs, ref, shift, dpsi0)
             feas = feasible_mask(traj, ref, v0)
-            road_v, obj_v, road_min = score(traj, ref, h_past, objs, drivable)
+            road_v, obj_v, road_min = score(traj, ref, h_past, objs_c, drivable)
             viol = road_v | obj_v
             v = f'{p}_{c}'
             nf = int(feas.sum())
@@ -400,6 +496,8 @@ def evaluate_window(seq, mu_norm, h, group, scale, pool, map_data, drivable, rng
             }
             if keep_draws:
                 draws[v] = {'traj': traj, 'feas': feas, 'viol': viol}
+    if pe is not None:
+        out['_pose'] = {'psi_acc': pe[0], 'lat_off': pe[1], 'e_rate': pe[2]}
     return out, draws, objs
 
 
@@ -478,11 +576,12 @@ def mode_nominal(pool, map_data, drivable, args):
                                     pool['scale'][i], pool, map_data, drivable, rng, args,
                                     exclude_trial=pool['trial'][i])
         for v in VARIANTS:
-            P[v][r] = out[v]['p']
-            trim[v][r] = out[v]['frac_trimmed']
+            if v in out:
+                P[v][r] = out[v]['p']
+                trim[v][r] = out[v]['frac_trimmed']
         if (n_done + 1) % 500 == 0:
             print(f"  {n_done + 1}/{len(idx)}")
-    thr = {v: float(np.nanquantile(P[v], 1 - args.far)) for v in VARIANTS}
+    thr = {v: float(np.nanquantile(P[v], 1 - args.far)) for v in VARIANTS if np.isfinite(P[v]).any()}
     scale_thr = float(np.quantile(pool['scale'], 1 - args.far))
     res = {'n_windows': int(len(idx)), 'far_budget': args.far, 'thresholds': thr,
            'layer1_scale_threshold': scale_thr, 'variants': {}}
@@ -490,6 +589,8 @@ def mode_nominal(pool, map_data, drivable, args):
     print(f"{'variant':<22}{'mean':>8}{'p95':>8}{'p99':>8}{'max':>8}{'frac>0.1':>10}{'trimmed':>9}  threshold@FAR")
     for v in VARIANTS:
         a = P[v][~np.isnan(P[v])]
+        if not len(a):
+            continue
         row = {'mean': float(a.mean()), 'p95': float(np.quantile(a, .95)), 'p99': float(np.quantile(a, .99)),
                'max': float(a.max()), 'frac_above_0.1': float((a > 0.1).mean()),
                'mean_frac_trimmed': float(np.nanmean(trim[v]))}
@@ -580,10 +681,12 @@ def process_fault_trial(run_dir, model, device, pool, map_data, drivable, shared
                                     pool, map_data, drivable, rng, args)
         row = {'t': float(t_rel[i]), 'scale': float(scale[i]), 'A': float(A[i]) if not np.isnan(A[i]) else None,
                'group': str(groups[i])}
-        row.update({f'P_{v}': out[v]['p'] for v in VARIANTS})
-        row.update({f'Proad_{v}': out[v]['p_road'] for v in VARIANTS})
-        row.update({f'Puntrim_{v}': out[v]['p_untrimmed'] for v in VARIANTS})
-        row.update({f'trim_{v}': out[v]['frac_trimmed'] for v in VARIANTS})
+        miss = {'p': float('nan'), 'p_road': float('nan'), 'p_untrimmed': float('nan'), 'frac_trimmed': float('nan')}
+        row.update({f'P_{v}': out.get(v, miss)['p'] for v in VARIANTS})
+        row.update({f'Proad_{v}': out.get(v, miss)['p_road'] for v in VARIANTS})
+        row.update({f'Puntrim_{v}': out.get(v, miss)['p_untrimmed'] for v in VARIANTS})
+        row.update({f'trim_{v}': out.get(v, miss)['frac_trimmed'] for v in VARIANTS})
+        row.update(out.get('_pose', {}))
         # realized ground truth within H: GT road departure in (t, t+H]
         if gt_rm is not None:
             sel = (gt_t > t_rel[i]) & (gt_t <= t_rel[i] + cfg.OUTPUT_SEQ_LEN * DT)
@@ -610,18 +713,39 @@ def summarize_trial(tr, thr, scale_thr, args):
     s = {'trial': os.path.relpath(tr['run_dir'], DATA_DIR), 'campaign': tr['campaign'], 'kind': tr['kind'],
          'fault_start': fault_start, 'gt_departure': gt_dep,
          'est_ever_departs': bool(any(r['est_viol_H'] for r in rows)), 'n_windows': len(rows)}
-    alarms = {v: np.array([r[f'P_{v}'] > thr[v] for r in rows]) for v in VARIANTS}
+    alarms = {v: np.array([r[f'P_{v}'] > thr[v] for r in rows]) for v in VARIANTS if v in thr}
     alarms['layer1_only'] = np.array([r['scale'] > scale_thr for r in rows])
     for name, a in alarms.items():
+        eps = _alarm_episodes(t, a, args.alarm_gap_s)
         d = {'pre_fault_alarm_rate': float(a[pre].mean()) if pre.any() else None,
-             'in_fault_alarm_rate': float(a[in_fault].mean()) if in_fault.any() else None}
+             'in_fault_alarm_rate': float(a[in_fault].mean()) if in_fault.any() else None,
+             # false-alarm episodes: alarm runs that start before the fault, or
+             # (trials with a real departure) end > alarm_gap_s before it
+             'pre_fault_episodes': int(sum(1 for (a0, _a1) in eps if fault_start is not None and a0 < fault_start))}
         if gt_dep is not None and fault_start is not None:
-            win = (t >= fault_start) & (t <= gt_dep)
-            first = t[win & a]
-            d['first_alarm'] = float(first[0]) if len(first) else None
-            d['lead_time_s'] = float(gt_dep - first[0]) if len(first) else None
+            # Lead time = onset of the alarm episode still active at the
+            # departure (allowing gaps <= alarm_gap_s). An alarm that fired
+            # earlier and stopped doesn't count -- the 2026-10-05 "25s lead"
+            # in imu_fault_s3 was exactly that (a spike at a tight spot).
+            live = [(a0, a1) for (a0, a1) in eps if a0 <= gt_dep and a1 >= gt_dep - args.alarm_gap_s]
+            d['lead_time_s'] = float(gt_dep - live[0][0]) if live else None
+            d['episodes_before_departure_not_persisting'] = int(sum(
+                1 for (a0, a1) in eps if a1 < gt_dep - args.alarm_gap_s and a0 >= fault_start))
         s[name] = d
     return s
+
+
+def _alarm_episodes(t, a, gap):
+    """Contiguous alarm runs [(start, end)], merging runs separated by <= gap s."""
+    eps = []
+    for ti, ai in zip(t, a):
+        if not ai:
+            continue
+        if eps and ti - eps[-1][1] <= gap:
+            eps[-1][1] = ti
+        else:
+            eps.append([ti, ti])
+    return [tuple(e) for e in eps]
 
 
 def plot_featured(tr, summ, thr, scale_thr, args):
@@ -632,18 +756,24 @@ def plot_featured(tr, summ, thr, scale_thr, args):
                              gridspec_kw={'height_ratios': [3, 1.3, 1.3]})
     colors = {'pooled': '#7f7f7f', 'mondrian': '#2ca02c', 'embedding': '#9467bd'}
     ax = axes[0]
+    style = {'static': (':', 1.0), 'adaptive': ('--', 1.0), 'pose': ('-', 1.8)}
     for v in VARIANTS:
         p, c = v.split('_')
-        ax.plot(t, [r[f'P_{v}'] for r in rows], color=colors[p], ls='-' if c == 'adaptive' else ':',
-                lw=1.6 if c == 'adaptive' else 1.0, label=v)
+        ax.plot(t, [r[f'P_{v}'] for r in rows], color=colors[p], ls=style[c][0], lw=style[c][1], label=v)
     ax.plot(t, [float(r.get('gt_viol_H', False)) for r in rows], color='#d62728', lw=0, marker='|', ms=10,
             label='ground truth: real road departure within 3s')
     ax.set_ylabel('P(violation within 3s)')
     ax.set_ylim(-0.03, 1.05)
     ax.legend(fontsize=7, ncol=3, loc='upper left')
-    axes[1].plot(t, [r['scale'] for r in rows], color='#1f77b4')
+    axes[1].plot(t, [r['scale'] for r in rows], color='#1f77b4', label='Layer 1 residual scale s(t)')
     axes[1].axhline(scale_thr, color='#1f77b4', ls='--', lw=0.8)
     axes[1].set_ylabel('Layer 1 anomaly\nscale s(t)')
+    if rows and 'psi_acc' in rows[0]:
+        ax2 = axes[1].twinx()
+        ax2.plot(t, [np.degrees(abs(r['psi_acc'])) for r in rows], color='#e377c2', lw=1.2,
+                 label='|heading error| est vs physical (deg)')
+        ax2.set_ylabel('|heading error| (deg)', color='#e377c2')
+        ax2.legend(fontsize=7, loc='upper right')
     if tr['gt'] is not None and tr['est'] is not None:
         gt, est = tr['gt'], tr['est']
         gi = np.searchsorted(gt[:, 0], est[:, 0]).clip(0, len(gt) - 1)
@@ -659,9 +789,9 @@ def plot_featured(tr, summ, thr, scale_thr, args):
         if summ['gt_departure'] is not None:
             a.axvline(summ['gt_departure'], color='#d62728', ls='--', lw=1.2)
     axes[2].set_xlabel('seconds since trial start  (orange = fault active, red dashed = real road departure)')
-    lt = summ['embedding_adaptive'].get('lead_time_s')
+    lt = summ.get('embedding_pose', {}).get('lead_time_s')
     fig.suptitle(f"{summ['trial']} — Layer 2 P(violation) vs ground truth"
-                 + (f"  (embedding_adaptive lead time {lt:.1f}s)" if lt is not None else ''), fontsize=11)
+                 + (f"  (embedding_pose lead time {lt:.1f}s)" if lt is not None else ''), fontsize=11)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     path = os.path.join(args.output_dir, f'p_violation_{name}.png')
     fig.savefig(path, dpi=130)
@@ -675,7 +805,7 @@ def plot_cascade(tr, summ, pool, map_data, drivable, args):
     (grey) and safe-set verdict (red/green) drawn per counterfactual."""
     rows = tr['rows']
     t = np.array([r['t'] for r in rows])
-    target = summ['gt_departure'] - 1.5 if summ['gt_departure'] is not None else t[int(np.argmax([r['P_embedding_adaptive'] for r in rows]))]
+    target = summ['gt_departure'] - 1.5 if summ['gt_departure'] is not None else t[int(np.nanargmax([r['P_embedding_pose'] for r in rows]))]
     i = int(np.searchsorted(tr['t_rel'], target))
     i = min(i, len(tr['seqs']) - 1)
     seq = tr['seqs'][i]
@@ -685,15 +815,18 @@ def plot_cascade(tr, summ, pool, map_data, drivable, args):
     ref = _ref(seq)
     past = _past_xy(seq)
     mu = ref + tr['inf']['pos_mean'][i] * R_POS
-    panels = ['pooled_static', 'mondrian_static', 'embedding_static', 'embedding_adaptive']
+    panels = ['pooled_static', 'mondrian_static', 'embedding_static', 'embedding_adaptive', 'embedding_pose']
+    pz = out.get('_pose', {})
     titles = ['raw pooled tube (v1)', '2a: Mondrian pool', '2a: embedding k-NN pool',
-              f'+ Layer-1 coupling (s={tr["scale"][i]:.2f}) + 2b trim']
+              f'+ residual scaling s={tr["scale"][i]:.2f} (old coupling)',
+              f"+ pose coupling: heading err {np.degrees(pz.get('psi_acc', 0)):+.1f}deg, "
+              f"lat {pz.get('lat_off', 0):+.2f}m"]
     allpts = np.concatenate([draws[v]['traj'][draws[v]['feas']].reshape(-1, 2) for v in panels] + [past, mu])
     lo, hi = np.percentile(allpts, 1, axis=0) - 12, np.percentile(allpts, 99, axis=0) + 12
     if tr['gt'] is not None:
         tg = tr['gt'][:, 0] - tr['t0']
         gsel = (tg >= tr['t_rel'][i] - 3) & (tg <= tr['t_rel'][i] + 3)
-    fig, axes = plt.subplots(1, 4, figsize=(22, 6.2))
+    fig, axes = plt.subplots(1, len(panels), figsize=(5.5 * len(panels), 6.2))
     i0, j0 = int((lo[0] - drivable.x0) / drivable.res), int((lo[1] - drivable.y0) / drivable.res)
     i1, j1 = int((hi[0] - drivable.x0) / drivable.res), int((hi[1] - drivable.y0) / drivable.res)
     for ax, v, ttl in zip(axes, panels, titles):
@@ -770,28 +903,24 @@ def mode_faults(model, device, pool, map_data, drivable, nominal_res, args):
 
 
 def print_fault_table(summaries):
-    print(f"\n{'=' * 100}\nFAULT TRIALS — alarm at matched nominal FAR; lead time vs REAL (ground-truth) road departure\n{'=' * 100}")
-    print(f"{'trial':<46}{'GT dep':>8}{'L1-only lead':>13}{'emb_stat lead':>14}{'emb_adapt lead':>15}{'pool_adapt lead':>16}")
+    cols = ['layer1_only', 'embedding_static', 'embedding_adaptive', 'embedding_pose', 'mondrian_pose', 'pooled_pose']
+    print(f"\n{'=' * 120}\nFAULT TRIALS — alarm at matched nominal FAR; lead time = onset of the alarm episode still "
+          f"active at the REAL (ground-truth) road departure\n{'=' * 120}")
+    print(f"{'trial':<46}{'GT dep':>8}" + ''.join(f"{c:>16}" for c in cols))
     for s in summaries:
         if s.get('skipped'):
             print(f"{s['trial']:<46}  (skipped: could not process)")
             continue
-        def lt(v):
-            x = s[v].get('lead_time_s')
-            return f"{x:.1f}" if x is not None else ('miss' if s['gt_departure'] is not None else '-')
+        def cell(v):
+            d = s.get(v)
+            if d is None:
+                return 'n/a'
+            if s['gt_departure'] is not None:
+                return f"{d['lead_time_s']:.1f}s" if d.get('lead_time_s') is not None else 'MISS'
+            return f"{(d['in_fault_alarm_rate'] or 0):.2f}/{(d['pre_fault_alarm_rate'] or 0):.2f}"
         dep = f"{s['gt_departure']:.1f}" if s['gt_departure'] is not None else '-'
-        print(f"{s['trial']:<46}{dep:>8}{lt('layer1_only'):>13}{lt('embedding_static'):>14}"
-              f"{lt('embedding_adaptive'):>15}{lt('pooled_adaptive'):>16}")
-    print(f"\nIn-fault alarm rate (fraction of fault-active windows alarmed) / pre-fault alarm rate:")
-    print(f"{'trial':<46}" + ''.join(f"{v:>20}" for v in ['layer1_only', 'embedding_static', 'embedding_adaptive']))
-    for s in summaries:
-        if s.get('skipped'):
-            continue
-        def r(v):
-            a, b = s[v]['in_fault_alarm_rate'], s[v]['pre_fault_alarm_rate']
-            return f"{(a if a is not None else float('nan')):.2f} / {(b if b is not None else float('nan')):.2f}"
-        print(f"{s['trial']:<46}" + ''.join(f"{r(v):>20}" for v in ['layer1_only', 'embedding_static', 'embedding_adaptive']))
-
+        print(f"{s['trial'][:45]:<46}{dep:>8}" + ''.join(f"{cell(c):>16}" for c in cols))
+    print("(no-departure trials: in-fault alarm rate / pre-fault alarm rate)")
 
 # ── main ────────────────────────────────────────────────────────────────────
 
@@ -808,6 +937,8 @@ def main():
                     help='Layer-1 coupling looks at the prediction made this long ago (its first lag_s are observed now)')
     ap.add_argument('--scale-max', type=float, default=10.0)
     ap.add_argument('--far', type=float, default=0.01, help='nominal window-level false-alarm budget for thresholds')
+    ap.add_argument('--alarm-gap-s', type=float, default=1.0,
+                    help='alarm runs separated by <= this merge into one episode (lead-time persistence rule)')
     ap.add_argument('--campaigns', nargs='+', default=None, help='default: every fault campaign on disk')
     ap.add_argument('--trials', nargs='*', default=None, help='restrict to trials whose campaign/goal/run starts with these')
     ap.add_argument('--featured', nargs='*', default=[], help='also plot these trials even without a GT departure')

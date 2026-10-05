@@ -45,7 +45,7 @@ threshold 0.82-0.83 (was ~0.95-0.98); pooled/Mondrian thresholds ~0.96.
 
 Ground-truth departures: 4 trials, all IMU (s3/goal_007 88.5s,
 scale/goal_007 54.5s, stuck/goal_007 60.0s, stuck/goal_012 103.3s). TL
-faults never caused a road departure in any of 27 TL trials.
+faults never caused a road departure in any of the 30 TL trials (every TL fault mode is fail-safe by design -- see fault_scenario_redesign_plan_2026-10-05.md).
 
 | departure trial | Layer-1-only | embedding static | embedding adaptive |
 |---|---|---|---|
@@ -82,3 +82,46 @@ physics trim correctly leaves alone -- not a multiplied motion residual.
    consequence is intersection conflict, not road departure -- needs the
    object safe set with real cross-traffic (NPC density > 10) and/or Arm B.
 4. The open-loop p99 tail at tight spots (closed-loop lane-keeping).
+
+## Update (same day): pose coupling — Layer 2 now catches all 4 real departures
+
+New Layer1->Layer2 coupling `pose` (layer2_consequence_estimation.py
+`pose_error()` / `pose_counterfactuals()`): instead of multiplying motion
+residuals, read the live inconsistency between the ESTIMATED pose and the
+vehicle's own physical speed + tire-angle reports (kinematic bicycle
+dead-reckoning over the past 3s: accumulated heading error, lateral
+offset, heading-error rate), and rigidly move every counterfactual to the
+implied TRUE pose, continuing to drift at the measured rate, with
+nominal-sized noise. Nominal: estimated vs physical heading change
+correlate 0.999 (heading error std 0.0088 rad, lateral 0.064 m). Before
+the departures: 6.6 deg heading error at 3s before, 10-20 deg at 2s.
+Tracked objects get the same rigid correction (they're placed on the map
+with the same wrong pose); only road geometry sees the error.
+
+Lead-time metric tightened: lead = onset of the alarm episode still active
+at the departure (gaps <= 1s merged). The earlier "25s lead" in
+imu_fault_s3 does not survive it.
+
+| departure trial | Layer 1 only | residual scaling (old) | pose, embedding | pose, Mondrian | pose, pooled |
+|---|---|---|---|---|---|
+| imu_fault_s3/goal_007 | 3.0s | miss | 1.8s | 1.4s | 1.4s |
+| imu_fault_scale/goal_007 | miss | miss | 2.8s | 2.6s | 2.4s |
+| imu_fault_stuck/goal_007 | 2.0s | miss | 3.0s | 2.6s | 2.8s |
+| imu_fault_stuck/goal_012 | 0.2s | miss | 2.8s | 1.8s | 2.4s |
+
+All at the matched 1% nominal false-alarm rate (embedding_pose threshold
+0.86; its nominal mean P rises 0.037 -> 0.057, the cost of localization-
+level spread). TL trials: in-fault alarm rate <= 0.07, pre-fault <= 0.03.
+imu_fault_s3/goal_012 (no departure) alarms in 55% of fault windows — its
+ground-truth footprint came within ~0.05m of the road edge (a near miss),
+so "false alarm" by the departure label but not obviously wrong.
+`cascade_imu_fault_scale__goal_007_*.png` panel 5 shows the mechanism: the
+rotated bundle lies on the real path into the island (P 1.00) while every
+earlier variant follows the estimated path (P 0.00-0.03).
+
+Caveats: 4 positives, all IMU, 2 goals, 1 trial each — a mechanism
+demonstration, not a statistical result. The pose reading is an
+analytical-redundancy residual (physics, not the ST-GAT); Layer 2's
+contribution is turning it into consequence via map geometry (imu_fault_s3:
+heading error present from 50s, departure only at 88.5s, where the geometry
+made it count). See fault_scenario_redesign_plan_2026-10-05.md.
