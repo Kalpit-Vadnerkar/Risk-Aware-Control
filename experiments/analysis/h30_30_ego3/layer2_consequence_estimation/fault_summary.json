@@ -1,0 +1,1464 @@
+[
+  {
+    "trial": "imu_fault_s1/goal_007/t1_20260728_204000",
+    "campaign": "imu_fault_s1",
+    "kind": "imu",
+    "fault_start": 54.30493974685669,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 807,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02666666666666667
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.023333333333333334
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.016666666666666666
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03666666666666667
+    }
+  },
+  {
+    "trial": "imu_fault_s1/goal_012/t1_20260728_204347",
+    "campaign": "imu_fault_s1",
+    "kind": "imu",
+    "fault_start": 110.64252781867981,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1536,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0074211502782931356,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0074211502782931356,
+      "in_fault_alarm_rate": 0.004987531172069825
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.025974025974025976,
+      "in_fault_alarm_rate": 0.0024937655860349127
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0074211502782931356,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.00927643784786642,
+      "in_fault_alarm_rate": 0.004987531172069825
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.025974025974025976,
+      "in_fault_alarm_rate": 0.0024937655860349127
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.00927643784786642,
+      "in_fault_alarm_rate": 0.0
+    }
+  },
+  {
+    "trial": "imu_fault_s3/goal_007/t1_20260728_195042",
+    "campaign": "imu_fault_s3",
+    "kind": "imu",
+    "fault_start": 49.81488347053528,
+    "gt_departure": 88.51965546607971,
+    "est_ever_departs": false,
+    "n_windows": 922,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03333333333333333,
+      "first_alarm": 63.511913537979126,
+      "lead_time_s": 25.007741928100586
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03333333333333333,
+      "first_alarm": 63.511913537979126,
+      "lead_time_s": 25.007741928100586
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.23333333333333334,
+      "first_alarm": 85.50299978256226,
+      "lead_time_s": 3.016655683517456
+    }
+  },
+  {
+    "trial": "imu_fault_s3/goal_012/t1_20260728_195502",
+    "campaign": "imu_fault_s3",
+    "kind": "imu",
+    "fault_start": 73.52864408493042,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1350,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.025423728813559324,
+      "in_fault_alarm_rate": 0.43896103896103894
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.014124293785310734,
+      "in_fault_alarm_rate": 0.4727272727272727
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.04519774011299435,
+      "in_fault_alarm_rate": 0.4935064935064935
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.031073446327683617,
+      "in_fault_alarm_rate": 0.42597402597402595
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.022598870056497175,
+      "in_fault_alarm_rate": 0.45194805194805193
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0480225988700565,
+      "in_fault_alarm_rate": 0.4961038961038961
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.00847457627118644,
+      "in_fault_alarm_rate": 0.5272727272727272
+    }
+  },
+  {
+    "trial": "imu_fault_scale/goal_007/t1_20260728_200905",
+    "campaign": "imu_fault_scale",
+    "kind": "imu",
+    "fault_start": 44.990468978881836,
+    "gt_departure": 54.48347568511963,
+    "est_ever_departs": false,
+    "n_windows": 780,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.1111111111111111,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.1111111111111111,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.12962962962962962,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.09259259259259259,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.1111111111111111,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.12962962962962962,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    }
+  },
+  {
+    "trial": "imu_fault_scale/goal_012/t1_20260728_201253",
+    "campaign": "imu_fault_scale",
+    "kind": "imu",
+    "fault_start": 62.53131055831909,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 934,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.006688963210702341,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.010033444816053512,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0033444816053511705,
+      "in_fault_alarm_rate": 0.0
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.006688963210702341,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.016722408026755852,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0033444816053511705,
+      "in_fault_alarm_rate": 0.0
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.026845637583892617
+    }
+  },
+  {
+    "trial": "imu_fault_stuck/goal_007/t1_20260728_202434",
+    "campaign": "imu_fault_stuck",
+    "kind": "imu",
+    "fault_start": 52.602635622024536,
+    "gt_departure": 59.998071908950806,
+    "est_ever_departs": false,
+    "n_windows": 772,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0018181818181818182,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.9527272727272728,
+      "first_alarm": 57.99692463874817,
+      "lead_time_s": 2.0011472702026367
+    }
+  },
+  {
+    "trial": "imu_fault_stuck/goal_012/t1_20260728_202808",
+    "campaign": "imu_fault_stuck",
+    "kind": "imu",
+    "fault_start": 76.84380793571472,
+    "gt_departure": 103.26170182228088,
+    "est_ever_departs": true,
+    "n_windows": 1044,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.024324324324324326,
+      "in_fault_alarm_rate": 0.7537091988130564,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.02702702702702703,
+      "in_fault_alarm_rate": 0.755192878338279,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.01891891891891892,
+      "in_fault_alarm_rate": 0.7626112759643917,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.032432432432432434,
+      "in_fault_alarm_rate": 0.744807121661721,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.02972972972972973,
+      "in_fault_alarm_rate": 0.7462908011869436,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.021621621621621623,
+      "in_fault_alarm_rate": 0.7388724035608308,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.013513513513513514,
+      "in_fault_alarm_rate": 0.8056379821958457,
+      "first_alarm": 103.10702252388,
+      "lead_time_s": 0.1546792984008789
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_030/goal_007/t1_20261003_165909",
+    "campaign": "tl_fault_fixed_030",
+    "kind": "tl",
+    "fault_start": 42.7948100566864,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 750,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011029411764705883
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01838235294117647
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.007352941176470588
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011029411764705883
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01838235294117647
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011029411764705883
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_030/goal_007/t2_20261003_182802",
+    "campaign": "tl_fault_fixed_030",
+    "kind": "tl",
+    "fault_start": 67.3933117389679,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 940,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02214022140221402
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01845018450184502
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01845018450184502
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02214022140221402
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.025830258302583026
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01845018450184502
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.11439114391143912
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_030/goal_012/t1_20261003_170244",
+    "campaign": "tl_fault_fixed_030",
+    "kind": "tl",
+    "fault_start": 50.26680374145508,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1335,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0379746835443038,
+      "in_fault_alarm_rate": 0.005747126436781609
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.05063291139240506,
+      "in_fault_alarm_rate": 0.0038314176245210726
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.012658227848101266,
+      "in_fault_alarm_rate": 0.005747126436781609
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.046413502109704644,
+      "in_fault_alarm_rate": 0.005747126436781609
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.05907172995780591,
+      "in_fault_alarm_rate": 0.0038314176245210726
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.016877637130801686,
+      "in_fault_alarm_rate": 0.005747126436781609
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.004219409282700422,
+      "in_fault_alarm_rate": 0.0038314176245210726
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_030/goal_012/t2_20261003_173247",
+    "campaign": "tl_fault_fixed_030",
+    "kind": "tl",
+    "fault_start": 33.77708649635315,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1421,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.04,
+      "in_fault_alarm_rate": 0.013996889580093312
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.008,
+      "in_fault_alarm_rate": 0.012441679626749611
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.08,
+      "in_fault_alarm_rate": 0.02332814930015552
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.048,
+      "in_fault_alarm_rate": 0.013996889580093312
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.032,
+      "in_fault_alarm_rate": 0.012441679626749611
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.088,
+      "in_fault_alarm_rate": 0.02332814930015552
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012441679626749611
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_030/goal_026/t1_20261003_182218",
+    "campaign": "tl_fault_fixed_030",
+    "kind": "tl",
+    "fault_start": 50.50490713119507,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1271,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01026694045174538
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012320328542094456
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.018480492813141684
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.008213552361396304
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01026694045174538
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.018480492813141684
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.004761904761904762,
+      "in_fault_alarm_rate": 0.01026694045174538
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_030/goal_026/t2_20261003_183217",
+    "campaign": "tl_fault_fixed_030",
+    "kind": "tl",
+    "fault_start": 36.614622592926025,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1485,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.009174311926605505
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012232415902140673
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01834862385321101
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010703363914373088
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010703363914373088
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01834862385321101
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0061162079510703364
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_050/goal_007/t1_20261003_184040",
+    "campaign": "tl_fault_fixed_050",
+    "kind": "tl",
+    "fault_start": 42.69090723991394,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1006,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04336734693877551
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04591836734693878
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03826530612244898
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03826530612244898
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03826530612244898
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03826530612244898
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.15306122448979592
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_050/goal_007/t2_20261003_195324",
+    "campaign": "tl_fault_fixed_050",
+    "kind": "tl",
+    "fault_start": 37.434271574020386,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 739,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.05166051660516605
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04428044280442804
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.08118081180811808
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04428044280442804
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04428044280442804
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.08856088560885608
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.033210332103321034
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_050/goal_012/t1_20261003_184523",
+    "campaign": "tl_fault_fixed_050",
+    "kind": "tl",
+    "fault_start": 29.089797019958496,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1479,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0030120481927710845
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0015060240963855422
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.016566265060240965
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0030120481927710845
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0015060240963855422
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.018072289156626505
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_050/goal_012/t2_20261003_195650",
+    "campaign": "tl_fault_fixed_050",
+    "kind": "tl",
+    "fault_start": 37.800740003585815,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1290,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.05714285714285714,
+      "in_fault_alarm_rate": 0.003669724770642202
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.06857142857142857,
+      "in_fault_alarm_rate": 0.001834862385321101
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.003669724770642202
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.06857142857142857,
+      "in_fault_alarm_rate": 0.005504587155963303
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.07428571428571429,
+      "in_fault_alarm_rate": 0.003669724770642202
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.005714285714285714,
+      "in_fault_alarm_rate": 0.005504587155963303
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04036697247706422
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_050/goal_026/t1_20261003_194811",
+    "campaign": "tl_fault_fixed_050",
+    "kind": "tl",
+    "fault_start": 33.76478552818298,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1190,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0064794816414686825
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012958963282937365
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.017278617710583154
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.008639308855291577
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012958963282937365
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.017278617710583154
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012958963282937365
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_050/goal_026/t2_20261003_202653",
+    "campaign": "tl_fault_fixed_050",
+    "kind": "tl",
+    "fault_start": 33.882702589035034,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1362,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.009933774834437087
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011589403973509934
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013245033112582781
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.009933774834437087
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011589403973509934
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013245033112582781
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.004966887417218543
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_070/goal_007/t1_20261003_190926",
+    "campaign": "tl_fault_fixed_070",
+    "kind": "tl",
+    "fault_start": 70.38695788383484,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 882,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.058823529411764705
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0661764705882353
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.07720588235294118
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0625
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0661764705882353
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.07720588235294118
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.025735294117647058
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_070/goal_007/t2_20261003_192455",
+    "campaign": "tl_fault_fixed_070",
+    "kind": "tl",
+    "fault_start": 71.17854952812195,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 914,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.025925925925925925
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.022222222222222223
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04814814814814815
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03333333333333333
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.025925925925925925
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.05185185185185185
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.02631578947368421,
+      "in_fault_alarm_rate": 0.0
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_070/goal_012/t1_20261003_191331",
+    "campaign": "tl_fault_fixed_070",
+    "kind": "tl",
+    "fault_start": 47.978193283081055,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1350,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.004424778761061947,
+      "in_fault_alarm_rate": 0.003629764065335753
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.004424778761061947,
+      "in_fault_alarm_rate": 0.0018148820326678765
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.029038112522686024
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.004424778761061947,
+      "in_fault_alarm_rate": 0.0054446460980036296
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.004424778761061947,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.025408348457350273
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.030852994555353903
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_070/goal_012/t2_20261003_201103",
+    "campaign": "tl_fault_fixed_070",
+    "kind": "tl",
+    "fault_start": 33.18311834335327,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1426,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.04065040650406504,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.032520325203252036,
+      "in_fault_alarm_rate": 0.006153846153846154
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.08943089430894309,
+      "in_fault_alarm_rate": 0.018461538461538463
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.056910569105691054,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.04065040650406504,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0975609756097561,
+      "in_fault_alarm_rate": 0.027692307692307693
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.004615384615384616
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_070/goal_026/t1_20261003_191924",
+    "campaign": "tl_fault_fixed_070",
+    "kind": "tl",
+    "fault_start": 42.5736620426178,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1244,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010351966873706004
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012422360248447204
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.016563146997929608
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010351966873706004
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012422360248447204
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.016563146997929608
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012422360248447204
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_070/goal_026/t2_20261003_203450",
+    "campaign": "tl_fault_fixed_070",
+    "kind": "tl",
+    "fault_start": 30.27645468711853,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1360,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.008143322475570033
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011400651465798045
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013029315960912053
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.009771986970684038
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011400651465798045
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013029315960912053
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013029315960912053
+    }
+  },
+  {
+    "trial": "tl_fault_ramp/goal_007/t1_20260728_215204",
+    "campaign": "tl_fault_ramp",
+    "kind": "tl",
+    "fault_start": 41.484113693237305,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 976,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012254901960784314
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.00980392156862745
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0196078431372549
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0196078431372549
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.012254901960784314
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0196078431372549
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.08333333333333333
+    }
+  },
+  {
+    "trial": "tl_fault_ramp/goal_012/t1_20260728_215748",
+    "campaign": "tl_fault_ramp",
+    "kind": "tl",
+    "fault_start": 29.081910133361816,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1240,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.015267175572519083,
+      "in_fault_alarm_rate": 0.0019342359767891683
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.007633587786259542,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.022900763358778626,
+      "in_fault_alarm_rate": 0.0038684719535783366
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02127659574468085
+    }
+  },
+  {
+    "trial": "tl_fault_ramp/goal_026/t1_20260728_220313",
+    "campaign": "tl_fault_ramp",
+    "kind": "tl",
+    "fault_start": 50.23442506790161,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1534,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.008733624454148471
+    }
+  },
+  {
+    "trial": "tl_fault_s2/goal_007/t1_20260728_205829",
+    "campaign": "tl_fault_s2",
+    "kind": "tl",
+    "fault_start": 50.69162964820862,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 786,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03308823529411765
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04044117647058824
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.003676470588235294
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03676470588235294
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04044117647058824
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.003676470588235294
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.007352941176470588
+    }
+  },
+  {
+    "trial": "tl_fault_s2/goal_012/t1_20260728_210210",
+    "campaign": "tl_fault_s2",
+    "kind": "tl",
+    "fault_start": 51.69967555999756,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1064,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.03278688524590164,
+      "in_fault_alarm_rate": 0.012121212121212121
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.03278688524590164,
+      "in_fault_alarm_rate": 0.00909090909090909
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.015151515151515152
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.040983606557377046,
+      "in_fault_alarm_rate": 0.012121212121212121
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.036885245901639344,
+      "in_fault_alarm_rate": 0.012121212121212121
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.015151515151515152
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.06363636363636363
+    }
+  },
+  {
+    "trial": "tl_fault_s2/goal_026/t1_20260728_210652",
+    "campaign": "tl_fault_s2",
+    "kind": "tl",
+    "fault_start": 60.39268398284912,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1265,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    }
+  },
+  {
+    "trial": "tl_fault_s3/goal_007/t1_20260728_211338",
+    "campaign": "tl_fault_s3",
+    "kind": "tl",
+    "fault_start": 70.90180659294128,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 912,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.07380073800738007
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.06642066420664207
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.08487084870848709
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.07380073800738007
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.05904059040590406
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.08856088560885608
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02952029520295203
+    }
+  },
+  {
+    "trial": "tl_fault_s3/goal_012/t1_20260728_211902",
+    "campaign": "tl_fault_s3",
+    "kind": "tl",
+    "fault_start": 28.38954210281372,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1244,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.03125,
+      "in_fault_alarm_rate": 0.001841620626151013
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0390625,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0055248618784530384
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0390625,
+      "in_fault_alarm_rate": 0.0055248618784530384
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0546875,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011049723756906077
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04788213627992634
+    }
+  },
+  {
+    "trial": "tl_fault_s3/goal_026/t1_20260728_212548",
+    "campaign": "tl_fault_s3",
+    "kind": "tl",
+    "fault_start": 30.179015398025513,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1540,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.004005340453938585
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.00801068090787717
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010680907877169559
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.006675567423230975
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.00801068090787717
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010680907877169559
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    }
+  },
+  {
+    "trial": "tl_fault_s4/goal_007/t1_20260728_213355",
+    "campaign": "tl_fault_s4",
+    "kind": "tl",
+    "fault_start": 73.99914503097534,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 893,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.055970149253731345
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.041044776119402986
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0061162079510703364,
+      "in_fault_alarm_rate": 0.055970149253731345
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.05970149253731343
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03731343283582089
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.009174311926605505,
+      "in_fault_alarm_rate": 0.06343283582089553
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    }
+  },
+  {
+    "trial": "tl_fault_s4/goal_012/t1_20260728_213807",
+    "campaign": "tl_fault_s4",
+    "kind": "tl",
+    "fault_start": 45.78172588348389,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1325,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.007434944237918215
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.013953488372093023,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.020446096654275093
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.00929368029739777
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.013953488372093023,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03345724907063197
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04460966542750929
+    }
+  },
+  {
+    "trial": "tl_fault_s4/goal_026/t1_20260728_214355",
+    "campaign": "tl_fault_s4",
+    "kind": "tl",
+    "fault_start": 45.709956645965576,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 1535,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.001440922190201729
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.008645533141210375
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.007204610951008645
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    }
+  }
+]

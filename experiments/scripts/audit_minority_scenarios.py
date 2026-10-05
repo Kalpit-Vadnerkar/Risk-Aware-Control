@@ -53,9 +53,9 @@ from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 from conformal_horizon_calibration import _FEATURES, _extract_series  # noqa: E402
 import scenario_zones  # noqa: E402
 
-CONFORMAL_REPORT = os.path.join(REPO_DIR, 'experiments', 'analysis',
+CONFORMAL_REPORT = os.path.join(cfg.ANALYSIS_ROOT,
                                  'conformal_horizon_calibration', 'conformal_report.json')
-DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'minority_scenario_audit')
+DEFAULT_OUTPUT_DIR = os.path.join(cfg.ANALYSIS_ROOT, 'minority_scenario_audit')
 
 # Zone geometry (loading, pooling, radii) now lives in experiments/lib/
 # scenario_zones.py -- shared with st_gat/train.py's --zone-weighted-sampling

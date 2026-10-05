@@ -102,7 +102,7 @@ from conformal_horizon_calibration import (  # noqa: E402
     _trial_ids_for, _FEATURES, _extract_series, conformal_quantile)
 from conformal_mondrian_calibration import assign_groups, MIN_FOLD_GROUP_N  # noqa: E402
 
-DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'layer2_consequence_estimation')
+DEFAULT_OUTPUT_DIR = os.path.join(cfg.ANALYSIS_ROOT, 'layer2_consequence_estimation')
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 GT_TOPIC = '/awsim/ground_truth/localization/kinematic_state'
 EST_TOPIC = '/localization/kinematic_state'

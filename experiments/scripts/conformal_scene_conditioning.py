@@ -59,7 +59,7 @@ from conformal_horizon_calibration import (  # noqa: E402
     conformal_quantile, _trial_ids_for, _FEATURES, _SERIES, _extract_series,
 )
 
-DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'conformal_scene_conditioning')
+DEFAULT_OUTPUT_DIR = os.path.join(cfg.ANALYSIS_ROOT, 'conformal_scene_conditioning')
 _CHECK_SERIES = ['position', 'steering']   # the two most turn-relevant series; keeps runtime bounded
 
 MIN_SEG_M = 0.5

@@ -58,7 +58,7 @@ from st_gat.pipeline import config as cfg  # noqa: E402
 from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 from conformal_mondrian_calibration import assign_groups  # noqa: E402
 
-OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'model_safety_benchmark')
+OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'model_safety_benchmark')   # one shared table across schemas
 R_POS = cfg.POSITION_DISPLACEMENT_RANGE_M
 
 # First-proposal thresholds. Rationale: the median realized nominal clearance

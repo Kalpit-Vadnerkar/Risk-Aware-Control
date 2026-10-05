@@ -345,6 +345,12 @@ STRIDE         = 1
 # checkpoints to coexist without one silently overwriting another's cache.
 HORIZON_TAG = f"h{INPUT_SEQ_LEN}_{OUTPUT_SEQ_LEN}"
 DATA_TAG = {'bbox_v1': HORIZON_TAG, 'ego_v2': f"{HORIZON_TAG}_ego", 'ego_v3': f"{HORIZON_TAG}_ego3"}[GRAPH_FRAME]
+# Analysis artifacts (experiments/scripts/* default output dirs, and the
+# reports those scripts read from each other): the canonical bbox_v1 results
+# stay where they always were; other schemas get their own subtree so an
+# ego-model run never overwrites the canonical, git-tracked results.
+ANALYSIS_ROOT = os.path.join(REPO_ROOT, 'experiments', 'analysis',
+                             *([] if GRAPH_FRAME == 'bbox_v1' else [DATA_TAG]))
 
 # Candidate lanelets are scoped to this radius around each graph rebuild's
 # centre position before applying route-first sorting (added 2026-08-05 —

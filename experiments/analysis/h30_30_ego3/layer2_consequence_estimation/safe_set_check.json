@@ -1,0 +1,12 @@
+{
+  "n_windows": 6915,
+  "v1_margin_realized_violation_rate": 0.48575560375994215,
+  "v2_road_realized_violation_rate": 0.0,
+  "v2_object_realized_violation_rate": 0.0011569052783803326,
+  "v2_realized_infeasible_rate": 0.0,
+  "v2_realized_road_margin_pct_1_5_50": [
+    0.05199998617172241,
+    0.21819037199020386,
+    0.7012422680854797
+  ]
+}

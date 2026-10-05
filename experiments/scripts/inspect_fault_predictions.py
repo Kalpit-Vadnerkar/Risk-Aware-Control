@@ -69,10 +69,10 @@ _EMBEDDING_K = 150   # same k as conformal_embedding_calibration.py / conformal_
 _EMBEDDING_ALPHA = 0.1
 
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
-OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_prediction_inspection')
-VANILLA_REPORT = os.path.join(REPO_DIR, 'experiments', 'analysis',
+OUTPUT_DIR = os.path.join(cfg.ANALYSIS_ROOT, 'fault_prediction_inspection')
+VANILLA_REPORT = os.path.join(cfg.ANALYSIS_ROOT,
                                'conformal_horizon_calibration', 'conformal_report.json')
-MONDRIAN_REPORT = os.path.join(REPO_DIR, 'experiments', 'analysis',
+MONDRIAN_REPORT = os.path.join(cfg.ANALYSIS_ROOT,
                                 'conformal_mondrian_calibration', 'conformal_mondrian_report.json')
 
 IMU_CAMPAIGNS = ['imu_fault_s1', 'imu_fault_s3', 'imu_fault_scale', 'imu_fault_stuck']

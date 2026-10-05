@@ -43,8 +43,8 @@ from conformal_horizon_calibration import (  # noqa: E402
     conformal_quantile, _trial_ids_for, _FEATURES, _SERIES, _extract_series,
 )
 
-DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'conformal_embedding_calibration')
-CANONICAL_WINDOWS = os.path.join(REPO_DIR, 'experiments', 'analysis', 'trust_example_windows.json')
+DEFAULT_OUTPUT_DIR = os.path.join(cfg.ANALYSIS_ROOT, 'conformal_embedding_calibration')
+CANONICAL_WINDOWS = os.path.join(REPO_DIR, 'experiments', 'analysis', 'trust_example_windows.json')   # same CAL windows under every schema
 
 
 def _load_model(model_path):

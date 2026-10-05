@@ -86,7 +86,7 @@ sys.path.insert(0, REPO_DIR)
 from st_gat.pipeline import config as cfg  # noqa: E402
 from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 
-DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'conformal_horizon_calibration')
+DEFAULT_OUTPUT_DIR = os.path.join(cfg.ANALYSIS_ROOT, 'conformal_horizon_calibration')
 
 _FEATURES = {
     'position':                  2,

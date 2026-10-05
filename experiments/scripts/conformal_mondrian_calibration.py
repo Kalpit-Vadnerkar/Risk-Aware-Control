@@ -64,7 +64,7 @@ from conformal_horizon_calibration import (  # noqa: E402
 )
 import scenario_zones  # noqa: E402
 
-DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'conformal_mondrian_calibration')
+DEFAULT_OUTPUT_DIR = os.path.join(cfg.ANALYSIS_ROOT, 'conformal_mondrian_calibration')
 GROUPS = ['turn', 'tl_zones', 'curved_road_zones', 'open_road']
 MIN_FOLD_GROUP_N = 30   # below this, fall back to the pooled/global fold quantile for that (group, fold, step)
 
@@ -195,7 +195,7 @@ def main():
     print(f'\nSaved {out_path}')
 
     # ── Width comparison plot: Mondrian per-group width vs. vanilla global width ──
-    vanilla_report_path = os.path.join(REPO_DIR, 'experiments', 'analysis',
+    vanilla_report_path = os.path.join(cfg.ANALYSIS_ROOT,
                                         'conformal_horizon_calibration', 'conformal_report.json')
     if os.path.exists(vanilla_report_path):
         with open(vanilla_report_path) as f:
