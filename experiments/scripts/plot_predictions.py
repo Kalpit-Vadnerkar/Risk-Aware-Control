@@ -98,7 +98,7 @@ def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, mar
     column of other-feature panels (predicted vs actual over the horizon)."""
     past_t   = TrajectoryDataset._build_feature_tensors(seq['past'])
     future_t = TrajectoryDataset._build_feature_tensors(seq['future'])
-    graph_t  = TrajectoryDataset._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'))
+    graph_t  = TrajectoryDataset._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'), seq.get('route_ahead'))
 
     batch_past  = {k: v.unsqueeze(0).to(device) for k, v in past_t.items()}
     batch_graph = {k: v.unsqueeze(0).to(device) for k, v in graph_t.items()}

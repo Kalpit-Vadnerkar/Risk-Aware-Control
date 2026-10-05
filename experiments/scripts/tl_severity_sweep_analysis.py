@@ -164,7 +164,7 @@ def residuals_for_sequences(model, device, sequences):
         for i, seq in enumerate(sequences):
             past_t  = TrajectoryDataset._build_feature_tensors(seq['past'])
             future_t = TrajectoryDataset._build_feature_tensors(seq['future'])
-            graph_t = TrajectoryDataset._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'))
+            graph_t = TrajectoryDataset._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'), seq.get('route_ahead'))
             past  = {k: torch.as_tensor(v, device=device).unsqueeze(0) for k, v in past_t.items()}
             graph = {k: torch.as_tensor(v, device=device).unsqueeze(0) for k, v in graph_t.items()}
             preds = model(past, graph)

@@ -80,7 +80,7 @@ class _RunDataset(Dataset):
         return (
             TrajectoryDataset._build_feature_tensors(seq['past']),
             TrajectoryDataset._build_feature_tensors(seq['future']),
-            TrajectoryDataset._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref')),
+            TrajectoryDataset._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'), seq.get('route_ahead')),
             seq['graph_bounds'],
         )
 

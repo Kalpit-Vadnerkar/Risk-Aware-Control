@@ -63,8 +63,19 @@ def _load_map_processor():
 
 def extract_route_from_bag(bag_dir: str) -> List[int]:
     """
-    Read the first LaneletRoute message from the bag and return its lanelet IDs.
+    Read the bag's LaneletRoute and return its lanelet IDs.
     Falls back to [] if the topic is absent (graph nodes will have path_node=0).
+
+    WHICH message (fixed 2026-10-05 for the ego schemas): in 38/45 nominal
+    bags and ~half the fault bags the FIRST route message (t~0s) is a stale
+    route left over from the PREVIOUS goal; the real route arrives ~1.2s
+    later, and every later message carries the identical lanelet sequence
+    (goal-arrival re-sends). The first-message rule therefore put the ego
+    200-400m from "its route" for whole trials -- corrupting path_node flags
+    and the TrafficLightExpectationChecker (traffic_light_discrepancy).
+    Ego schemas use the LAST message. bbox_v1 keeps the first-message rule
+    on purpose, frozen so the canonical bbox_v1 model's training data and
+    inference stay consistent with each other.
     """
     from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
     from rclpy.serialization import deserialize_message
@@ -82,12 +93,16 @@ def extract_route_from_bag(bag_dir: str) -> List[int]:
     reader = SequentialReader()
     reader.open(storage_options, converter_options)
 
+    last = []
     while reader.has_next():
         topic, data, _ = reader.read_next()
         if topic == '/planning/mission_planning/route':
             msg = deserialize_message(data, LaneletRoute)
-            return [seg.preferred_primitive.id for seg in msg.segments]
-    return []
+            ids = [seg.preferred_primitive.id for seg in msg.segments]
+            if not cfg.EGO_FRAME:
+                return ids
+            last = ids
+    return last
 
 
 # ── Feature scaling helpers ────────────────────────────────────────────────
@@ -456,12 +471,56 @@ def _with_position(static_feats: dict, frame: dict, ref_x: float, ref_y: float) 
     ego_point = Point(frame['ego']['position']['x'], frame['ego']['position']['y'])
     out = dict(static_feats)
     out['position'] = _scale_position_relative(ego_point, ref_x, ref_y, cfg.POSITION_DISPLACEMENT_RANGE_M)
-    if cfg.GRAPH_FRAME == 'ego_v2':
+    if cfg.EGO_FRAME:
         # Map-frame yaw (rad) of the localized pose -- the model rotates its
         # history/map into the ego frame with the CURRENT frame's yaw (see
         # config.py's GRAPH_FRAME note). Not a model input feature itself.
         out['yaw'] = _yaw(frame['ego']['orientation'])
     return out
+
+
+def _route_polyline(map_data, route: List[int]):
+    """Planned route as one centerline polyline (raw metres) + cumulative
+    arclength, chaining the route's preferred lanelets in segment order.
+    None if there's no route (bag without /planning/mission_planning/route)."""
+    pts = []
+    for lid in route:
+        try:
+            ll = map_data.laneletLayer[lid]
+        except Exception:
+            continue
+        for p in ll.centerline:
+            if not pts or math.hypot(p.x - pts[-1][0], p.y - pts[-1][1]) > 0.1:
+                pts.append((p.x, p.y))
+    if len(pts) < 2:
+        return None
+    xy = np.array(pts)
+    s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(xy, axis=0), axis=1))])
+    return xy, s
+
+
+def _route_ahead(poly, x: float, y: float, s_prev):
+    """Project (x, y) onto the route polyline and sample ROUTE_AHEAD_POINTS
+    points every ROUTE_AHEAD_SPACING_M from that projection onward (clamped
+    at the route's end). After the first window the search is restricted to
+    [s_prev - 20m, s_prev + 80m] so a route passing near itself can't snap
+    to a later (or earlier) pass. Returns ((K, 2) raw metres, s0)."""
+    xy, s = poly
+    a, b = xy[:-1], xy[1:]
+    d = b - a
+    L2 = np.maximum((d ** 2).sum(1), 1e-9)
+    u = np.clip(((x - a[:, 0]) * d[:, 0] + (y - a[:, 1]) * d[:, 1]) / L2, 0.0, 1.0)
+    proj = a + u[:, None] * d
+    dist = np.hypot(proj[:, 0] - x, proj[:, 1] - y)
+    seg_s = s[:-1] + u * np.sqrt(L2)
+    if s_prev is not None:
+        dist = np.where((seg_s >= s_prev - 20.0) & (seg_s <= s_prev + 80.0), dist, np.inf)
+        if not np.isfinite(dist).any():
+            dist = np.hypot(proj[:, 0] - x, proj[:, 1] - y)
+    k = int(np.argmin(dist))
+    s0 = float(seg_s[k])
+    q = np.minimum(s0 + cfg.ROUTE_AHEAD_SPACING_M * np.arange(cfg.ROUTE_AHEAD_POINTS), s[-1])
+    return np.stack([np.interp(q, s, xy[:, 0]), np.interp(q, s, xy[:, 1])], axis=1), s0
 
 
 def _yaw(q: dict) -> float:
@@ -602,6 +661,8 @@ class SequenceBuilder:
 
         sequences   = []
         n_windows   = 0
+        route_poly  = _route_polyline(self.map_data, self.route) if cfg.ROUTE_AHEAD else None
+        route_s     = None
         n_rebuilds  = 0
         n_gap_rejected = 0
 
@@ -641,7 +702,7 @@ class SequenceBuilder:
             # unlike bbox_v1's midpoint of the window's first frame and its
             # last FUTURE frame, which leaked the 3s-ahead endpoint into
             # which part of the map the graph covers.
-            anchor = now_pt if cfg.GRAPH_FRAME == 'ego_v2' else init_pt
+            anchor = now_pt if cfg.EGO_FRAME else init_pt
             rebuild = (
                 G_cached is None
                 or math.sqrt(
@@ -652,7 +713,7 @@ class SequenceBuilder:
 
             if rebuild:
                 import copy
-                if cfg.GRAPH_FRAME == 'ego_v2':
+                if cfg.EGO_FRAME:
                     # Raw metres kept; dataset._build_graph_tensors converts to
                     # the window's own ego frame (position_ref/heading_ref).
                     G_cached = self.graph_builder.build_graph(now_pt)
@@ -685,6 +746,9 @@ class SequenceBuilder:
             current_frame = window[cfg.INPUT_SEQ_LEN - 1]['ego']
             ref_x, ref_y = current_frame['position']['x'], current_frame['position']['y']
 
+            route_pts = None
+            if route_poly is not None:
+                route_pts, route_s = _route_ahead(route_poly, ref_x, ref_y, route_s)
             past_seq   = [_with_position(static_feats[j], frames[j], ref_x, ref_y)
                           for j in range(i, i + cfg.INPUT_SEQ_LEN)]
             future_seq = [_with_position(static_feats[j], frames[j], ref_x, ref_y)
@@ -702,7 +766,8 @@ class SequenceBuilder:
                 # can reconstruct them without separately tracking raw
                 # frame indices: real = ref + scaled * POSITION_DISPLACEMENT_RANGE_M.
                 'position_ref': [ref_x, ref_y],
-                **({'heading_ref': past_seq[-1]['yaw']} if cfg.GRAPH_FRAME == 'ego_v2' else {}),
+                **({'heading_ref': past_seq[-1]['yaw']} if cfg.EGO_FRAME else {}),
+                **({'route_ahead': route_pts} if cfg.ROUTE_AHEAD else {}),
             })
             n_windows += 1
 

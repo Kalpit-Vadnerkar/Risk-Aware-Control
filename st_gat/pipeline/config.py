@@ -141,9 +141,21 @@ MODEL_ROOT   = os.path.join(REPO_ROOT, 'st_gat', 'models')
 # Selected by environment variable so the canonical bbox_v1 stack keeps
 # working unchanged while ego_v2 is trained/benchmarked; ego_v2 data,
 # checkpoints and models live under '<HORIZON_TAG>_ego' paths.
+# 'ego_v3' (2026-10-05) = ego_v2 + an explicit route-ahead input: the next
+#   ROUTE_AHEAD_POINTS points (every ROUTE_AHEAD_SPACING_M) along the planned
+#   route's centerline from the ego's projection onto it, in the ego frame.
+#   ego_v2's benchmark showed the remaining failure is at branch points --
+#   the model knows where the road is but not which branch the route takes
+#   (route flag reliance ~0: one path_node bit per node, pooled over ~1000
+#   nodes). Separate schema/paths (<HORIZON_TAG>_ego3) so the ego_v2 model
+#   and data stay loadable as their own ablation row.
 GRAPH_FRAME = os.environ.get('STGAT_GRAPH_FRAME', 'bbox_v1')
-assert GRAPH_FRAME in ('bbox_v1', 'ego_v2'), GRAPH_FRAME
-GRAPH_NODE_SCALE_M = 50.0   # ego_v2: node offsets in metres / this
+assert GRAPH_FRAME in ('bbox_v1', 'ego_v2', 'ego_v3'), GRAPH_FRAME
+EGO_FRAME = GRAPH_FRAME in ('ego_v2', 'ego_v3')
+ROUTE_AHEAD = GRAPH_FRAME == 'ego_v3'
+GRAPH_NODE_SCALE_M = 50.0   # ego frames: node / route offsets in metres / this
+ROUTE_AHEAD_POINTS = 20
+ROUTE_AHEAD_SPACING_M = 3.0
 
 # EXTRACTED_DIR/SEQUENCES_DIR/TRAIN_DIR/CAL_DIR/CHECKPOINT_DIR/model_path are
 # defined further down, after HORIZON_TAG (needs INPUT_SEQ_LEN/OUTPUT_SEQ_LEN,
@@ -301,7 +313,7 @@ OBJECT_FEATURE_DIM = 2 + 1 + OBJECT_CLASS_GROUPS   # rel_x, rel_y, speed, class 
 # coarsen node spacing or shrink the radius below what the horizon formula
 # calls for.
 
-NODE_FEATURES          = 4 if GRAPH_FRAME == 'bbox_v1' else 6   # x, y, traffic_light_node, path_node[, dir_x, dir_y]
+NODE_FEATURES          = 6 if EGO_FRAME else 4   # x, y, traffic_light_node, path_node[, dir_x, dir_y]
 MAX_GRAPH_NODES        = 1024
 MIN_DIST_BETWEEN_NODES = 5       # metres, lanelet centerline node spacing
 
@@ -332,7 +344,7 @@ STRIDE         = 1
 # INPUT_SEQ_LEN/OUTPUT_SEQ_LEN combinations' extracted sequences and
 # checkpoints to coexist without one silently overwriting another's cache.
 HORIZON_TAG = f"h{INPUT_SEQ_LEN}_{OUTPUT_SEQ_LEN}"
-DATA_TAG = HORIZON_TAG if GRAPH_FRAME == 'bbox_v1' else f"{HORIZON_TAG}_ego"
+DATA_TAG = {'bbox_v1': HORIZON_TAG, 'ego_v2': f"{HORIZON_TAG}_ego", 'ego_v3': f"{HORIZON_TAG}_ego3"}[GRAPH_FRAME]
 
 # Candidate lanelets are scoped to this radius around each graph rebuild's
 # centre position before applying route-first sorting (added 2026-08-05 —
@@ -433,6 +445,10 @@ def compute_schema_hash() -> str:
     if GRAPH_FRAME != 'bbox_v1':   # only added off-default, so existing bbox_v1 caches keep their hash
         payload['GRAPH_FRAME'] = GRAPH_FRAME
         payload['GRAPH_NODE_SCALE_M'] = GRAPH_NODE_SCALE_M
+        payload['ROUTE_SOURCE'] = 'last_route_msg'   # 2026-10-05 stale-first-route fix, see extract_route_from_bag
+    if ROUTE_AHEAD:
+        payload['ROUTE_AHEAD_POINTS'] = ROUTE_AHEAD_POINTS
+        payload['ROUTE_AHEAD_SPACING_M'] = ROUTE_AHEAD_SPACING_M
     s = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(s.encode()).hexdigest()[:16]
 
@@ -553,6 +569,7 @@ MODEL_CONFIG = {
     'train_data_folder': TRAIN_DIR,
     'cal_data_folder':   CAL_DIR,
     'model_path':        os.path.join(MODEL_ROOT, DATA_TAG, 'st_gat_rise.pth'),
-    'ego_frame':         GRAPH_FRAME == 'ego_v2',
+    'ego_frame':         EGO_FRAME,
+    'route_ahead_points': ROUTE_AHEAD_POINTS if ROUTE_AHEAD else 0,
     'device':            torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
 }

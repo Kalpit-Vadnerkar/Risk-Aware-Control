@@ -94,6 +94,12 @@ class TrajectoryDataset(Dataset):
             with open(fpath, 'rb') as f:
                 self.sequences.extend(pickle.load(f))
         print(f"[dataset] Loaded {len(self.sequences)} sequences from {len(pkl_files)} files")
+        # Warm the per-graph array cache once, in the parent process, so
+        # DataLoader workers inherit it (fork) instead of each rebuilding it.
+        # ~30 consecutive windows share one graph object (sequence_builder's
+        # rebuild cache), so this is ~1/30th of the per-sample work.
+        for g in {id(s['graph']): s['graph'] for s in self.sequences}.values():
+            _graph_arrays(g)
 
     def __len__(self) -> int:
         return len(self.sequences)
@@ -102,7 +108,8 @@ class TrajectoryDataset(Dataset):
         seq = self.sequences[idx]
         past_t   = self._build_feature_tensors(seq['past'])
         future_t = self._build_feature_tensors(seq['future'])
-        graph_t  = self._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'))
+        graph_t  = self._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'),
+                                            seq.get('route_ahead'))
         return past_t, future_t, graph_t, seq['graph_bounds']
 
     # ── Internal helpers ───────────────────────────────────────────────────
@@ -147,44 +154,84 @@ class TrajectoryDataset(Dataset):
         return {k: torch.tensor(np.asarray(v), dtype=torch.float32) for k, v in buf.items()}
 
     @staticmethod
-    def _build_graph_tensors(G, ref=None, yaw=None) -> dict:
+    def _build_graph_tensors(G, ref=None, yaw=None, route_ahead=None) -> dict:
         """Convert a networkx.Graph → node_features, adjacency matrix, and
         node_mask tensors. node_mask added 2026-08-05: graphs are now
         radius-scoped (config.py's GRAPH_RADIUS_M) rather than always padded
         to exactly _MAX_GRAPH_NODES real nodes, so GraphEncoder needs to know
         which rows are real vs. zero-padding — see model.py's GraphEncoder
-        for the attention-pooling mask this feeds."""
-        node_features = torch.zeros((_MAX_GRAPH_NODES, _NODE_FEATURES), dtype=torch.float32)
-        node_mask     = torch.zeros((_MAX_GRAPH_NODES,), dtype=torch.float32)
-        ego = _cfg.GRAPH_FRAME == 'ego_v2'
-        if ego:
+        for the attention-pooling mask this feeds.
+
+        Vectorized 2026-10-05 (was a per-node Python loop + a fresh
+        nx.to_numpy_array per sample, ~9ms/sample -- the training-time
+        bottleneck): per-graph arrays come from _graph_arrays()'s cache, and
+        the adjacency is uint8 (0/1; the model casts on device) -- a float32
+        1024x1024 matrix was 4MB per sample to collate and copy."""
+        a = _graph_arrays(G)
+        n = a['n']
+        node_features = np.zeros((_MAX_GRAPH_NODES, _NODE_FEATURES), dtype=np.float32)
+        if _cfg.EGO_FRAME:
             # ego_v2 (config.py's GRAPH_FRAME note): raw-metre nodes -> this
             # window's ego frame (x forward, y left), fixed metric scale.
             if ref is None or yaw is None:
                 raise ValueError("ego_v2 graphs need position_ref and heading_ref "
                                  "(_build_graph_tensors(seq['graph'], seq['position_ref'], seq['heading_ref']))")
             c, s_ = np.cos(-yaw), np.sin(-yaw)
-            sc = _cfg.GRAPH_NODE_SCALE_M
-        for node_id, data in G.nodes(data=True):
-            if node_id < _MAX_GRAPH_NODES:
-                if ego:
-                    dx, dy = float(data['x']) - ref[0], float(data['y']) - ref[1]
-                    ux, uy = float(data.get('dir_x', 0.0)), float(data.get('dir_y', 0.0))
-                    feats = [(c * dx - s_ * dy) / sc, (s_ * dx + c * dy) / sc,
-                             float(data.get('traffic_light_detection_node', 0)),
-                             float(data.get('path_node', 0)),
-                             c * ux - s_ * uy, s_ * ux + c * uy]
-                else:
-                    feats = [float(data['x']), float(data['y']),
-                             float(data.get('traffic_light_detection_node', 0)),
-                             float(data.get('path_node', 0))]
-                node_features[node_id] = torch.tensor(feats, dtype=torch.float32)
-                node_mask[node_id] = 1.0
+            d = a['xy'] - np.asarray(ref, dtype=np.float64)[None, :]
+            u = a['dir']
+            node_features[:n, 0] = (c * d[:, 0] - s_ * d[:, 1]) / _cfg.GRAPH_NODE_SCALE_M
+            node_features[:n, 1] = (s_ * d[:, 0] + c * d[:, 1]) / _cfg.GRAPH_NODE_SCALE_M
+            node_features[:n, 2] = a['tl']
+            node_features[:n, 3] = a['path']
+            node_features[:n, 4] = c * u[:, 0] - s_ * u[:, 1]
+            node_features[:n, 5] = s_ * u[:, 0] + c * u[:, 1]
+        else:
+            node_features[:n, 0:2] = a['xy']
+            node_features[:n, 2] = a['tl']
+            node_features[:n, 3] = a['path']
+        node_mask = np.zeros((_MAX_GRAPH_NODES,), dtype=np.float32)
+        node_mask[:n] = 1.0
+        adj = np.zeros((_MAX_GRAPH_NODES, _MAX_GRAPH_NODES), dtype=np.uint8)
+        adj[a['rows'], a['cols']] = 1
+        out = {'node_features': torch.from_numpy(node_features),
+               'adj_matrix': torch.from_numpy(adj),
+               'node_mask': torch.from_numpy(node_mask)}
+        if _cfg.ROUTE_AHEAD:
+            # ego_v3: route-ahead polyline in the same ego frame/scale as the
+            # nodes; route_valid=0 (and zeros) when the bag had no route.
+            ra = np.zeros((_cfg.ROUTE_AHEAD_POINTS, 2), dtype=np.float32)
+            if route_ahead is not None:
+                d = np.asarray(route_ahead, dtype=np.float64) - np.asarray(ref, dtype=np.float64)[None, :]
+                ra[:, 0] = (c * d[:, 0] - s_ * d[:, 1]) / _cfg.GRAPH_NODE_SCALE_M
+                ra[:, 1] = (s_ * d[:, 0] + c * d[:, 1]) / _cfg.GRAPH_NODE_SCALE_M
+            out['route_ahead'] = torch.from_numpy(ra)
+            out['route_valid'] = torch.tensor([float(route_ahead is not None)])
+        return out
 
-        raw_adj = nx.to_numpy_array(G)
-        n = min(raw_adj.shape[0], _MAX_GRAPH_NODES)
-        adj = torch.zeros((_MAX_GRAPH_NODES, _MAX_GRAPH_NODES), dtype=torch.float32)
-        adj[:n, :n] = torch.tensor(raw_adj[:n, :n], dtype=torch.float32)
-        adj_t = adj
 
-        return {'node_features': node_features, 'adj_matrix': adj_t, 'node_mask': node_mask}
+def _graph_arrays(G) -> dict:
+    """Per-graph node arrays + edge list, computed once and cached on the
+    graph object (G.graph['_arrays']; graphs are shared by every window in
+    a rebuild period and never otherwise mutated). Only node ids below
+    _MAX_GRAPH_NODES are kept, as before; adjacency entries match
+    nx.to_numpy_array's 0/1 values for this simple, unweighted graph."""
+    cached = G.graph.get('_arrays')
+    if cached is not None:
+        return cached
+    nodes = [(nid, d) for nid, d in G.nodes(data=True) if nid < _MAX_GRAPH_NODES]
+    n = (max(nid for nid, _ in nodes) + 1) if nodes else 0
+    xy = np.zeros((n, 2)); dr = np.zeros((n, 2)); tl = np.zeros(n); path = np.zeros(n)
+    for nid, d in nodes:
+        xy[nid] = (float(d['x']), float(d['y']))
+        dr[nid] = (float(d.get('dir_x', 0.0)), float(d.get('dir_y', 0.0)))
+        tl[nid] = float(d.get('traffic_light_detection_node', 0))
+        path[nid] = float(d.get('path_node', 0))
+    rows, cols = [], []
+    for a_, b_ in G.edges():
+        if a_ < _MAX_GRAPH_NODES and b_ < _MAX_GRAPH_NODES:
+            rows += [a_, b_]
+            cols += [b_, a_]
+    out = {'n': n, 'xy': xy, 'dir': dr, 'tl': tl, 'path': path,
+           'rows': np.asarray(rows, dtype=np.int64), 'cols': np.asarray(cols, dtype=np.int64)}
+    G.graph['_arrays'] = out
+    return out

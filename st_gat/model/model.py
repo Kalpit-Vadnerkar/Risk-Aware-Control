@@ -117,7 +117,7 @@ class _GCNLayer(nn.Module):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, h: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        # h: (N, in_dim)   adj: (N, N)
+        # h: (..., N, in_dim)   adj: (..., N, N) -- batched or single graph
         return self.norm(adj @ h @ self.weight)
 
 
@@ -162,24 +162,23 @@ class GraphEncoder(nn.Module):
                        any caller that hasn't been updated to pass one).
         returns:       (B, d_g)
         """
-        B = node_features.size(0)
-        ctx_list = []
-        for i in range(B):
-            h = F.gelu(self.gc1(node_features[i], adj[i]))
-            h = self.dropout(h)
-            h = F.gelu(self.gc2(h, adj[i]))
-            h = self.dropout(h)                              # (N, d_g)
-            scores  = self.attn_score(h).squeeze(-1)          # (N,)
-            if mask is not None:
-                scores = scores.masked_fill(mask[i] < 0.5, float('-inf'))
-            weights = F.softmax(scores, dim=0)                # (N,)
-            # All-masked graphs (shouldn't happen -- every real graph has at
-            # least the lanelet the ego is on -- but guard the same way
-            # ObjectSetEncoder does for all-padding timesteps) give softmax
-            # over all -inf -> NaN; zero those out rather than propagating NaN.
-            weights = torch.nan_to_num(weights, nan=0.0)
-            ctx_list.append((h * weights.unsqueeze(-1)).sum(dim=0))  # weighted sum, (d_g,)
-        return torch.stack(ctx_list)          # (B, d_g)
+        # Batched over B (2026-10-05; was a Python loop of per-graph
+        # matmuls -- identical math, same parameters, so existing
+        # checkpoints load unchanged).
+        adj = adj.to(node_features.dtype)   # dataset ships uint8 0/1
+        h = F.gelu(self.gc1(node_features, adj))
+        h = self.dropout(h)
+        h = F.gelu(self.gc2(h, adj))
+        h = self.dropout(h)                                   # (B, N, d_g)
+        scores = self.attn_score(h).squeeze(-1)               # (B, N)
+        if mask is not None:
+            scores = scores.masked_fill(mask < 0.5, float('-inf'))
+        weights = F.softmax(scores, dim=1)
+        # All-masked graphs (shouldn't happen -- every real graph has at
+        # least the lanelet the ego is on) give softmax over all -inf -> NaN;
+        # zero those out rather than propagating NaN.
+        weights = torch.nan_to_num(weights, nan=0.0)
+        return (h * weights.unsqueeze(-1)).sum(dim=1)         # (B, d_g)
 
 
 # ── Object set encoder ──────────────────────────────────────────────────────
@@ -370,6 +369,11 @@ class STGAT(nn.Module):
         # position forecast is rotated back to map axes in forward(), so
         # position_mean means exactly what it always has downstream.
         self.ego_frame = bool(config.get('ego_frame', False))
+        # ego_v3 (2026-10-05): explicit route-ahead polyline -- see config.py.
+        n_route = int(config.get('route_ahead_points', 0))
+        self.route_encoder = nn.Sequential(
+            nn.Linear(2 * n_route + 1, d_m), nn.GELU(), nn.Linear(d_m, d_m), nn.LayerNorm(d_m),
+        ) if n_route > 0 else None
 
         # ── Object set branch ────────────────────────────────────────────────
         self.object_encoder = ObjectSetEncoder(
@@ -521,6 +525,9 @@ class STGAT(nn.Module):
         graph_ctx  = self.graph_encoder(node_features, adj_matrix, node_mask)  # (B, d_g)
         graph_ctx  = self.graph_proj(graph_ctx)                      # (B, d_m)
         seq = seq + graph_ctx.unsqueeze(1)                           # broadcast over T
+        if self.route_encoder is not None:
+            route_in = torch.cat([graph['route_ahead'].flatten(1), graph['route_valid']], dim=-1)
+            seq = seq + self.route_encoder(route_in).unsqueeze(1)
 
         # ── 5. Self-attention over the 30-step window ────────────────────────
         seq = self.attn_block(seq)         # (B, T, d_m)
