@@ -1,0 +1,12 @@
+{
+  "k_draws": 20,
+  "window_stride": 200,
+  "step_stride": 5,
+  "horizon_s": 3.0,
+  "threshold_m": 1.0,
+  "n_windows_analyzed": 59,
+  "mean_p_violation": 0.8398305084745763,
+  "max_p_violation": 1.0,
+  "frac_above_0.1": 1.0,
+  "frac_above_0.5": 0.8813559322033898
+}

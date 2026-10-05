@@ -1,0 +1,229 @@
+[
+  {
+    "trial": "imu_fault_s1/goal_007/t1_20260728_204000",
+    "campaign": "imu_fault_s1",
+    "kind": "imu",
+    "fault_start": 54.30493974685669,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 807,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    }
+  },
+  {
+    "trial": "imu_fault_s3/goal_007/t1_20260728_195042",
+    "campaign": "imu_fault_s3",
+    "kind": "imu",
+    "fault_start": 49.81488347053528,
+    "gt_departure": 88.51965546607971,
+    "est_ever_departs": false,
+    "n_windows": 922,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.14,
+      "first_alarm": 87.71549439430237,
+      "lead_time_s": 0.8041610717773438
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.09333333333333334,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.16666666666666666,
+      "first_alarm": 87.90335869789124,
+      "lead_time_s": 0.6162967681884766
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.06,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04666666666666667,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.15333333333333332,
+      "first_alarm": 88.51463532447815,
+      "lead_time_s": 0.0050201416015625
+    }
+  },
+  {
+    "trial": "imu_fault_scale/goal_007/t1_20260728_200905",
+    "campaign": "imu_fault_scale",
+    "kind": "imu",
+    "fault_start": 44.990468978881836,
+    "gt_departure": 54.48347568511963,
+    "est_ever_departs": false,
+    "n_windows": 780,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.12962962962962962,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.1111111111111111,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.18518518518518517,
+      "first_alarm": 53.89679503440857,
+      "lead_time_s": 0.5866806507110596
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.12962962962962962,
+      "first_alarm": null,
+      "lead_time_s": null
+    }
+  },
+  {
+    "trial": "imu_fault_stuck/goal_007/t1_20260728_202434",
+    "campaign": "imu_fault_stuck",
+    "kind": "imu",
+    "fault_start": 52.602635622024536,
+    "gt_departure": 59.998071908950806,
+    "est_ever_departs": false,
+    "n_windows": 772,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.06909090909090909,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.3,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.88,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.005454545454545455,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "first_alarm": null,
+      "lead_time_s": null
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.9490909090909091,
+      "first_alarm": 58.396164417266846,
+      "lead_time_s": 1.60190749168396
+    }
+  },
+  {
+    "trial": "tl_fault_fixed_070/goal_007/t1_20261003_190926",
+    "campaign": "tl_fault_fixed_070",
+    "kind": "tl",
+    "fault_start": 70.38695788383484,
+    "gt_departure": null,
+    "est_ever_departs": false,
+    "n_windows": 882,
+    "pooled_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_static": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.003676470588235294
+    },
+    "pooled_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "mondrian_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "embedding_adaptive": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    },
+    "layer1_only": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
+    }
+  }
+]

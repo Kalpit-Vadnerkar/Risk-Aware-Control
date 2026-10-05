@@ -160,7 +160,8 @@ def process_trial(run_dir, campaign, shared_builder, kind):
     events = load_fault_log(run_dir)
     fault_windows = extract_fault_windows(events, bag_start_abs_sec=t0, bag_duration=bag_duration, kind=kind)
 
-    return {'sequences': sequences, 't_rel': t_rel, 'fault_windows': fault_windows, 'bag_duration': bag_duration}
+    return {'sequences': sequences, 't_rel': t_rel, 'fault_windows': fault_windows, 'bag_duration': bag_duration,
+            't0': t0}   # absolute bag time of t_rel=0, for joining other bag topics (layer2 ground truth)
 
 
 def main():
@@ -239,7 +240,7 @@ def main():
                     for i, seq in enumerate(sequences):
                         past_t  = TrajectoryDataset._build_feature_tensors(seq['past'])
                         future_t = TrajectoryDataset._build_feature_tensors(seq['future'])
-                        graph_t = TrajectoryDataset._build_graph_tensors(seq['graph'])
+                        graph_t = TrajectoryDataset._build_graph_tensors(seq['graph'], seq.get('position_ref'), seq.get('heading_ref'))
                         past  = {k: torch.as_tensor(v, device=device).unsqueeze(0) for k, v in past_t.items()}
                         graph = {k: torch.as_tensor(v, device=device).unsqueeze(0) for k, v in graph_t.items()}
                         preds = model(past, graph)

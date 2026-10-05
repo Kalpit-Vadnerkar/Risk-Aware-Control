@@ -1,0 +1,63 @@
+{
+  "n_windows": 1383,
+  "far_budget": 0.01,
+  "thresholds": {
+    "pooled_static": 0.9759000000000003,
+    "mondrian_static": 0.985,
+    "embedding_static": 0.9518000000000006,
+    "pooled_adaptive": 0.9759000000000003,
+    "mondrian_adaptive": 0.985,
+    "embedding_adaptive": 0.9518000000000006
+  },
+  "layer1_scale_threshold": 2.1023766267569126,
+  "variants": {
+    "pooled_static": {
+      "mean": 0.09030368763557482,
+      "p95": 0.5744999999999925,
+      "p99": 0.9759000000000003,
+      "max": 1.0,
+      "frac_above_0.1": 0.19161243673174258,
+      "mean_frac_trimmed": 0.0
+    },
+    "mondrian_static": {
+      "mean": 0.08785972523499638,
+      "p95": 0.4579999999999973,
+      "p99": 0.985,
+      "max": 1.0,
+      "frac_above_0.1": 0.23210412147505424,
+      "mean_frac_trimmed": 0.0
+    },
+    "embedding_static": {
+      "mean": 0.04200289226319595,
+      "p95": 0.305,
+      "p99": 0.9518000000000006,
+      "max": 1.0,
+      "frac_above_0.1": 0.08532176428054954,
+      "mean_frac_trimmed": 0.0
+    },
+    "pooled_adaptive": {
+      "mean": 0.09416416515114996,
+      "p95": 0.5744999999999925,
+      "p99": 0.9759000000000003,
+      "max": 1.0,
+      "frac_above_0.1": 0.2002892263195951,
+      "mean_frac_trimmed": 7.230657989877085e-06
+    },
+    "mondrian_adaptive": {
+      "mean": 0.09171005061460594,
+      "p95": 0.4894999999999993,
+      "p99": 0.985,
+      "max": 1.0,
+      "frac_above_0.1": 0.23499638467100506,
+      "mean_frac_trimmed": 0.0
+    },
+    "embedding_adaptive": {
+      "mean": 0.04623644251626898,
+      "p95": 0.355,
+      "p99": 0.9518000000000006,
+      "max": 1.0,
+      "frac_above_0.1": 0.09616775126536514,
+      "mean_frac_trimmed": 0.0
+    }
+  }
+}

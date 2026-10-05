@@ -43,3 +43,11 @@ experiments/analysis/fault_prediction_inspection/fault_prediction_summary.json
 *~
 *.swp
 *.swo
+
+# Layer 2 v2 regenerable caches/logs (2026-10-04): calibration-pool inference
+# caches are ~63MB each; per-window per-trial JSON grows with every fault
+# trial. The plots and summary JSONs are what's worth tracking.
+experiments/analysis/layer2_consequence_estimation/**/*.npz
+experiments/analysis/layer2_consequence_estimation/**/*.npy
+experiments/analysis/layer2_consequence_estimation/**/*.log
+experiments/analysis/layer2_consequence_estimation/**/trial_*.json
