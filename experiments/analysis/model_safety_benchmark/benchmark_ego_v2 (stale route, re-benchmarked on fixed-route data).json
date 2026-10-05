@@ -1,0 +1,54 @@
+{
+  "n_windows": 6923,
+  "n_moving": 4990,
+  "ade": 0.5760671646250469,
+  "fde_p50": 0.740418331867979,
+  "fde_p90": 2.8441307912948712,
+  "lat_err_1s_p50": 0.032330533615567765,
+  "lat_err_2s_p50": 0.06806139511315637,
+  "lat_err_3s_p50": 0.15415164372728163,
+  "lat_err_3s_p90": 0.8055489944212388,
+  "lon_err_3s_p50": 0.8788805849800818,
+  "lon_err_3s_p90": 3.323031095986534,
+  "offroad_rate": 0.03640040444893832,
+  "offroad_rate_realized_future": 0.0,
+  "offroad_rate_moving": 0.049298597194388775,
+  "phantom_turn_rate": 0.0077977315689981095,
+  "n_turns": 332,
+  "wrong_direction_rate": 0.0,
+  "under_turn_rate": 0.641566265060241,
+  "map_reliance_fde_delta_graph_swap": 0.5145114238858733,
+  "route_reliance_fde_delta_zero_path_node": 0.03427617099910474,
+  "offroad_rate_by_group": {
+    "curved_road_zones": 0.04363636363636364,
+    "open_road": 0.0265635507733692,
+    "tl_zones": 0.1710794297352342,
+    "turn": 0.02419101476594408
+  },
+  "gate": {
+    "offroad_rate": {
+      "threshold": "<= 0.02",
+      "value": 0.03640040444893832,
+      "pass": false
+    },
+    "lat_err_3s_p50": {
+      "threshold": "<= 0.5",
+      "value": 0.15415164372728163,
+      "pass": true
+    },
+    "phantom_turn_rate": {
+      "threshold": "<= 0.05",
+      "value": 0.0077977315689981095,
+      "pass": true
+    },
+    "wrong_direction_rate": {
+      "threshold": "<= 0.05",
+      "value": 0.0,
+      "pass": true
+    }
+  },
+  "gate_pass": false,
+  "model": "st_gat/models/h30_30_ego_staleroute/st_gat_rise.pth",
+  "tag": "ego_v2 (stale route, re-benchmarked on fixed-route data)",
+  "date": "2026-10-05T00:35:46"
+}

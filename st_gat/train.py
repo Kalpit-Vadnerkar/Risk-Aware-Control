@@ -58,6 +58,7 @@ def build_model_config(args) -> dict:
         'freeze_trunk_phase2': args.freeze_trunk_phase2,
         'resume_warmup_from': args.resume_warmup_from,
         'warmup_only': args.warmup_only,
+        'selection': args.selection,
     })
     return base
 
@@ -103,6 +104,10 @@ def main():
                              'config change (VAR_REG_WEIGHT/DOF_REG_WEIGHT/--no-task-weighting/'
                              '--freeze-trunk-phase2 all only affect Phase 2), saves ~90min/run. Only '
                              'valid if model.py has not changed shape since that checkpoint was saved.')
+    parser.add_argument('--selection', choices=['total', 'normalized'], default='total',
+                        help="checkpoint/early-stopping criterion: 'total' = raw sum of head val losses "
+                             "(legacy; TL/accel heads dominate), 'normalized' = mean of each head's val loss "
+                             "relative to its epoch-1 value (see trainer._run_phase)")
     parser.add_argument('--warmup-only', action='store_true',
                         help='Stop after Phase 1 (mean-only warmup), no Phase 2 at all -- for training '
                              'independent point-predictor-only members to check EPISTEMIC (cross-member '

@@ -198,6 +198,18 @@ class Trainer:
 
         epoch_bar = tqdm(range(1, num_epochs + 1), desc=f'{phase_name} epochs', unit='ep', dynamic_ncols=True)
         epoch_times = []
+        # 'normalized' selection (2026-10-05): the legacy criterion is the raw
+        # sum of every head's val loss, which the traffic-light/acceleration
+        # heads dominate by ~20x over position -- and they start overfitting
+        # within a few epochs, so the selected checkpoint was "whenever the TL
+        # heads peaked" (ego_v3: epoch ~3, before position had learned to use
+        # the route at all). Normalized = mean over heads of val_loss /
+        # that head's epoch-1 val_loss: every head votes by its own relative
+        # improvement.
+        normalized = self.config.get('selection', 'total') == 'normalized'
+        if normalized:
+            print(f"  (normalized over heads: {breakdown_keys})")
+        ref = None
 
         for epoch in epoch_bar:
             t0 = time.time()
@@ -210,6 +222,10 @@ class Trainer:
             self.history[phase_name]['val'].append(val_losses)
 
             v_sel = val_losses.get(selection_key, val_losses.get('total_loss', 0.0))
+            if normalized:
+                if ref is None:
+                    ref = {k: max(val_losses[k], 1e-12) for k in breakdown_keys}
+                v_sel = sum(val_losses[k] / ref[k] for k in breakdown_keys) / len(breakdown_keys)
             self.scheduler.step(v_sel)
             lr = self.optimizer.param_groups[0]['lr']
             improved = '★' if v_sel < best_val else ' '
