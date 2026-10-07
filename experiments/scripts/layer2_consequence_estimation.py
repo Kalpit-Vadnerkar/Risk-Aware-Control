@@ -118,7 +118,15 @@ KINEMATIC_SERIES = ['position', 'velocity_longitudinal', 'velocity_lateral', 'st
 POOLS = ['pooled', 'mondrian', 'embedding']
 COUPLINGS = ['static', 'adaptive', 'pose']
 WHEELBASE_M = 2.79   # awsim_labs_vehicle_description vehicle_info
-VARIANTS = [f'{p}_{c}' for c in COUPLINGS for p in POOLS]
+# 'trust' coupling (2026-10-07, option A): Layer 1's behavioural residuals
+# decide WHEN the pose stops being trustworthy (recent lateral/heading
+# residual beyond its nominal p99, see residual_triangle_check.py); from
+# then on the envelope covers every pose reachable under an unknown heading-
+# rate error bounded by omega_max (rad/s), symmetric (direction is not
+# observable from the estimated trajectory alone), growing with the time
+# tau since distrust began. Embedding pool only; omega_max swept.
+TRUST_OMEGAS = (0.03, 0.08, 0.15)
+VARIANTS = [f'{p}_{c}' for c in COUPLINGS for p in POOLS] + [f'embedding_trust{int(w * 100):03d}' for w in TRUST_OMEGAS]
 A_LONG_MAX = 8.0   # m/s^2, ~0.8g: beyond hard braking on dry asphalt
 A_LAT_MAX = 8.0    # m/s^2, ~friction limit
 FEAS_SEG = 10      # feasibility measured over 1.0s segments: pose is forward-filled onto the 10Hz
@@ -348,6 +356,52 @@ def pose_counterfactuals(base, ref, h_est, pe, sig, rng):
     return ref + shift[:, None, :] + rot, shift, -psi0
 
 
+def trust_counterfactuals(base, ref, h_est, tau, speed, omega_max, rng):
+    """Option A. base (K,T,2) est-frame trajectories. u ~ U[-1,1] per sample:
+    heading error u*omega_max*(tau + t) (rotation about the current pose),
+    plus the lateral offset that error would already have accumulated over
+    tau at the current speed (u*omega_max*speed*tau^2/2). tau = 0 (trusted)
+    returns base unchanged."""
+    K, T = base.shape[:2]
+    if tau <= 0:
+        return base, np.zeros((K, 2)), np.zeros(K)
+    u = rng.uniform(-1.0, 1.0, K)
+    t = (np.arange(1, T + 1) * DT)[None, :]
+    dpsi = u[:, None] * omega_max * (tau + t)
+    n = np.array([-math.sin(h_est), math.cos(h_est)])
+    shift = (u * omega_max * speed * tau ** 2 / 2.0)[:, None] * n[None, :]
+    rel = base - ref
+    c, s_ = np.cos(dpsi), np.sin(dpsi)
+    rot = np.stack([c * rel[..., 0] - s_ * rel[..., 1], s_ * rel[..., 0] + c * rel[..., 1]], -1)
+    return ref + shift[:, None, :] + rot, shift, u * omega_max * tau
+
+
+def distrust_tau(L_recent, H_recent, thr, t, gap):
+    """Time since the current distrust episode began (0 when trusted).
+    Distrust starts when |L_recent| > thr['L'] or |H_recent| > thr['H'] and
+    is STICKY: it only ends after `gap` s with no evidence (hysteresis).
+    Reason (2026-10-07): once the estimate is corrupted but smooth, Layer 1's
+    behavioural residuals go quiet again while the real error keeps growing
+    -- quiet residuals don't certify the pose, and without a redundant
+    source nothing positively restores trust. t: per-window times (s),
+    ordered, same trial; a time jump > gap resets."""
+    D = (np.abs(np.nan_to_num(L_recent)) > thr['L']) | (np.abs(np.nan_to_num(H_recent)) > thr['H'])
+    tau = np.zeros(len(t))
+    start, last_on = None, None
+    for i in range(len(t)):
+        if i and t[i] - t[i - 1] > gap:
+            start, last_on = None, None
+        if D[i]:
+            if start is None or last_on is None or t[i] - last_on > gap:
+                start = t[i]
+            last_on = t[i]
+        if start is not None and last_on is not None and t[i] - last_on <= gap:
+            tau[i] = t[i] - start + DT
+        else:
+            start = None
+    return tau
+
+
 def _move_objects(objs, ref, shift, dpsi0):
     """Apply the mean pose correction to tracked objects (perceived relative
     to the vehicle, then placed with the same wrong pose)."""
@@ -438,6 +492,26 @@ def build_cal_pool(model, device, map_data, args):
     pe = [pose_error(sq) for sq in ds.sequences[::5]]
     pe = np.array([x for x in pe if x is not None])
     pool['pose_sigma'] = pe.std(0) if len(pe) else None
+    # Option A: behavioural distrust signal from Layer 1's own residuals.
+    if cfg.EGO_FRAME:
+        import residual_triangle_check as rtc
+        lat, along, head = rtc.residual_components(ds.sequences, pool['pos_mean'])
+        comp = {'lat': lat, 'along': along, 'head': head}
+        q = {k: np.nanquantile(np.abs(v), 0.9, axis=0) for k, v in comp.items()}
+        q['head'] = np.nan_to_num(q['head'], nan=np.inf)
+        stt = rtc.triangle_stats(comp, q, rtc.prev_ok_from_trial(trial_id))
+        pool['tri_q'] = q
+        pool['trust_thr'] = {'L': float(np.nanquantile(np.abs(stt['L_recent']), 0.99)),
+                             'H': float(np.nanquantile(np.abs(stt['H_recent']), 0.99))}
+        tau = np.zeros(len(trial_id))
+        for tid in np.unique(trial_id):
+            m = np.where(trial_id == tid)[0]
+            tau[m] = distrust_tau(stt['L_recent'][m], stt['H_recent'][m], pool['trust_thr'],
+                                  np.arange(len(m)) * DT, args.trust_reset_s)
+        pool['tau'] = tau
+        print(f"  distrust thresholds (nominal p99): |L_recent| {pool['trust_thr']['L']:.3f} m, "
+              f"|H_recent| {np.degrees(pool['trust_thr']['H']):.2f} deg; nominal windows distrusted "
+              f"{(tau > 0).mean():.3%}")
     if pool['pose_sigma'] is not None:
         print(f"  nominal pose-consistency std: psi_acc {pool['pose_sigma'][0]:.4f} rad, "
               f"lat_off {pool['pose_sigma'][1]:.3f} m, e_rate {pool['pose_sigma'][2]:.4f} rad/s")
@@ -460,7 +534,7 @@ def pool_indices(pool, h, group, exclude_trial, k_neighbors):
 # ── Per-window evaluation ───────────────────────────────────────────────────
 
 def evaluate_window(seq, mu_norm, h, group, scale, pool, map_data, drivable, rng, args,
-                    exclude_trial=None, keep_draws=False):
+                    exclude_trial=None, keep_draws=False, tau=0.0):
     ref = _ref(seq)
     h_past, v0 = _past_heading_and_velocity(seq, map_data)
     objs = window_objects(seq, map_data, cfg.OUTPUT_SEQ_LEN)
@@ -486,19 +560,45 @@ def evaluate_window(seq, mu_norm, h, group, scale, pool, map_data, drivable, rng
             road_v, obj_v, road_min = score(traj, ref, h_past, objs_c, drivable)
             viol = road_v | obj_v
             v = f'{p}_{c}'
-            nf = int(feas.sum())
-            out[v] = {
-                'p': float(viol[feas].mean()) if nf else float('nan'),
-                'p_untrimmed': float(viol.mean()),
-                'p_road': float(road_v[feas].mean()) if nf else float('nan'),
-                'p_obj': float(obj_v[feas].mean()) if nf else float('nan'),
-                'frac_trimmed': 1.0 - nf / args.k_draws,
-            }
+            out[v] = _pv(viol, road_v, obj_v, feas, args)
             if keep_draws:
-                draws[v] = {'traj': traj, 'feas': feas, 'viol': viol}
+                draws[v] = {'traj': traj, 'feas': feas if args.trim else np.ones_like(feas), 'viol': viol}
+    # Option A variants (embedding pool)
+    if 'tri_q' in pool:
+        j = pidx['embedding'][(u * len(pidx['embedding'])).astype(int)]
+        base = ref + (mu_norm[None] + _rot(pool['err_local'][j], h_past)) * R_POS
+        speed = float(np.linalg.norm(v0))
+        for w in TRUST_OMEGAS:
+            v = f'embedding_trust{int(w * 100):03d}'
+            traj, shift, dpsi0 = trust_counterfactuals(base, ref, seq['past'][-1]['yaw'], tau, speed, w,
+                                                       np.random.default_rng(pose_seed + 1))
+            objs_c = _move_objects(objs, ref, shift, dpsi0) if tau > 0 else objs
+            feas = feasible_mask(traj, ref, v0)
+            road_v, obj_v, _ = score(traj, ref, h_past, objs_c, drivable)
+            viol = road_v | obj_v
+            out[v] = _pv(viol, road_v, obj_v, feas, args)
+            if keep_draws:
+                draws[v] = {'traj': traj, 'feas': feas if args.trim else np.ones_like(feas), 'viol': viol}
     if pe is not None:
         out['_pose'] = {'psi_acc': pe[0], 'lat_off': pe[1], 'e_rate': pe[2]}
+    out['_tau'] = float(tau)
     return out, draws, objs
+
+
+def _pv(viol, road_v, obj_v, feas, args):
+    """P(violation) over all counterfactuals (default, 2026-10-07: the
+    physics trim judged feasibility against the MEASURED state, which is
+    exactly what a fault makes untrustworthy; it trimmed nothing nominally
+    and only ever broke the residual-scaling coupling) or over the feasible
+    subset with --trim. Trimmed fraction is always recorded."""
+    nf = int(feas.sum())
+    sel = feas if args.trim else np.ones_like(feas)
+    ns = int(sel.sum())
+    return {'p': float(viol[sel].mean()) if ns else float('nan'),
+            'p_untrimmed': float(viol.mean()),
+            'p_road': float(road_v[sel].mean()) if ns else float('nan'),
+            'p_obj': float(obj_v[sel].mean()) if ns else float('nan'),
+            'frac_trimmed': 1.0 - nf / len(feas)}
 
 
 # ── Mode: check-safe-set ────────────────────────────────────────────────────
@@ -574,7 +674,8 @@ def mode_nominal(pool, map_data, drivable, args):
     for n_done, (r, i) in enumerate(zip(range(len(idx)), idx)):
         out, _, _ = evaluate_window(ds.sequences[i], pool['pos_mean'][i], pool['h'][i], pool['group'][i],
                                     pool['scale'][i], pool, map_data, drivable, rng, args,
-                                    exclude_trial=pool['trial'][i])
+                                    exclude_trial=pool['trial'][i],
+                                    tau=float(pool['tau'][i]) if 'tau' in pool else 0.0)
         for v in VARIANTS:
             if v in out:
                 P[v][r] = out[v]['p']
@@ -665,6 +766,13 @@ def process_fault_trial(run_dir, model, device, pool, map_data, drivable, shared
     j[(j < 0) | (np.abs(t_rel[np.maximum(j, 0)] - (t_rel - args.anomaly_lag_s)) > 0.25)] = -1
     A = _ratio(inf['series'], pool['q'], j)
     scale = np.clip(np.nan_to_num(A / pool['qA'], nan=1.0), 1.0, args.scale_max)
+    tau = np.zeros(len(seqs))
+    if 'tri_q' in pool:
+        import residual_triangle_check as rtc
+        lat, along, head = rtc.residual_components(seqs, inf['pos_mean'])
+        stt = rtc.triangle_stats({'lat': lat, 'along': along, 'head': head}, pool['tri_q'],
+                                 rtc.prev_ok_from_time(t_rel))
+        tau = distrust_tau(stt['L_recent'], stt['H_recent'], pool['trust_thr'], t_rel, args.trust_reset_s)
 
     bag = os.path.join(run_dir, 'rosbag')
     gt = read_bag_xy(bag, GT_TOPIC)
@@ -678,7 +786,7 @@ def process_fault_trial(run_dir, model, device, pool, map_data, drivable, shared
     rows = []
     for i in idx:
         out, _, _ = evaluate_window(seqs[i], inf['pos_mean'][i], inf['h'][i], groups[i], scale[i],
-                                    pool, map_data, drivable, rng, args)
+                                    pool, map_data, drivable, rng, args, tau=float(tau[i]))
         row = {'t': float(t_rel[i]), 'scale': float(scale[i]), 'A': float(A[i]) if not np.isnan(A[i]) else None,
                'group': str(groups[i])}
         miss = {'p': float('nan'), 'p_road': float('nan'), 'p_untrimmed': float('nan'), 'frac_trimmed': float('nan')}
@@ -687,6 +795,7 @@ def process_fault_trial(run_dir, model, device, pool, map_data, drivable, shared
         row.update({f'Puntrim_{v}': out.get(v, miss)['p_untrimmed'] for v in VARIANTS})
         row.update({f'trim_{v}': out.get(v, miss)['frac_trimmed'] for v in VARIANTS})
         row.update(out.get('_pose', {}))
+        row['tau'] = out.get('_tau', 0.0)
         # realized ground truth within H: GT road departure in (t, t+H]
         if gt_rm is not None:
             sel = (gt_t > t_rel[i]) & (gt_t <= t_rel[i] + cfg.OUTPUT_SEQ_LEN * DT)
@@ -696,7 +805,7 @@ def process_fault_trial(run_dir, model, device, pool, map_data, drivable, shared
         rows.append(row)
     return {'run_dir': run_dir, 'campaign': campaign, 'kind': kind, 't_rel': t_rel, 't0': t0,
             'fault_windows': tr['fault_windows'], 'rows': rows, 'gt': gt, 'est': est, 'gt_rm': gt_rm,
-            'seqs': seqs, 'inf': inf, 'groups': groups, 'scale': scale}
+            'seqs': seqs, 'inf': inf, 'groups': groups, 'scale': scale, 'tau': tau}
 
 
 def summarize_trial(tr, thr, scale_thr, args):
@@ -756,18 +865,23 @@ def plot_featured(tr, summ, thr, scale_thr, args):
                              gridspec_kw={'height_ratios': [3, 1.3, 1.3]})
     colors = {'pooled': '#7f7f7f', 'mondrian': '#2ca02c', 'embedding': '#9467bd'}
     ax = axes[0]
-    style = {'static': (':', 1.0), 'adaptive': ('--', 1.0), 'pose': ('-', 1.8)}
-    for v in VARIANTS:
-        p, c = v.split('_')
-        ax.plot(t, [r[f'P_{v}'] for r in rows], color=colors[p], ls=style[c][0], lw=style[c][1], label=v)
+    shown = ['embedding_static', 'embedding_trust003', 'embedding_trust008', 'embedding_trust015', 'embedding_pose']
+    style = {'embedding_static': ('#9467bd', ':', 1.0), 'embedding_trust003': ('#17becf', '-', 1.0),
+             'embedding_trust008': ('#1f77b4', '-', 1.8), 'embedding_trust015': ('#08306b', '-', 1.0),
+             'embedding_pose': ('#e377c2', '--', 1.4)}
+    for v in shown:
+        if f'P_{v}' in rows[0]:
+            c, ls, lw = style[v]
+            ax.plot(t, [r[f'P_{v}'] for r in rows], color=c, ls=ls, lw=lw,
+                    label=v.replace('embedding_', '').replace('trust', 'A trust w=0.').replace('pose', 'B dead-reckoning'))
     ax.plot(t, [float(r.get('gt_viol_H', False)) for r in rows], color='#d62728', lw=0, marker='|', ms=10,
             label='ground truth: real road departure within 3s')
     ax.set_ylabel('P(violation within 3s)')
     ax.set_ylim(-0.03, 1.05)
     ax.legend(fontsize=7, ncol=3, loc='upper left')
-    axes[1].plot(t, [r['scale'] for r in rows], color='#1f77b4', label='Layer 1 residual scale s(t)')
-    axes[1].axhline(scale_thr, color='#1f77b4', ls='--', lw=0.8)
-    axes[1].set_ylabel('Layer 1 anomaly\nscale s(t)')
+    axes[1].plot(t, [r.get('tau', 0.0) for r in rows], color='#1f77b4', label='A: time since Layer 1 distrust began (s)')
+    axes[1].set_ylabel('distrust tau (s)')
+    axes[1].legend(fontsize=7, loc='upper left')
     if rows and 'psi_acc' in rows[0]:
         ax2 = axes[1].twinx()
         ax2.plot(t, [np.degrees(abs(r['psi_acc'])) for r in rows], color='#e377c2', lw=1.2,
@@ -811,15 +925,16 @@ def plot_cascade(tr, summ, pool, map_data, drivable, args):
     seq = tr['seqs'][i]
     rng = np.random.default_rng(args.seed)
     out, draws, objs = evaluate_window(seq, tr['inf']['pos_mean'][i], tr['inf']['h'][i], tr['groups'][i],
-                                       tr['scale'][i], pool, map_data, drivable, rng, args, keep_draws=True)
+                                       tr['scale'][i], pool, map_data, drivable, rng, args, keep_draws=True,
+                                       tau=float(tr['tau'][i]))
     ref = _ref(seq)
     past = _past_xy(seq)
     mu = ref + tr['inf']['pos_mean'][i] * R_POS
-    panels = ['pooled_static', 'mondrian_static', 'embedding_static', 'embedding_adaptive', 'embedding_pose']
+    panels = ['pooled_static', 'embedding_static', 'embedding_trust008', 'embedding_pose']
     pz = out.get('_pose', {})
-    titles = ['raw pooled tube (v1)', '2a: Mondrian pool', '2a: embedding k-NN pool',
-              f'+ residual scaling s={tr["scale"][i]:.2f} (old coupling)',
-              f"+ pose coupling: heading err {np.degrees(pz.get('psi_acc', 0)):+.1f}deg, "
+    titles = ['raw pooled tube (v1)', '2a: embedding k-NN pool',
+              f"A: trust region, distrusted {tr['tau'][i]:.1f}s, |heading rate err| <= 0.08 rad/s",
+              f"B: dead-reckoning pose, heading err {np.degrees(pz.get('psi_acc', 0)):+.1f}deg, "
               f"lat {pz.get('lat_off', 0):+.2f}m"]
     allpts = np.concatenate([draws[v]['traj'][draws[v]['feas']].reshape(-1, 2) for v in panels] + [past, mu])
     lo, hi = np.percentile(allpts, 1, axis=0) - 12, np.percentile(allpts, 99, axis=0) + 12
@@ -849,8 +964,7 @@ def plot_cascade(tr, summ, pool, map_data, drivable, args):
         ax.set_aspect('equal')
         ax.tick_params(labelsize=7)
     axes[0].legend(fontsize=7, loc='lower left')
-    fig.suptitle(f"{summ['trial']} at t={tr['t_rel'][i]:.1f}s  — green: feasible & safe, red: feasible & violating, "
-                 f"grey: trimmed (kinematically infeasible)", fontsize=11)
+    fig.suptitle(f"{summ['trial']} at t={tr['t_rel'][i]:.1f}s  — green: safe, red: violates the safe set", fontsize=11)
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     path = os.path.join(args.output_dir, f"cascade_{summ['trial'].replace('/', '__')}.png")
     fig.savefig(path, dpi=120)
@@ -903,7 +1017,7 @@ def mode_faults(model, device, pool, map_data, drivable, nominal_res, args):
 
 
 def print_fault_table(summaries):
-    cols = ['layer1_only', 'embedding_static', 'embedding_adaptive', 'embedding_pose', 'mondrian_pose', 'pooled_pose']
+    cols = ['layer1_only', 'embedding_static', 'embedding_trust003', 'embedding_trust008', 'embedding_trust015', 'embedding_pose']
     print(f"\n{'=' * 120}\nFAULT TRIALS — alarm at matched nominal FAR; lead time = onset of the alarm episode still "
           f"active at the REAL (ground-truth) road departure\n{'=' * 120}")
     print(f"{'trial':<46}{'GT dep':>8}" + ''.join(f"{c:>16}" for c in cols))
@@ -937,6 +1051,10 @@ def main():
                     help='Layer-1 coupling looks at the prediction made this long ago (its first lag_s are observed now)')
     ap.add_argument('--scale-max', type=float, default=10.0)
     ap.add_argument('--far', type=float, default=0.01, help='nominal window-level false-alarm budget for thresholds')
+    ap.add_argument('--trust-reset-s', type=float, default=5.0,
+                    help='option A: distrust ends only after this long with no Layer-1 evidence (hysteresis)')
+    ap.add_argument('--trim', action='store_true',
+                    help='compute P(violation) over the kinematically feasible subset only (old default)')
     ap.add_argument('--alarm-gap-s', type=float, default=1.0,
                     help='alarm runs separated by <= this merge into one episode (lead-time persistence rule)')
     ap.add_argument('--campaigns', nargs='+', default=None, help='default: every fault campaign on disk')

@@ -125,3 +125,50 @@ analytical-redundancy residual (physics, not the ST-GAT); Layer 2's
 contribution is turning it into consequence via map geometry (imu_fault_s3:
 heading error present from 50s, departure only at 88.5s, where the geometry
 made it count). See fault_scenario_redesign_plan_2026-10-05.md.
+
+## Update 2026-10-07: residual-only expansion (option A) vs dead-reckoning (B)
+
+Kalpit's challenge: the physics trim and a physics-driven coupling sideline
+the ST-GAT; the envelope should expand in position/heading from Layer 1's
+own residuals, using all of them. Tested in two steps.
+
+**Residual-triangle check** (`residual_triangle_check.py`, all ~435
+observed (lag, step) residuals per instant, lateral/along/heading in each
+forecast's own frame): Layer 1's recent residuals turn significant
+2.1-4.1s before the real departures, within ~0.5-1s of the dead-reckoning
+check -- they carry WHEN. They do NOT carry how much / which way:
+heading residual peaks ~+8 deg while the real heading error reaches -60
+deg; lateral 0.2m vs 5m; sign relation flips between trials (corr +0.95 /
+-0.99). The model only sees the estimated trajectory, so the gap between
+estimate and reality is not observable from it (needs a second,
+independent measurement of the same quantity).
+
+**Option A, trust region** (`embedding_trust{003,008,015}`): Layer 1
+evidence starts a sticky distrust episode (ends after 5s quiet --
+residuals go quiet again while the error keeps growing); the envelope then
+covers all poses under a heading-rate error bounded by omega_max,
+symmetric, growing with time since distrust. Physics trim off by default
+from here on (`--trim` restores it).
+Result: **misses all 4 departures at every bound.** Peak P before
+departure 0.37-0.85 vs thresholds 0.80/0.86/0.93 for omega 0.03/0.08/0.15
+-- the threshold rises with the bound as fast as the fault-time P does,
+because sticky distrust also fires on 7.7% of nominal windows: without
+size/direction, expansion inflates P on normal and faulty driving alike,
+and a symmetric fan can't concentrate on the side the car drifts to.
+**B (dead-reckoning pose) still catches all 4** (peak P 1.00 vs 0.86;
+lead 1.8-3.0s); TL trials stay quiet for every variant.
+
+**Conclusion.** Size and direction live in redundancy -- two independent
+measurements of the same quantity -- not in the behavioural residual.
+Recorded redundancy pairs in every bag: estimated vs vehicle-reported yaw
+rate (`velocity_status.heading_rate`), estimated yaw change vs
+speed x tire angle (B), estimated vs wheel speed, LiDAR scan-match vs EKF
+(`ekf_localizer` pose Mahalanobis distance, `ndt_scan_matcher`
+transform_probability), plus Autoware's own `gyro_bias_scale_validator`
+and `pose_instability_detector` (natural baselines). Proposed framing:
+Layer 1 = two families of conformally calibrated nonconformity scores --
+behavioural (ST-GAT residuals: the unknown, WHEN, any fault) and
+cross-source consistency (redundancy: HOW MUCH / WHICH WAY where a second
+source exists); Layer 2 sizes the envelope from the second where it
+exists. Separate open issue: the nominal open-loop tail (P near 1 at tight
+spots on normal driving) sets every threshold.

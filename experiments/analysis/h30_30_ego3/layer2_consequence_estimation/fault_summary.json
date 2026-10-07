@@ -52,6 +52,21 @@
       "in_fault_alarm_rate": 0.03666666666666667,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.15333333333333332,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.31333333333333335,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.3,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.03666666666666667,
@@ -108,6 +123,21 @@
     },
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.00927643784786642,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 2
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.025974025974025976,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 2
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.025974025974025976,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 2
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.025974025974025976,
       "in_fault_alarm_rate": 0.0,
       "pre_fault_episodes": 2
     },
@@ -188,6 +218,27 @@
       "lead_time_s": 1.8170876502990723,
       "episodes_before_departure_not_persisting": 2
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.06666666666666667,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 1
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.22,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 1
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.21333333333333335,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 1
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.23333333333333334,
@@ -248,6 +299,21 @@
       "pre_fault_alarm_rate": 0.025423728813559324,
       "in_fault_alarm_rate": 0.5454545454545454,
       "pre_fault_episodes": 1
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.05367231638418079,
+      "in_fault_alarm_rate": 0.44675324675324674,
+      "pre_fault_episodes": 2
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0423728813559322,
+      "in_fault_alarm_rate": 0.38441558441558443,
+      "pre_fault_episodes": 2
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.03954802259887006,
+      "in_fault_alarm_rate": 0.3220779220779221,
+      "pre_fault_episodes": 2
     },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.00847457627118644,
@@ -326,6 +392,27 @@
       "lead_time_s": 2.8107187747955322,
       "episodes_before_departure_not_persisting": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.0,
@@ -383,6 +470,21 @@
       "pre_fault_episodes": 1
     },
     "embedding_pose": {
+      "pre_fault_alarm_rate": 0.0033444816053511705,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0033444816053511705,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0033444816053511705,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust015": {
       "pre_fault_alarm_rate": 0.0033444816053511705,
       "in_fault_alarm_rate": 0.0,
       "pre_fault_episodes": 1
@@ -445,7 +547,7 @@
     },
     "pooled_pose": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.07454545454545454,
+      "in_fault_alarm_rate": 0.07818181818181819,
       "pre_fault_episodes": 0,
       "lead_time_s": 2.7988438606262207,
       "episodes_before_departure_not_persisting": 0
@@ -459,9 +561,30 @@
     },
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.08,
+      "in_fault_alarm_rate": 0.09090909090909091,
       "pre_fault_episodes": 0,
       "lead_time_s": 3.00823712348938,
+      "episodes_before_departure_not_persisting": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.00909090909090909,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0018181818181818182,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0,
+      "lead_time_s": null,
       "episodes_before_departure_not_persisting": 0
     },
     "layer1_only": {
@@ -503,21 +626,21 @@
     },
     "pooled_adaptive": {
       "pre_fault_alarm_rate": 0.02972972972972973,
-      "in_fault_alarm_rate": 0.7433234421364985,
+      "in_fault_alarm_rate": 0.7181008902077152,
       "pre_fault_episodes": 3,
       "lead_time_s": null,
       "episodes_before_departure_not_persisting": 0
     },
     "mondrian_adaptive": {
       "pre_fault_alarm_rate": 0.024324324324324326,
-      "in_fault_alarm_rate": 0.7388724035608308,
+      "in_fault_alarm_rate": 0.7403560830860534,
       "pre_fault_episodes": 2,
       "lead_time_s": null,
       "episodes_before_departure_not_persisting": 0
     },
     "embedding_adaptive": {
       "pre_fault_alarm_rate": 0.021621621621621623,
-      "in_fault_alarm_rate": 0.7344213649851632,
+      "in_fault_alarm_rate": 0.7477744807121661,
       "pre_fault_episodes": 2,
       "lead_time_s": null,
       "episodes_before_departure_not_persisting": 0
@@ -541,6 +664,27 @@
       "in_fault_alarm_rate": 0.7922848664688428,
       "pre_fault_episodes": 1,
       "lead_time_s": 2.7691118717193604,
+      "episodes_before_departure_not_persisting": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.01891891891891892,
+      "in_fault_alarm_rate": 0.7537091988130564,
+      "pre_fault_episodes": 1,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.01891891891891892,
+      "in_fault_alarm_rate": 0.5370919881305638,
+      "pre_fault_episodes": 1,
+      "lead_time_s": null,
+      "episodes_before_departure_not_persisting": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.01891891891891892,
+      "in_fault_alarm_rate": 0.08605341246290801,
+      "pre_fault_episodes": 1,
+      "lead_time_s": null,
       "episodes_before_departure_not_persisting": 0
     },
     "layer1_only": {
@@ -604,6 +748,21 @@
       "in_fault_alarm_rate": 0.0,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.014705882352941176,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.05514705882352941,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.05514705882352941,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.0,
@@ -661,6 +820,21 @@
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.01845018450184502,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.014760147601476014,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02214022140221402,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.014760147601476014,
       "pre_fault_episodes": 0
     },
     "layer1_only": {
@@ -722,6 +896,21 @@
       "in_fault_alarm_rate": 0.044061302681992334,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.016877637130801686,
+      "in_fault_alarm_rate": 0.0038314176245210726,
+      "pre_fault_episodes": 2
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.004219409282700422,
+      "in_fault_alarm_rate": 0.0019157088122605363,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.004219409282700422,
       "in_fault_alarm_rate": 0.0038314176245210726,
@@ -779,6 +968,21 @@
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.008,
       "in_fault_alarm_rate": 0.041990668740279936,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.096,
+      "in_fault_alarm_rate": 0.02332814930015552,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.08,
+      "in_fault_alarm_rate": 0.03265940902021773,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.072,
+      "in_fault_alarm_rate": 0.03110419906687403,
       "pre_fault_episodes": 1
     },
     "layer1_only": {
@@ -840,6 +1044,21 @@
       "in_fault_alarm_rate": 0.018480492813141684,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.022587268993839837,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01642710472279261,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01026694045174538,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.004761904761904762,
       "in_fault_alarm_rate": 0.01026694045174538,
@@ -899,6 +1118,21 @@
       "in_fault_alarm_rate": 0.01529051987767584,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01834862385321101,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01834862385321101,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01834862385321101,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.0061162079510703364,
@@ -954,6 +1188,21 @@
       "pre_fault_episodes": 0
     },
     "embedding_pose": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.025510204081632654,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04591836734693878,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.03316326530612245,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.025510204081632654,
       "pre_fault_episodes": 0
@@ -1017,6 +1266,21 @@
       "in_fault_alarm_rate": 0.06273062730627306,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.08487084870848709,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.12546125461254612,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.1070110701107011,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.033210332103321034,
@@ -1074,6 +1338,21 @@
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.03614457831325301,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.018072289156626505,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0286144578313253,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02108433734939759,
       "pre_fault_episodes": 0
     },
     "layer1_only": {
@@ -1135,6 +1414,21 @@
       "in_fault_alarm_rate": 0.04220183486238532,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.011428571428571429,
+      "in_fault_alarm_rate": 0.005504587155963303,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.003669724770642202,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.04036697247706422,
@@ -1192,6 +1486,21 @@
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.017278617710583154,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.017278617710583154,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.017278617710583154,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01511879049676026,
       "pre_fault_episodes": 0
     },
     "layer1_only": {
@@ -1253,6 +1562,21 @@
       "in_fault_alarm_rate": 0.013245033112582781,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013245033112582781,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.014900662251655629,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.016556291390728478,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.004966887417218543,
@@ -1310,6 +1634,21 @@
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.06985294117647059,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.08088235294117647,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.06985294117647059,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.051470588235294115,
       "pre_fault_episodes": 0
     },
     "layer1_only": {
@@ -1371,6 +1710,21 @@
       "in_fault_alarm_rate": 0.03333333333333333,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.011111111111111112,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04814814814814815,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.040740740740740744,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.02631578947368421,
       "in_fault_alarm_rate": 0.0,
@@ -1428,6 +1782,21 @@
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.038112522686025406,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02722323049001815,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.029038112522686024,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02722323049001815,
       "pre_fault_episodes": 0
     },
     "layer1_only": {
@@ -1489,6 +1858,21 @@
       "in_fault_alarm_rate": 0.03538461538461538,
       "pre_fault_episodes": 1
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0975609756097561,
+      "in_fault_alarm_rate": 0.023076923076923078,
+      "pre_fault_episodes": 2
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.08943089430894309,
+      "in_fault_alarm_rate": 0.023076923076923078,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.08130081300813008,
+      "in_fault_alarm_rate": 0.013846153846153847,
+      "pre_fault_episodes": 1
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.004615384615384616,
@@ -1548,6 +1932,21 @@
       "in_fault_alarm_rate": 0.016563146997929608,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.016563146997929608,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.022774327122153208,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.018633540372670808,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.012422360248447204,
@@ -1603,6 +2002,21 @@
       "pre_fault_episodes": 0
     },
     "embedding_pose": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013029315960912053,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013029315960912053,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.013029315960912053,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.013029315960912053,
       "pre_fault_episodes": 0
@@ -1666,6 +2080,21 @@
       "in_fault_alarm_rate": 0.007352941176470588,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.022058823529411766,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0196078431372549,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01715686274509804,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.08333333333333333,
@@ -1725,6 +2154,21 @@
       "in_fault_alarm_rate": 0.0425531914893617,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.015267175572519083,
+      "in_fault_alarm_rate": 0.0038684719535783366,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.007633587786259542,
+      "in_fault_alarm_rate": 0.0038684719535783366,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.007633587786259542,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 1
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.02127659574468085,
@@ -1780,6 +2224,21 @@
       "pre_fault_episodes": 0
     },
     "embedding_pose": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.0,
       "pre_fault_episodes": 0
@@ -1843,6 +2302,21 @@
       "in_fault_alarm_rate": 0.022058823529411766,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.07720588235294118,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.07352941176470588,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.007352941176470588,
@@ -1902,6 +2376,21 @@
       "in_fault_alarm_rate": 0.03636363636363636,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.004098360655737705,
+      "in_fault_alarm_rate": 0.01818181818181818,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.015151515151515152,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.021212121212121213,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.06363636363636363,
@@ -1957,6 +2446,21 @@
       "pre_fault_episodes": 0
     },
     "embedding_pose": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.0,
       "pre_fault_episodes": 0
@@ -2020,6 +2524,21 @@
       "in_fault_alarm_rate": 0.07011070110701106,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.04428044280442804,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.09225092250922509,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.08487084870848709,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.02952029520295203,
@@ -2079,6 +2598,21 @@
       "in_fault_alarm_rate": 0.0055248618784530384,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0078125,
+      "in_fault_alarm_rate": 0.009208103130755065,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02578268876611418,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.027624309392265192,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.04788213627992634,
@@ -2134,6 +2668,21 @@
       "pre_fault_episodes": 0
     },
     "embedding_pose": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010680907877169559,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010680907877169559,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.010680907877169559,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.010680907877169559,
       "pre_fault_episodes": 0
@@ -2197,6 +2746,21 @@
       "in_fault_alarm_rate": 0.048507462686567165,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.009174311926605505,
+      "in_fault_alarm_rate": 0.014925373134328358,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0061162079510703364,
+      "in_fault_alarm_rate": 0.05970149253731343,
+      "pre_fault_episodes": 1
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0030581039755351682,
+      "in_fault_alarm_rate": 0.06343283582089553,
+      "pre_fault_episodes": 1
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.0,
@@ -2256,6 +2820,21 @@
       "in_fault_alarm_rate": 0.03345724907063197,
       "pre_fault_episodes": 0
     },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.01858736059479554,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.027881040892193308,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.02973977695167286,
+      "pre_fault_episodes": 0
+    },
     "layer1_only": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.04460966542750929,
@@ -2313,6 +2892,21 @@
     "embedding_pose": {
       "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.005763688760806916,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust003": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.008645533141210375,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust008": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.008645533141210375,
+      "pre_fault_episodes": 0
+    },
+    "embedding_trust015": {
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.008645533141210375,
       "pre_fault_episodes": 0
     },
     "layer1_only": {
