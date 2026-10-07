@@ -37,7 +37,7 @@ from ..pipeline import config as _cfg
 # the two in agreement -- exactly the duplicated-independently-maintained-
 # copy pattern that let the retired st_gat/infer.py drift stale. Caught when
 # raising MAX_GRAPH_NODES for the radius-gated graph redesign (see
-# docs/research_notes/ablation_study_2026.md §7/§10) would otherwise have
+# docs/archive/research_notes/ablation_study_2026.md §7/§10) would otherwise have
 # required remembering to also update this file by hand.)
 _MAX_GRAPH_NODES = _cfg.MAX_GRAPH_NODES
 _NODE_FEATURES   = _cfg.NODE_FEATURES
@@ -117,7 +117,7 @@ class TrajectoryDataset(Dataset):
     # them directly instead of re-implementing its own copy — a duplicated,
     # independently-maintained copy of this logic is exactly what let the
     # retired st_gat/infer.py drift out of sync with cfg.FEATURE_SIZES
-    # (docs/stgat_pipeline_plan.md §1.12 / TODO.md Phase 1.3).
+    # (docs/archive/stgat_pipeline_plan.md §1.12 / TODO.md Phase 1.3).
 
     @staticmethod
     def _build_feature_tensors(steps: list) -> dict:
@@ -150,6 +150,9 @@ class TrajectoryDataset(Dataset):
             buf['objects_mask'].append(step['objects_mask'])
         if steps and 'yaw' in steps[0]:   # ego_v2 schema only -- rotation input, not a model feature
             buf['yaw'] = [[float(step['yaw'])] for step in steps]
+        for key in ('consistency', 'loc_quality'):   # ego_v4 multi-source channels
+            if steps and key in steps[0]:
+                buf[key] = [step[key] for step in steps]
 
         return {k: torch.tensor(np.asarray(v), dtype=torch.float32) for k, v in buf.items()}
 

@@ -40,6 +40,7 @@ from autoware_vehicle_msgs.msg import VelocityReport, SteeringReport
 from autoware_adapi_v1_msgs.msg import MrmState
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from diagnostic_msgs.msg import DiagnosticArray
 
 from . import config as cfg
 
@@ -78,7 +79,33 @@ def _extract_kinematic_state(msg: Odometry) -> dict:
         'position':    {'x': p.x, 'y': p.y, 'z': p.z},
         'orientation': {'x': o.x, 'y': o.y, 'z': o.z, 'w': o.w},
         'yaw':         _quaternion_to_yaw(o.z, o.w),
+        # EKF's own speed / yaw-rate estimate (base_link). Fused from the IMU,
+        # so an IMU fault shows here but NOT in the vehicle's own reports.
+        'twist':       {'speed': float(t.x), 'yaw_rate': float(msg.twist.twist.angular.z)},
     }
+
+
+# Localization health from /diagnostics (ego_v4, cfg.MULTI_SOURCE): optional,
+# forward-filled like the MRM state -- it arrives at ~5 Hz, and a required
+# key would drop frames on the 0.3 s staleness check.
+_DIAG_TOPIC = '/diagnostics'
+_DIAG_FIELDS = {
+    ('localization: ekf_localizer', 'pose_mahalanobis_distance'): 'ekf_mahalanobis',
+    ('ndt_scan_matcher: scan_matching_status', 'transform_probability'): 'ndt_transform_probability',
+}
+
+
+def _update_loc_diag(msg, store: dict) -> None:
+    for st in msg.status:
+        for kv in st.values:
+            name = _DIAG_FIELDS.get((st.name, kv.key))
+            if name is not None:
+                try:
+                    v = float(kv.value)
+                except ValueError:
+                    continue
+                if math.isfinite(v):   # diagnostics report a literal 'nan' at times (e.g. vehicle stopped)
+                    store[name] = v
 
 
 def _extract_pose_covariance(msg: PoseWithCovarianceStamped) -> dict:
@@ -133,7 +160,7 @@ def _extract_traffic_lights(msg: TrafficLightGroupArray,
     Returns only elements with a known color (RED=1, AMBER=2, GREEN=3).
 
     group_id: if given, only elements from that one traffic_light_group_id are
-    returned (see _load_tl_group_zones / docs/stgat_pipeline_plan.md §1.11) —
+    returned (see _load_tl_group_zones / docs/archive/stgat_pipeline_plan.md §1.11) —
     a TL fault only ever mutates the ONE group governing the vehicle's current
     lanelet, and pooling across every currently-tracked group (2-6 at once)
     lets the fault's effect be outvoted by other, unfaulted groups in the same
@@ -153,7 +180,7 @@ def _extract_traffic_lights(msg: TrafficLightGroupArray,
     return lights
 
 
-# ── Traffic-light group scoping (docs/stgat_pipeline_plan.md §1.11) ────────
+# ── Traffic-light group scoping (docs/archive/stgat_pipeline_plan.md §1.11) ────────
 
 _tl_zones_cache: Dict[str, dict] = {}
 
@@ -209,7 +236,7 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
 
     goal_id: if given, traffic-light extraction is scoped to the one
     traffic_light_group_id governing the vehicle's current lanelet (via
-    experiments/configs/tl_zones.json — see docs/stgat_pipeline_plan.md §1.11),
+    experiments/configs/tl_zones.json — see docs/archive/stgat_pipeline_plan.md §1.11),
     instead of pooling every currently-tracked group. Pass the run's goal
     (e.g. 'goal_007') whenever it's known; leave None only when it genuinely
     isn't (falls back to the old pooled behavior).
@@ -258,6 +285,7 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
 
     # MRM state tracked separately — optional, not required for frame emission
     _mrm_active: bool = False
+    _loc_diag: Dict[str, float] = {}
 
     # TL group-scoping (§1.11): last known ego position, used to pick which
     # traffic_light_group_id governs "right now" whenever a TL message arrives.
@@ -270,6 +298,13 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
 
     while reader.has_next():
         topic, data, timestamp_ns = reader.read_next()
+
+        if topic == _DIAG_TOPIC and cfg.MULTI_SOURCE:
+            try:
+                _update_loc_diag(deserialize_message(data, DiagnosticArray), _loc_diag)
+            except Exception:
+                pass
+            continue
 
         if topic == _MRM_TOPIC:
             try:
@@ -340,7 +375,7 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
         frame = {
             # Real wall-clock time (seconds) of this frame's master-clock
             # message, from rosbag2's own recorded timestamp — needed to build
-            # the divergence trace schema's timestamps (docs/theoretical_framework.md
+            # the divergence trace schema's timestamps (docs/archive/theoretical_framework.md
             # §5) and to join fault_log.jsonl's `wall_time` events (NOT
             # `sim_time_sec` — a different, unrelated clock; see
             # compare_fault_vs_nominal.py's extract_fault_windows docstring
@@ -365,6 +400,9 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
             'traffic_lights': list(cache['traffic_lights']),
             'mrm_active':     _mrm_active,
         }
+        frame['ego']['ekf_twist'] = kin['twist']
+        if cfg.MULTI_SOURCE:
+            frame['loc_diag'] = dict(_loc_diag)
         frames.append(frame)
 
     if verbose:

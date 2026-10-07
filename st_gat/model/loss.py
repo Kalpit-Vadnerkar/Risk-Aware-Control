@@ -15,7 +15,7 @@ Changes from the T-ITS reference:
     closest_object_velocity) collapsed every tracked object to a "nearest
     object" heuristic; replaced by objects_set/objects_mask, an input-only
     per-object representation with no output head (see model.py's
-    ObjectSetEncoder and docs/theoretical_framework.md §3.1 on why objects
+    ObjectSetEncoder and docs/archive/theoretical_framework.md §3.1 on why objects
     don't get a negative-evidence residual the way traffic lights do).
   - beta-NLL added 2026-08-02 (Seitzer, Tavakoli, Antic & Martius, "On the
     Pitfalls of Heteroscedastic Uncertainty Estimation with Probabilistic
@@ -57,7 +57,7 @@ Changes from the T-ITS reference:
     parameter) carries over using the predicted scale as the difficulty
     proxy, same as before.
   - Two-phase training + learned task weighting (2026-08-07, see
-    docs/research_notes/calibration_training_literature_2026-08-07.md):
+    docs/archive/research_notes/calibration_training_literature_2026-08-07.md):
     the first Student-t retrain gave a MIXED result (better for
     position/steering, worse for acceleration/both TL heads, horizon
     widening still broken for 5/6 heads) — traced to two literature-
@@ -121,7 +121,7 @@ Changes from the T-ITS reference:
          — Wong-Toi et al.'s own finding is that this regularization
          strength is THE key hyperparameter for this failure mode, not
          something safe to guess once and move on from (see
-         docs/research_notes/calibration_training_literature_2026-08-07.md
+         docs/archive/research_notes/calibration_training_literature_2026-08-07.md
          for the sweep this triggered).
 """
 
@@ -161,7 +161,7 @@ VAR_REG_WEIGHT = 0.1
 # Deliberately NOT applied to traffic_light_color/traffic_light_confidence
 # (see DOF_REG_KEYS) -- those two sat pinned AT DOF_FLOOR from the first
 # finetune epoch onward rather than collapsing OVER epochs, consistent with
-# docs/research_notes/calibration_training_literature_2026-08-07.md §1's
+# docs/archive/research_notes/calibration_training_literature_2026-08-07.md §1's
 # finding that they're near-categorical (traffic_light_color is ~4 discrete
 # values, 80% of residuals in one histogram bin) -- a continuous Student-t
 # correctly wants maximal tail weight to approximate that point-mass-plus-
@@ -201,7 +201,7 @@ DEFAULT_WEIGHTS = {
     'steering':               0.5,
     'acceleration':           0.5,
     # Redesigned 2026-08-05 (see config.py's FEATURE_SIZES doc /
-    # docs/research_notes/ablation_study_2026.md): replaces the single
+    # docs/archive/research_notes/ablation_study_2026.md): replaces the single
     # collapsed traffic_light_state weight — color and confidence now have
     # independent Gaussian heads/loss terms so a pure confidence-degradation
     # fault (tl_confidence) produces distinguishable gradient signal from a
@@ -307,7 +307,7 @@ class CombinedLoss(nn.Module):
         total = torch.tensor(0.0, device=next(iter(pred.values())).device)
 
         for key in ('position', 'velocity', 'steering', 'acceleration',
-                    'traffic_light_color', 'traffic_light_confidence'):
+                    'traffic_light_color', 'traffic_light_confidence', 'consistency'):
             mean_k = f'{key}_mean'
             if mean_k not in pred:
                 continue

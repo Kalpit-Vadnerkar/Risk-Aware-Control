@@ -38,7 +38,7 @@ FEATURE VECTOR (per timestep, 10 Hz)
 
   Traffic-light features (redesigned 2026-08-05 — the old traffic_light_detected/
   traffic_light_state pair mangled the TL fault signature two separate ways,
-  see docs/research_notes/ablation_study_2026.md for the audit this fixes):
+  see docs/archive/research_notes/ablation_study_2026.md for the audit this fixes):
     traffic_light_color (1): the most-restrictive reported element's color,
       normalized [0=none reported, 0.33=green, 0.67=amber, 1.0=red].
     traffic_light_confidence (1): that SAME element's confidence, as its own
@@ -73,7 +73,7 @@ FEATURE VECTOR (per timestep, 10 Hz)
   objects, each OBJECT_FEATURE_DIM-dim (relative position, speed, a 4-way
   classification group), padded/masked. Input-only — no output head, since
   objects don't have a hard map-grounded prior the way traffic lights do
-  (docs/theoretical_framework.md §3.1).
+  (docs/archive/theoretical_framework.md §3.1).
 
   Total flat dims: 12 (was 14 before object_distance/closest_object_velocity
   were removed 2026-08-02) + the object-set tensor. This, and the position-
@@ -149,18 +149,27 @@ MODEL_ROOT   = os.path.join(REPO_ROOT, 'st_gat', 'models')
 #   (route flag reliance ~0: one path_node bit per node, pooled over ~1000
 #   nodes). Separate schema/paths (<HORIZON_TAG>_ego3) so the ego_v2 model
 #   and data stay loadable as their own ablation row.
+# 'ego_v4' (2026-10-07) = ego_v3 + multi-source ego state: redundant
+#   measurements of the same physical quantities go in as inputs AND as
+#   prediction targets ('consistency': EKF yaw rate - vehicle-reported yaw
+#   rate [rad/s], EKF speed - wheel speed [m/s]), plus localization health
+#   ('loc_quality': EKF gate Mahalanobis distance, LiDAR-to-map match
+#   probability). Behavioural residuals say WHEN the state stops being
+#   trustworthy; only a disagreement between two independent sources can say
+#   HOW MUCH and WHICH WAY (docs/architecture.md).
 GRAPH_FRAME = os.environ.get('STGAT_GRAPH_FRAME', 'bbox_v1')
-assert GRAPH_FRAME in ('bbox_v1', 'ego_v2', 'ego_v3'), GRAPH_FRAME
-EGO_FRAME = GRAPH_FRAME in ('ego_v2', 'ego_v3')
-ROUTE_AHEAD = GRAPH_FRAME == 'ego_v3'
+assert GRAPH_FRAME in ('bbox_v1', 'ego_v2', 'ego_v3', 'ego_v4'), GRAPH_FRAME
+EGO_FRAME = GRAPH_FRAME in ('ego_v2', 'ego_v3', 'ego_v4')
+ROUTE_AHEAD = GRAPH_FRAME in ('ego_v3', 'ego_v4')
+MULTI_SOURCE = GRAPH_FRAME == 'ego_v4'
 GRAPH_NODE_SCALE_M = 50.0   # ego frames: node / route offsets in metres / this
 ROUTE_AHEAD_POINTS = 20
 ROUTE_AHEAD_SPACING_M = 3.0
 
 # EXTRACTED_DIR/SEQUENCES_DIR/TRAIN_DIR/CAL_DIR/CHECKPOINT_DIR/model_path are
 # defined further down, after HORIZON_TAG (needs INPUT_SEQ_LEN/OUTPUT_SEQ_LEN,
-# in "Sequence parameters" below) — see docs/theoretical_framework.md §4 /
-# docs/stgat_pipeline_plan.md: a horizon sweep needs each horizon's extracted
+# in "Sequence parameters" below) — see docs/archive/theoretical_framework.md §4 /
+# docs/archive/stgat_pipeline_plan.md: a horizon sweep needs each horizon's extracted
 # data and checkpoint to live side by side, not silently overwrite each other.
 
 # ── Data split ─────────────────────────────────────────────────────────────
@@ -214,7 +223,7 @@ TOPICS = {
     # real signal in passthrough/nominal, but the ONLY place a TL fault is
     # visible). Reading the unmodified topic would make every camera/TL fault
     # invisible to this feature regardless of severity — see
-    # docs/research_notes/periodic_fault_strategy.md and README.md item 8.
+    # docs/archive/research_notes/periodic_fault_strategy.md and README.md item 8.
     'traffic_lights':    '/perception/traffic_light_recognition/traffic_signals_faulted',
 }
 
@@ -225,7 +234,7 @@ MASTER_CLOCK_TOPIC = 'objects'
 MAX_STALENESS_SEC = 0.30
 
 # ── Traffic-light group scoping (fixes the entity-collapse bug — see
-#    docs/stgat_pipeline_plan.md §1.11) ─────────────────────────────────────
+#    docs/archive/stgat_pipeline_plan.md §1.11) ─────────────────────────────────────
 # Same file and radius fault_injector.py/compare_fault_vs_nominal.py already
 # use to pick the ONE traffic_light_group_id governing the vehicle's current
 # lanelet, so a TL fault's effect isn't outvoted by other, unfaulted groups
@@ -268,13 +277,13 @@ UNCERTAINTY_CAP    = 0.5     # cap before scaling (m²)
 # Replaces the old object_distance/closest_object_velocity scalars, which
 # collapsed every tracked object to a single "nearest object" heuristic
 # BEFORE the model ever saw the data — exactly the entity-collapse pattern
-# docs/stgat_pipeline_plan.md's Stage 0 warns against (already found and
+# docs/archive/stgat_pipeline_plan.md's Stage 0 warns against (already found and
 # fixed once for traffic lights, §1.11). Each tracked object is now its own
 # feature vector; a permutation-invariant set encoder in model.py (not this
 # preprocessing step) learns what to attend to across them. Input-only —
 # no output head/residual on this representation (objects don't have a
 # hard map-grounded prior the way traffic lights do — see
-# docs/theoretical_framework.md §3.1 — so there's no negative-evidence
+# docs/archive/theoretical_framework.md §3.1 — so there's no negative-evidence
 # argument for scoring a prediction against it, only for conditioning on it).
 MAX_TRACKED_OBJECTS = 8      # K: objects beyond this (by distance) are dropped, not collapsed
 OBJECT_REL_POS_RANGE  = (-50.0, 50.0)   # m, object position relative to ego (dx, dy)
@@ -300,7 +309,7 @@ OBJECT_FEATURE_DIM = 2 + 1 + OBJECT_CLASS_GROUPS   # rel_x, rel_y, speed, class 
 # ── Graph parameters ───────────────────────────────────────────────────────
 # (150-node cap and 5m spacing were inherited from the T-ITS paper's original
 # resource-constrained setup — audited 2026-08-05, see
-# docs/research_notes/ablation_study_2026.md §7. MAX_GRAPH_NODES=150 was kept
+# docs/archive/research_notes/ablation_study_2026.md §7. MAX_GRAPH_NODES=150 was kept
 # as a "safety cap" when the radius gate (GRAPH_RADIUS_M below) was first
 # added, on the assumption it would rarely bind — checked directly and that
 # assumption was wrong: at the 150m radius, uncapped candidate node counts
@@ -339,12 +348,13 @@ INPUT_SEQ_LEN  = 30    # 3 seconds of history at 10 Hz
 OUTPUT_SEQ_LEN = 30    # 3 seconds of prediction
 STRIDE         = 1
 
-# Horizon-tagged paths (added 2026-08-01 — docs/theoretical_framework.md §4):
+# Horizon-tagged paths (added 2026-08-01 — docs/archive/theoretical_framework.md §4):
 # the eventual lead-time-vs-horizon sweep (TODO.md P1.3) needs multiple
 # INPUT_SEQ_LEN/OUTPUT_SEQ_LEN combinations' extracted sequences and
 # checkpoints to coexist without one silently overwriting another's cache.
 HORIZON_TAG = f"h{INPUT_SEQ_LEN}_{OUTPUT_SEQ_LEN}"
-DATA_TAG = {'bbox_v1': HORIZON_TAG, 'ego_v2': f"{HORIZON_TAG}_ego", 'ego_v3': f"{HORIZON_TAG}_ego3"}[GRAPH_FRAME]
+DATA_TAG = {'bbox_v1': HORIZON_TAG, 'ego_v2': f"{HORIZON_TAG}_ego", 'ego_v3': f"{HORIZON_TAG}_ego3",
+            'ego_v4': f"{HORIZON_TAG}_ego4"}[GRAPH_FRAME]
 # Analysis artifacts (experiments/scripts/* default output dirs, and the
 # reports those scripts read from each other): the canonical bbox_v1 results
 # stay where they always were; other schemas get their own subtree so an
@@ -354,7 +364,7 @@ ANALYSIS_ROOT = os.path.join(REPO_ROOT, 'experiments', 'analysis',
 
 # Candidate lanelets are scoped to this radius around each graph rebuild's
 # centre position before applying route-first sorting (added 2026-08-05 —
-# see docs/research_notes/ablation_study_2026.md). Without a radius cap, an
+# see docs/archive/research_notes/ablation_study_2026.md). Without a radius cap, an
 # on-route lanelet arbitrarily far away (measured up to 656m in one real
 # trial) always wins the sort over any off-route lanelet no matter how
 # close, so the whole node budget could go to one long, mostly-irrelevant
@@ -409,9 +419,12 @@ FEATURE_SIZES = {
     'has_adjacent_lane':        1,   # lanelet2 routing graph: adjacent lane exists
     'uncertainty':              2,   # EKF x_var, y_var
 }
+if MULTI_SOURCE:
+    FEATURE_SIZES['consistency'] = 2   # EKF - vehicle yaw rate (rad/s), EKF - wheel speed (m/s); also predicted
+    FEATURE_SIZES['loc_quality'] = 2   # log1p(EKF gate Mahalanobis), LiDAR-map transform probability / 10
 
 # ── Schema versioning (added 2026-08-07 — see the ST-GAT pipeline audit in
-# docs/research_notes/) ─────────────────────────────────────────────────────
+# docs/archive/research_notes/) ─────────────────────────────────────────────────────
 # The extracted-sequence cache (EXTRACTED_DIR/SEQUENCES_DIR) previously had
 # NO enforced invalidation: run_pipeline.py's cache-skip check
 # (`if os.path.exists(out_pkl): skip`) and TrajectoryDataset's loader would
@@ -518,7 +531,7 @@ def check_schema_manifest(cache_dir: str, write_if_missing: bool = False) -> Non
 
 
 # Architecture dims (added here 2026-08-07 -- see the ST-GAT pipeline audit
-# in docs/research_notes/): previously every inference/analysis script
+# in docs/archive/research_notes/): previously every inference/analysis script
 # (residuals.py, check_calibration.py, plot_calibration_diagrams.py,
 # plot_predictions.py, calibrate_tl_discrepancy.py, train.py) re-typed an
 # identical literal dict for these five values instead of importing them

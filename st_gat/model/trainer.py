@@ -25,7 +25,7 @@ adapts to however long training actually runs instead of assuming a duration
 upfront.
 
 Two-phase training added 2026-08-07 (see
-docs/research_notes/calibration_training_literature_2026-08-07.md and
+docs/archive/research_notes/calibration_training_literature_2026-08-07.md and
 loss.py's module docstring point 1): the Gaussian->Student-t retrain gave a
 MIXED calibration result, traced to joint mean+scale+dof optimization from a
 cold start being fragile (Stirn et al., AISTATS 2023) -- fixing the mean
@@ -299,6 +299,8 @@ class Trainer:
             warmup_keys = ['position_raw', 'velocity_raw', 'steering_raw', 'acceleration_raw',
                            'traffic_light_color_raw', 'traffic_light_confidence_raw',
                            'traffic_light_discrepancy_loss']
+            if 'consistency' in self.config.get('feature_sizes', {}):
+                warmup_keys.append('consistency_raw')
             # warmup_only (2026-08-20, per Kalpit): when there's no Phase 2
             # to hand off to, the original "fixed duration, no early
             # stopping" design (see this method's original docstring

@@ -32,7 +32,7 @@ Each processed_timestep (12 flat features + object set):
         'objects_set':              (K, OBJECT_FEATURE_DIM) array, per-object
                                      [rel_x, rel_y, speed, *class_onehot] — NOT
                                      collapsed to a nearest-object scalar (see
-                                     docs/stgat_pipeline_plan.md Stage 0's
+                                     docs/archive/stgat_pipeline_plan.md Stage 0's
                                      entity-collapse warning; model.py's
                                      ObjectSetEncoder does the pooling, not
                                      this preprocessing step).
@@ -186,7 +186,7 @@ def _object_class_onehot(label: int) -> List[float]:
 def _build_object_set(ego_pos_raw: dict, objects_raw: list) -> Tuple['np.ndarray', 'np.ndarray']:
     """
     Per-object feature set for this timestep, NOT collapsed to a
-    nearest-object scalar (see docs/stgat_pipeline_plan.md Stage 0's
+    nearest-object scalar (see docs/archive/stgat_pipeline_plan.md Stage 0's
     entity-collapse warning — the same pattern already found and fixed once
     for traffic lights, §1.11). Padded/masked to cfg.MAX_TRACKED_OBJECTS so
     every timestep has a fixed-shape (K, F) tensor regardless of how many
@@ -241,7 +241,7 @@ def _traffic_light_reading(traffic_lights: list) -> Tuple[float, float]:
     kept self-consistent — both values describe the SAME physical reading,
     not independently maxed across elements (redesigned 2026-08-05,
     replacing the old traffic_light_state's color*confidence collapse — see
-    docs/research_notes/ablation_study_2026.md). Reporting color and
+    docs/archive/research_notes/ablation_study_2026.md). Reporting color and
     confidence as two separate features lets the model distinguish a pure
     confidence-degradation fault (tl_confidence — fault_injector.py) from a
     color-changing one, which the old multiplied scalar could not: halving
@@ -280,7 +280,7 @@ class LaneletAdjacencyChecker:
     audited 2026-08-05: even after fixing the ~60x per-frame call
     redundancy from STRIDE=1 windowing, this linear scan alone was ~24s of a
     106s trial's total extraction time, see
-    docs/research_notes/ablation_study_2026.md).
+    docs/archive/research_notes/ablation_study_2026.md).
 
     Coordinate frame: this map is loaded via MGRSProjector (MapProcessor.py),
     the same bag/MGRS frame ego and object positions from the rosbag are
@@ -415,7 +415,7 @@ def _process_frame_static(
     it can be computed exactly once per unique frame instead of once per
     overlapping window.
 
-    Added 2026-08-05 (see docs/research_notes/ablation_study_2026.md's
+    Added 2026-08-05 (see docs/archive/research_notes/ablation_study_2026.md's
     runtime audit): previously this all lived in one _process_frame() called
     once per (window, frame-in-window) pair — at STRIDE=1 with a
     60-frame window, ~60x redundant per unique frame. That redundancy used
@@ -453,6 +453,24 @@ def _process_frame_static(
         'uncertainty':              _scale_uncertainty(unc['x_var'], unc['y_var']),
         'objects_set':              obj_feats,
         'objects_mask':             obj_mask,
+        **(_multi_source_feats(frame) if cfg.MULTI_SOURCE else {}),
+    }
+
+
+def _multi_source_feats(frame: dict) -> dict:
+    """ego_v4: two independent measurements of the same quantity, and their
+    gap in PHYSICAL units (not rescaled to [0,1] -- the size of the gap is
+    the information). Nominal: both near 0. Under an IMU fault the EKF's
+    estimate (IMU-fused) departs from the vehicle's own reports.
+    loc_quality: 0 until the first diagnostics message arrives."""
+    ego = frame['ego']
+    tw = ego.get('ekf_twist', {'speed': 0.0, 'yaw_rate': 0.0})
+    d = frame.get('loc_diag', {})
+    return {
+        'consistency': [tw['yaw_rate'] - ego['velocity']['yaw_rate'],
+                        tw['speed'] - ego['velocity']['longitudinal']],
+        'loc_quality': [math.log1p(max(d.get('ekf_mahalanobis', 0.0), 0.0)),
+                        d.get('ndt_transform_probability', 0.0) / 10.0],
     }
 
 
@@ -547,7 +565,7 @@ class SequenceBuilder:
         # (added 2026-08-05) — routing_graph only depends on map_data, which
         # never changes across trials, so constructing it twice per trial
         # (each class used to build its own) was pure waste. See
-        # docs/research_notes/ablation_study_2026.md.
+        # docs/archive/research_notes/ablation_study_2026.md.
         routing_graph = None
         try:
             import lanelet2
@@ -651,7 +669,7 @@ class SequenceBuilder:
 
         # Static (window-independent) per-frame features, computed ONCE per
         # unique frame instead of once per overlapping window (added
-        # 2026-08-05 — see docs/research_notes/ablation_study_2026.md's
+        # 2026-08-05 — see docs/archive/research_notes/ablation_study_2026.md's
         # runtime audit: at STRIDE=1 with a 60-frame window, the old
         # per-(window, frame) call pattern recomputed every frame's features
         # ~60x redundantly; profiled at ~31s of a 106s trial before this

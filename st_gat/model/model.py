@@ -21,7 +21,7 @@ Key improvements over the T-ITS paper's GraphAttentionLSTM:
 Total parameters: ~1.2M  (vs ~9M original)
 
 Distribution family and decoder redesigned 2026-08-06 (see
-docs/research_notes/trust_and_signal_behavior_2026-08-06.md for the
+docs/archive/research_notes/trust_and_signal_behavior_2026-08-06.md for the
 findings that drove this, and CLAUDE.md's "Direction reframe" for the
 priority ordering that put this ahead of resuming SPRT/detection work):
 
@@ -128,7 +128,7 @@ class GraphEncoder(nn.Module):
     batch loop.
 
     Was a uniform mean-pool (fixed 2026-08-05 — see
-    docs/research_notes/ablation_study_2026.md §3): even with
+    docs/archive/research_notes/ablation_study_2026.md §3): even with
     GraphBuilder.build_graph()'s route-aware node selection (§2, also fixed
     2026-08-05) putting route nodes in the graph, a uniform mean over ~150
     nodes still gives each node the same 1/N weight regardless of relevance.
@@ -189,7 +189,7 @@ class ObjectSetEncoder(nn.Module):
     (added 2026-08-02, replacing the old object_distance/closest_object_velocity
     scalars). Those scalars collapsed every tracked object to a single
     "nearest object" heuristic BEFORE the model ever saw the data — exactly
-    the entity-collapse pattern docs/stgat_pipeline_plan.md's Stage 0 warns
+    the entity-collapse pattern docs/archive/stgat_pipeline_plan.md's Stage 0 warns
     against (already found and fixed once for traffic lights, §1.11). Here,
     each object keeps its own feature vector; a masked ATTENTION-weighted
     pool over a per-object embedding (DeepSets-style) lets the pooling
@@ -197,7 +197,7 @@ class ObjectSetEncoder(nn.Module):
     slots (fewer than K objects tracked) contribute nothing.
 
     Was a masked mean-pool (fixed 2026-08-05 — see
-    docs/research_notes/ablation_study_2026.md §3, same underlying pattern
+    docs/archive/research_notes/ablation_study_2026.md §3, same underlying pattern
     as GraphEncoder's node-pooling fix): a stationary parked car far from
     the route used to count exactly the same as a pedestrian about to
     cross. A learned per-object attention score (masked to -inf on padding
@@ -206,7 +206,7 @@ class ObjectSetEncoder(nn.Module):
 
     Objects are inherently per-timestep (they move within a window,
     independent of whatever cadence the map-node graph uses — see
-    docs/theoretical_framework.md §4's discussion of graph cadence), so this
+    docs/archive/theoretical_framework.md §4's discussion of graph cadence), so this
     runs once per timestep, not once per window like GraphEncoder.
     """
 
@@ -288,7 +288,7 @@ class STGAT(nn.Module):
             Perception's reported color, most-restrictive element
             (redesigned 2026-08-05, replacing the old collapsed
             traffic_light_state head — see config.py's FEATURE_SIZES doc /
-            docs/research_notes/ablation_study_2026.md). Not a deterministic
+            docs/archive/research_notes/ablation_study_2026.md). Not a deterministic
             sigmoid, so the predicted scale can itself widen under a
             camera/TL fault; the dof term lets this specific head (measured
             excess kurtosis 44-116 under the old Gaussian assumption — by
@@ -313,7 +313,7 @@ class STGAT(nn.Module):
 
     No output head for objects_set/objects_mask (added 2026-08-02) — input-
     only context via ObjectSetEncoder. Objects don't have a hard map-grounded
-    prior the way traffic lights do (docs/theoretical_framework.md §3.1), so
+    prior the way traffic lights do (docs/archive/theoretical_framework.md §3.1), so
     there's no negative-evidence argument for scoring a prediction against
     them, only for conditioning on them. Also no head for object_distance/
     closest_object_velocity — removed 2026-08-02, replaced by the object set.
@@ -330,7 +330,7 @@ class STGAT(nn.Module):
 
         # distribution: 'student_t' (default, unchanged from 2026-08-06) or
         # 'gaussian' (added 2026-08-07 for STGATEnsemble -- see ensemble.py
-        # and docs/research_notes/model_redesign_literature_2026-08-07.md).
+        # and docs/archive/research_notes/model_redesign_literature_2026-08-07.md).
         # Gaussian mode drops the dof parameter entirely (mean+var per head,
         # the pre-2026-08-06 schema) -- deliberate reversion for ensemble
         # members specifically: Lakshminarayanan et al.'s aleatoric/epistemic
@@ -447,6 +447,12 @@ class STGAT(nn.Module):
         _head_keys = ('position', 'velocity', 'steering', 'acceleration',
                       'traffic_light_color', 'traffic_light_confidence',
                       'traffic_light_discrepancy')
+        # ego_v4: consistency head -- predicts the cross-source gaps
+        # (docs/architecture.md, Layer 1); its residual is the calibrated
+        # how-much / which-way evidence.
+        self.has_consistency = 'consistency' in config['feature_sizes']
+        if self.has_consistency:
+            _head_keys = _head_keys + ('consistency',)
         self.horizon_embed = nn.ModuleDict({
             k: nn.Embedding(self.T_out, d_pos) for k in _head_keys
         })
@@ -465,6 +471,8 @@ class STGAT(nn.Module):
         self.head_tl_color       = _StepConditionedHead(d_h, d_pos, _w2(1))
         self.head_tl_confidence  = _StepConditionedHead(d_h, d_pos, _w2(1))
         self.head_tl_discrepancy = _StepConditionedHead(d_h, d_pos, 1)
+        if self.has_consistency:
+            self.head_consistency = _StepConditionedHead(d_h, d_pos, _w2(2))
 
         self._init_weights()
 
@@ -597,6 +605,8 @@ class STGAT(nn.Module):
         out.update(_split(accel,    'acceleration',               1))
         out.update(_split(tl_color, 'traffic_light_color',       1))
         out.update(_split(tl_conf,  'traffic_light_confidence',  1))
+        if self.has_consistency:
+            out.update(_split(self.head_consistency(_h_cond('consistency')), 'consistency', 2))
         out['traffic_light_discrepancy'] = torch.sigmoid(tl_disc)
         # Raw pre-sigmoid logit, also returned (added 2026-08-05) so
         # temperature scaling (Guo et al. 2017 — calibrated_prob =
@@ -612,7 +622,7 @@ class STGAT(nn.Module):
     def freeze_trunk(self, freeze: bool = True):
         """Freeze (or unfreeze) every shared trunk module (_TRUNK_MODULES),
         leaving each head's own MLP + horizon embedding trainable (added
-        2026-08-20 -- see docs/research_notes/, the 2026-08-19/20
+        2026-08-20 -- see docs/archive/research_notes/, the 2026-08-19/20
         checkpoint-selection-divergence investigation).
 
         Motivation: a data check on a completed Phase-2 run found
