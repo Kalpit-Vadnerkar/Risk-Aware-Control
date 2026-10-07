@@ -12,9 +12,8 @@ only the actionable list; completed items move to `findings.md`.
 - [x] Layer 2 machinery: safe sets (road, objects), 2a pools, matched-FAR
       evaluation against AWSIM ground truth; hand-built dead-reckoning
       baseline (4/4 departures).
-- [ ] **ego_v4 multi-source predictor** (in progress 2026-10-07): redundant
-      inputs + consistency heads; extract, train (`--selection normalized`),
-      benchmark against ego_v3.
+- [x] **ego_v4 multi-source predictor**: redundant inputs + consistency head,
+      `--selection kinematic`; first model to pass the benchmark gate.
 - [ ] Layer 1 scores for the consistency heads (conformal, per step) and a
       combined onset statistic over all channels.
 - [ ] Layer 2b: integrate calibrated consistency gaps from onset into the

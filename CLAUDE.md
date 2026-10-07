@@ -67,8 +67,9 @@ Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-0
 - **Behavioral residuals tell when, not how much** — don't size an envelope
   from them alone.
 - **No physics trim** in Layer 2 (`--trim` exists for comparison only).
-- **Train with `--selection normalized`**; the legacy criterion is decided by
-  the traffic-light heads.
+- **Train with `--selection kinematic`** (normalized over position, velocity,
+  steering, acceleration, consistency); any criterion that includes the
+  traffic-light heads lets their early overfitting pick the epoch.
 - **Lead time = onset of the alarm episode still active at the violation**,
   thresholds at a matched nominal false-alarm rate.
 

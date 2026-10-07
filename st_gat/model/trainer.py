@@ -206,9 +206,18 @@ class Trainer:
         # the route at all). Normalized = mean over heads of val_loss /
         # that head's epoch-1 val_loss: every head votes by its own relative
         # improvement.
-        normalized = self.config.get('selection', 'total') == 'normalized'
+        sel_mode = self.config.get('selection', 'total')
+        normalized = sel_mode in ('normalized', 'kinematic')
+        # 'kinematic' (2026-10-07): same normalized mean, but only over the
+        # heads Layer 2 consumes (position, velocity, steering, acceleration,
+        # consistency). The traffic-light heads overfit within a few epochs
+        # and their noise picked ego_v4's epoch while position was still
+        # under-trained (val position 0.0072 at the kept epoch vs 0.0054 ten
+        # epochs later; turns predicted at 38% of their real heading change).
+        # TL heads still train; their val loss is still logged.
+        sel_keys = [k for k in breakdown_keys if not (sel_mode == 'kinematic' and k.startswith('traffic_light'))]
         if normalized:
-            print(f"  (normalized over heads: {breakdown_keys})")
+            print(f"  (normalized over heads: {sel_keys})")
         ref = None
 
         for epoch in epoch_bar:
@@ -224,8 +233,8 @@ class Trainer:
             v_sel = val_losses.get(selection_key, val_losses.get('total_loss', 0.0))
             if normalized:
                 if ref is None:
-                    ref = {k: max(val_losses[k], 1e-12) for k in breakdown_keys}
-                v_sel = sum(val_losses[k] / ref[k] for k in breakdown_keys) / len(breakdown_keys)
+                    ref = {k: max(val_losses[k], 1e-12) for k in sel_keys}
+                v_sel = sum(val_losses[k] / ref[k] for k in sel_keys) / len(sel_keys)
             self.scheduler.step(v_sel)
             lr = self.optimizer.param_groups[0]['lr']
             improved = '★' if v_sel < best_val else ' '

@@ -104,7 +104,7 @@ def main():
                              'config change (VAR_REG_WEIGHT/DOF_REG_WEIGHT/--no-task-weighting/'
                              '--freeze-trunk-phase2 all only affect Phase 2), saves ~90min/run. Only '
                              'valid if model.py has not changed shape since that checkpoint was saved.')
-    parser.add_argument('--selection', choices=['total', 'normalized'], default='total',
+    parser.add_argument('--selection', choices=['total', 'normalized', 'kinematic'], default='total',
                         help="checkpoint/early-stopping criterion: 'total' = raw sum of head val losses "
                              "(legacy; TL/accel heads dominate), 'normalized' = mean of each head's val loss "
                              "relative to its epoch-1 value (see trainer._run_phase)")

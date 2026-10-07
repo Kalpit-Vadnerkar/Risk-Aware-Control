@@ -92,7 +92,7 @@ Scope (signal definition only vs. closed-loop control) is an open decision.
 | Piece | Where |
 |---|---|
 | Extraction, schemas | `st_gat/pipeline/` (`config.py` GRAPH_FRAME, `bag_reader.py`, `sequence_builder.py`) |
-| Model, training | `st_gat/model/`, `python3 -m st_gat.train --warmup-only --zone-weighted-sampling --selection normalized` |
+| Model, training | `st_gat/model/`, `python3 -m st_gat.train --warmup-only --zone-weighted-sampling --selection kinematic` |
 | Model gate / ablation table | `experiments/scripts/model_safety_benchmark.py` |
 | Layer 1 calibration | `conformal_horizon_calibration.py`, `conformal_mondrian_calibration.py`, `conformal_scene_conditioning.py`, `audit_minority_scenarios.py` |
 | Residual triangle | `experiments/scripts/residual_triangle_check.py` |
