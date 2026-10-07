@@ -11,7 +11,7 @@ later.
 **Why this matters now:** the ST-GAT architecture in this repo is a lightly
 modified port of the T-ITS 2025 paper's own model, which was itself built
 without much reference to the broader trajectory-prediction literature (see
-`docs/stgat_pipeline_plan.md`'s catalog of bugs found by actually reading the
+`docs/archive/stgat_pipeline_plan.md`'s catalog of bugs found by actually reading the
 reference repo). Two bugs found and fixed this session — the position feature's
 per-window-relative scale, and variance systematically wider than warranted —
 both turn out to be well-known, named failure modes in the field, each with a
@@ -113,8 +113,8 @@ enough):**
 
 ## 3. Conformal prediction for calibrated fault/anomaly detection — directly relevant to Stage 4 (the actual novel contribution)
 
-This dissertation's calibration stage (`docs/theoretical_framework.md` §8,
-`docs/stgat_pipeline_plan.md` Stage 4, not yet built) is exactly the target of
+This dissertation's calibration stage (`docs/archive/theoretical_framework.md` §8,
+`docs/archive/stgat_pipeline_plan.md` Stage 4, not yet built) is exactly the target of
 active 2024-2025 work combining conformal prediction with trajectory/residual
 monitoring:
 
@@ -132,7 +132,7 @@ monitoring:
   statement ("beyond the Nth percentile of healthy behavior") with a coverage
   guarantee, and can reduce false alarms in fault detection specifically by
   giving a principled threshold instead of a hand-picked one — this is the
-  literature-level version of exactly what `docs/theoretical_framework.md`
+  literature-level version of exactly what `docs/archive/theoretical_framework.md`
   already argues for the calibration piece; worth citing as external
   validation that the approach is active, not idiosyncratic to this project.
 - Also worth a closer read when Stage 4 actually starts: "Multi-Modal
@@ -142,7 +142,7 @@ monitoring:
   the nonconformity score/region rather than using a generic one, relevant
   once this project has to decide what its own nonconformity score looks like
   (CUSUM? raw residual? something distribution-aware given the "embrace
-  distributions" framing in `docs/theoretical_framework.md` §3?).
+  distributions" framing in `docs/archive/theoretical_framework.md` §3?).
 
 ## 4. Graph/attention architecture landscape — context for the object-set encoder and future work
 

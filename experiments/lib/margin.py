@@ -1,6 +1,6 @@
 """
 Layer 2 (consequence estimation) safety-margin primitives — see
-docs/research_notes/open_world_safety_reframe_2026-08-20.md §4 and the
+docs/archive/research_notes/open_world_safety_reframe_2026-08-20.md §4 and the
 approved plan this session for the full design. Two independent margin
 sources, combined via min(): distance to the nearest lane boundary (static
 map geometry) and a worst-case object-clearance bound.

@@ -8,10 +8,10 @@ closest_object_velocity, has_adjacent_lane) and would KeyError on
 STGAT.forward(); it targeted the deprioritized obs_recovery/obs_noescape
 scenario campaigns (not even present under experiments/data/ on this
 machine); and it only logged one CVaR95 number per run instead of a
-per-timestep trace. See docs/stgat_pipeline_plan.md §1.12 / TODO.md Phase 1.3.
+per-timestep trace. See docs/archive/stgat_pipeline_plan.md §1.12 / TODO.md Phase 1.3.
 
 Builds the per-timestep divergence trace schema from
-docs/theoretical_framework.md §5: for every model output feature, predicted
+docs/archive/theoretical_framework.md §5: for every model output feature, predicted
 mean/var (where applicable) + actual + raw residual, kept as SEPARATE columns
 (not pre-combined into one score) so CUSUM/calibration can be recomputed
 offline without re-running the model. Also joins in, per trial:
@@ -122,7 +122,7 @@ def _first_fault_onset_wall_time(events: list):
 def _load_fatal_moment_markers(run_dir: str, frames: list) -> dict:
     """
     Trial-level fatal-moment markers (constant across every row of that
-    trial's trace) — docs/theoretical_framework.md §6.
+    trial's trace) — docs/archive/theoretical_framework.md §6.
 
     permanent_stop_rel_s / likely_static_collision: from metrics.json's
     static_collision heuristic (Arm A) — already trial-relative seconds,
@@ -182,7 +182,7 @@ _GAUSSIAN_FEATURES = {
 # Output features with a deterministic sigmoid head (no predicted variance).
 # object_distance removed 2026-08-02 (collapsed-scalar feature retired,
 # replaced by objects_set/objects_mask — input-only, no output head; see
-# model.py's ObjectSetEncoder and docs/theoretical_framework.md §3.1).
+# model.py's ObjectSetEncoder and docs/archive/theoretical_framework.md §3.1).
 # traffic_light_detected removed 2026-08-05 — retired as an output feature
 # entirely (deterministic geometric fact given position + map, redundant
 # with the graph now that real TL nodes exist there — see model.py's STGAT
@@ -195,7 +195,7 @@ _SIGMOID_FEATURES = (
 def _student_t_residual(key: str, dims: int, preds: dict, future: dict, t: int = 0) -> dict:
     """Predicted mean/scale/dof + actual + raw residual + NLL for one
     Student-t feature at prediction step t, per-dimension (not collapsed —
-    see docs/theoretical_framework.md §5's 'log full traces' mantra).
+    see docs/archive/theoretical_framework.md §5's 'log full traces' mantra).
 
     Redesigned 2026-08-06 (Gaussian -> Student-t, see model.py/loss.py
     docstrings for the calibration findings that drove this): `_pred_var`
@@ -252,7 +252,7 @@ def _student_t_residual(key: str, dims: int, preds: dict, future: dict, t: int =
 
 # ── Sequential-evidence (SPRT) statistics ───────────────────────────────────
 # Replaces CUSUM as the primary detection statistic (2026-08-06, per Kalpit
-# — see docs/research_notes/ablation_study_2026.md for the full discussion).
+# — see docs/archive/research_notes/ablation_study_2026.md for the full discussion).
 # CUSUM's own accumulated value has no probabilistic meaning on its own; it
 # only becomes interpretable after an externally-fit conformal threshold.
 #
@@ -311,7 +311,7 @@ def _gaussian_llr(key: str, dims: int, preds: dict, future: dict,
     standardization is reasonable on its own, but the LLR formula's own
     derivation (H0/H1 both Gaussian) no longer matches the model's actual
     predictive family, and the traced 2026-08-06 finding (p_fault_*
-    saturating under nominal noise, see docs/research_notes/
+    saturating under nominal noise, see docs/archive/research_notes/
     trust_and_signal_behavior_2026-08-06.md) was specifically caused by
     this kind of family mismatch. Deliberately NOT re-derived this session
     -- per Kalpit, SPRT gets revisited only after the calibration fix is
@@ -418,7 +418,7 @@ def _compute_row(preds: dict, future: dict) -> dict:
     )
 
     # Scene-context passthrough (ground truth only — no output head for
-    # these; see docs/stgat_pipeline_plan.md's Stage 0/2 notes on
+    # these; see docs/archive/stgat_pipeline_plan.md's Stage 0/2 notes on
     # conditioning-only input features).
     row['has_adjacent_lane_actual'] = future['has_adjacent_lane'][:, 0, 0]
     # Object count, not a residual (objects_set/objects_mask, added
@@ -440,7 +440,7 @@ def _cusum(series: np.ndarray, delta: float = 0.5) -> np.ndarray:
     A pure function over a full array per call — stateless across trials by
     construction (each call starts from a fresh mu/C_pos/C_neg derived only
     from the array passed in), so the cross-trial-contamination bug class in
-    docs/stgat_pipeline_plan.md §1.3 doesn't apply here.
+    docs/archive/stgat_pipeline_plan.md §1.3 doesn't apply here.
     """
     mu = series.mean()
     C_pos = np.zeros_like(series)
@@ -547,7 +547,7 @@ def run_trace(
     df = pd.DataFrame(all_rows)
     df.index.name = 'window'
 
-    # ── Timestamps: sim time + fault-onset-relative (docs/theoretical_framework.md §5) ──
+    # ── Timestamps: sim time + fault-onset-relative (docs/archive/theoretical_framework.md §5) ──
     t0 = frames[0]['t_sim']
     # Window j's 1-step-ahead prediction target is future step 0, i.e.
     # frames[j*STRIDE + INPUT_SEQ_LEN].
@@ -571,7 +571,7 @@ def run_trace(
     df['cusum_tl_discrepancy']  = _cusum(df['traffic_light_discrepancy_residual'].values)
 
     # ── Sequential-evidence (SPRT) — primary detection statistic (2026-08-06,
-    # per Kalpit — see _sprt()'s docstring / docs/research_notes/
+    # per Kalpit — see _sprt()'s docstring / docs/archive/research_notes/
     # ablation_study_2026.md). Per-feature first (not collapsed), then
     # fault-class combinations built by SUMMING LOG-LIKELIHOOD-RATIOS before
     # accumulating — the mathematically correct way to combine independent

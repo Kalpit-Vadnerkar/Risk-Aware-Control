@@ -48,7 +48,7 @@ Form: `<imu_fault|tl_fault>_<profile>[_<param>]`.
 ## Glossary — existing (legacy) campaign names
 
 Full detail, including zone-gating geometry and expected outcome per row,
-is in `docs/fault_scenario_table.md` — this is just the one-line decoder.
+is in `docs/archive/fault_scenario_table.md` — this is just the one-line decoder.
 
 | Directory name | Real fault | One-line meaning |
 |---|---|---|

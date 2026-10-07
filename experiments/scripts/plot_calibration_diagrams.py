@@ -2,7 +2,7 @@
 """
 Visual calibration diagrams for the trained ST-GAT model — the actual
 deliverable for step 1 of the 2026-08-06 reframe (see
-docs/research_notes/ablation_study_2026.md and the memory this session
+docs/archive/research_notes/ablation_study_2026.md and the memory this session
 was briefed against): grounding the belief-divergence mechanism's own
 credibility, not detection performance. check_calibration.py and
 calibrate_tl_discrepancy.py already compute the right numbers on the

@@ -4,7 +4,7 @@ Stage 4, first pass: conformal calibration wrapping the model's own
 residual/CUSUM traces (st_gat/residuals.py) into (a) a distribution-free
 alarm threshold calibrated on held-out nominal trials, and (b) a lead-time-
 to-fatal-moment measurement for fault trials, checked against that exact
-threshold. This is the new-contribution artifact docs/theoretical_framework.md
+threshold. This is the new-contribution artifact docs/archive/theoretical_framework.md
 calls "calibrated confidence + lead time" — NOT a bigger-z-wins comparison
 like analyze_fault_discriminability.py, which is descriptive background, not
 this.
@@ -103,7 +103,7 @@ DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'conforma
 NOMINAL_DATASET = 'nom_v11'  # the reference distribution — see fault_scenario_table.md
 
 # Which route-derived zone each campaign's fault actually arms against (see
-# docs/fault_scenario_table.md's per-campaign table) — NOT an independent
+# docs/archive/fault_scenario_table.md's per-campaign table) — NOT an independent
 # choice, this mirrors fault_injector.py's own arming logic exactly, so the
 # zone-entry time computed here is the same moment that campaign's real fault
 # would have armed at, for both fault trials AND nominal trials of the same

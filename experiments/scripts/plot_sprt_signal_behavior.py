@@ -3,7 +3,7 @@
 Plots what the SPRT/sequential-evidence signal (p_fault_motion, p_fault_tl,
 p_fault_combined in st_gat/results/h30_30/traces/*.csv) is actually
 measuring, and whether it behaves sensibly -- step 2 of the 2026-08-06
-reframe (see docs/research_notes/ and the memory this session was briefed
+reframe (see docs/archive/research_notes/ and the memory this session was briefed
 against). Deliberately NOT framed as "does it cross a threshold" -- there is
 no threshold anywhere in this script. The question is whether the continuous
 trace is interpretable: does it stay near its floor under real nominal

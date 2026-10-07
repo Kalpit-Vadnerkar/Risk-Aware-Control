@@ -62,7 +62,7 @@
 #   ekf_localizer explicitly estimates and cancels a constant gyro bias
 #   (enable_yaw_bias_estimation: true), so sub-gate constant-bias tiers mostly
 #   just demonstrate Autoware's own mitigation working, not our detector's
-#   reach. See docs/design_decisions.md item 7.
+#   reach. See docs/archive/design_decisions.md item 7.
 #   imu_fault_s1        REINSTATED 2026-07-25 as a control condition, not a
 #                       reversal of the above: constant bias 0.03 rad/s, 20s
 #                       on/30s off (0.6 rad accumulated) — deliberately inside
@@ -370,7 +370,7 @@ case "$CAMPAIGN" in
     #   for the NEXT zone — repeating for every intersection on the route.
     #   tl_fault_start / tl_fault_end timestamps (one pair per cycle) are
     #   written to the per-campaign fault_log.jsonl for CUSUM alignment; see
-    #   docs/research_notes/periodic_fault_strategy.md for the design rationale.
+    #   docs/archive/research_notes/periodic_fault_strategy.md for the design rationale.
     #
     #   S1: mild confidence degradation — may produce little behavioral change
     #       (Autoware still trusts the classification), establishing a baseline
@@ -425,7 +425,7 @@ case "$CAMPAIGN" in
     # every severity level within one trial, so a fixed tier adds nothing
     # THERE). This campaign exists for a DIFFERENT purpose: a clean residual
     # dose-response curve for Layer 1 calibration validation
-    # (docs/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md). The ramp
+    # (docs/archive/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md). The ramp
     # is unsuitable for THAT purpose specifically because it confounds severity
     # with elapsed-time-since-fault-onset, which itself correlates with
     # physical proximity to the actual intersection (early-cycle = still
@@ -464,7 +464,7 @@ case "$CAMPAIGN" in
 
     # ── IMU fault campaigns ────────────────────────────────────────────────────
     # Constant-bias tiers (old imu_fault_s1..s4) REMOVED 2026-07-24. Root cause
-    # traced (docs/design_decisions.md item 7 / TODO.md): autoware_ekf_localizer
+    # traced (docs/archive/design_decisions.md item 7 / TODO.md): autoware_ekf_localizer
     # runs enable_yaw_bias_estimation: true — a constant gyro bias is exactly
     # the error shape that state is designed to learn and subtract via periodic
     # pose/NDT corrections. Below the Mahalanobis twist gate (twist_gate_dist
@@ -483,7 +483,7 @@ case "$CAMPAIGN" in
     # Reinstated 2026-07-25 as a deliberate CONTROL condition, not a
     # reversal of the 2026-07-24 removal above: ramp/scale/stuck all show
     # real, large fault effects (EKF-GT divergence up to 18m on goal_012,
-    # see docs/research_notes/ — but with nothing in this repo's own data
+    # see docs/archive/research_notes/ — but with nothing in this repo's own data
     # demonstrating the OTHER side of the boundary, i.e. that Autoware's
     # yaw_bias estimation actually absorbs a bias below its capacity. S1
     # is the smallest of the old four tiers (0.03 rad/s x 20s = 0.6 rad
@@ -513,7 +513,7 @@ case "$CAMPAIGN" in
     # traced to exactly this). 10s keeps a real recovery gap while fitting
     # under the tightest observed gap; doesn't guarantee every reachable
     # zone fires every trial (routes with even tighter spacing can still
-    # skip one) — see docs/fault_scenario_table.md's note on this.
+    # skip one) — see docs/archive/fault_scenario_table.md's note on this.
     imu_fault_s1)
         echo -e "${BLUE}IMU constant-bias fault (S1, control condition): gyro 0.03 rad/s, 20s on / 10s off${NC}"
         run imu_fault_s1 imu_fault_s1 \
@@ -557,7 +557,7 @@ case "$CAMPAIGN" in
     # absorbed -> cliff -> gate-rejected, with a well-defined "when did this
     # become unsafe" timestamp for lead-time measurement against Autoware's
     # own MRM trigger (Arm B in the two-arm design —
-    # docs/theoretical_framework.md §4).
+    # docs/archive/theoretical_framework.md §4).
     # Default rate/max are a first guess, not validated: reaches 0.4 rad/s
     # (>2.5x old S2's instant-catastrophic 0.15) at ~133s of ramp time if the
     # gate is never crossed first. Runway clearing happens BEFORE the ramp

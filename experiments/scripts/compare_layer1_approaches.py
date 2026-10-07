@@ -3,7 +3,7 @@
 Side-by-side comparison of the two Layer-1 (calibrated confidence)
 approaches tried this project: (1) the paused jointly-trained Student-t/NLL
 heads, (2) the current conformal calibration on a plain point predictor.
-See docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md
+See docs/archive/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md
 for the full history.
 
 Approach 1's checkpoint (st_gat/checkpoints/h30_30/best_model.pth, the

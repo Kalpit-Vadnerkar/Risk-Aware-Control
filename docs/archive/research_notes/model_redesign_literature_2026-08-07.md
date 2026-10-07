@@ -16,7 +16,7 @@ foundational or directly-on-topic, not marginal preprints.
 ## 1. What does the model actually need to do?
 
 Not "quantify uncertainty" in the abstract — specifically, per
-`docs/theoretical_framework.md`/`CLAUDE.md`'s claim: detect when the
+`docs/archive/theoretical_framework.md`/`CLAUDE.md`'s claim: detect when the
 autonomy stack's perceptual belief diverges from a map-grounded
 expectation, and report that divergence with **calibrated confidence**.
 Distilling the concrete requirements:

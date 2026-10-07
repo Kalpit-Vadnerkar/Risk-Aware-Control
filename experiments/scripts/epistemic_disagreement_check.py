@@ -27,7 +27,7 @@ a useful uncertainty signal at all" -- most relevant to whether ensembling
 would help calibration UNDER DISTRIBUTION SHIFT (faults), which conformal
 calibration (validated only under exchangeability, i.e. nominal data) does
 not by itself address. See
-docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md's
+docs/archive/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md's
 closing section.
 
 Method: law-of-total-variance style epistemic variance -- for M members'

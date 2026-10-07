@@ -5,7 +5,7 @@ Neural Networks," ICML 2017 — docs/papers/2017_guo_temperature_scaling_calibra
 for the traffic_light_discrepancy Bernoulli head.
 
 Why this head specifically needs its own calibration step (see
-docs/research_notes/ablation_study_2026.md §4): it's a sigmoid/BCE head, not
+docs/archive/research_notes/ablation_study_2026.md §4): it's a sigmoid/BCE head, not
 a Gaussian mean/variance head — there's no notion of a predicted confidence
 interval the way position/velocity have one. Running its raw residual
 through the same continuous conformal-threshold machinery built for the

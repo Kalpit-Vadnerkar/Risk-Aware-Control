@@ -273,4 +273,4 @@ ros2 topic echo /system/operation_mode/availability
 
 - Autoware MRM Handler: `autoware/src/universe/autoware_universe/system/autoware_mrm_handler/`
 - Diagnostic Graph: `autoware/src/universe/autoware_universe/system/autoware_diagnostic_graph_aggregator/`
-- Metrics Framework: `docs/research_notes/metrics_framework.md`
+- Metrics Framework: `docs/archive/research_notes/metrics_framework.md`

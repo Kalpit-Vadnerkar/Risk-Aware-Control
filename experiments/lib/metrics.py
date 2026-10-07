@@ -306,7 +306,7 @@ def compute_fault_validation(
     if not m.gt_pose_ever_received:
         m.issues.append(
             'ground-truth pose never received by fault_injector.py — the runway gate could '
-            'never clear (see docs/design_decisions.md open GT-subscription bug); rerun with '
+            'never clear (see docs/archive/design_decisions.md open GT-subscription bug); rerun with '
             '--fault-min-runway-m 0 to bypass it while that is unresolved'
         )
 

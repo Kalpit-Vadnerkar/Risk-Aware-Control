@@ -390,7 +390,7 @@ def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
     # MRM trigger markers deliberately NOT plotted (removed 2026-07-28) — live
     # data showed the MRM state machine flaps NORMAL<->MRM_OPERATING dozens of
     # times per trial even under nominal (unfaulted) driving, self-recovering
-    # in ~100ms each time (see docs/research_notes/ for the investigation).
+    # in ~100ms each time (see docs/archive/research_notes/ for the investigation).
     # Plotting every blip implied a significance individual triggers don't
     # have; deciding how to represent REAL sustained MRM engagement (vs. this
     # noise) is deliberately deferred, not solved by omission.

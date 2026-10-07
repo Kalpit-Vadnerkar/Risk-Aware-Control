@@ -7,7 +7,7 @@ Redesigned 2026-08-06 (Gaussian -> Student-t heads, see model.py's
 docstring for the full reasoning): the old version computed z = (actual -
 mean) / std and checked it against N(0,1) -- that assumes the predictive
 family IS Gaussian, which is exactly the assumption the 2026-08-06
-calibration findings (docs/research_notes/trust_and_signal_behavior_2026-08-06.md)
+calibration findings (docs/archive/research_notes/trust_and_signal_behavior_2026-08-06.md)
 showed was false (leptokurtic residuals, Anderson-Darling decisively
 rejects normality). Now that heads predict a per-sample dof as well as
 mean/scale, a plain z-score has no fixed reference distribution to check

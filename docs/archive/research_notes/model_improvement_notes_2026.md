@@ -1,7 +1,7 @@
 # ST-GAT Model — Known Limitations & Candidate Improvements (2026-08-02)
 
 **Status:** the model now meets this project's stated accuracy targets and is
-reasonably calibrated (see `docs/research_notes/trajectory_prediction_literature_2026.md`
+reasonably calibrated (see `docs/archive/research_notes/trajectory_prediction_literature_2026.md`
 for the fixes that got it there). This doc is the punch list of what's still
 imperfect or unexplored, written down so it doesn't have to be rediscovered —
 none of it is currently blocking, all of it is a candidate for later.
@@ -29,7 +29,7 @@ by feature and by horizon.
 **Why this matters for the dissertation specifically:** overconfidence is the
 more dangerous failure mode for a safety-verification monitor (a system that's
 confidently wrong is worse than one that's honestly unsure — this is stated
-explicitly in `docs/theoretical_framework.md` §7). traffic_light_state being
+explicitly in `docs/archive/theoretical_framework.md` §7). traffic_light_state being
 the most overconfident feature is a real thing to watch once Stage 4
 (conformal calibration) is built — conformal prediction's coverage guarantee
 should catch and correct this kind of miscalibration automatically, but it's
@@ -61,7 +61,7 @@ across all 30 input timesteps (`graph_ctx.unsqueeze(1)` in `model.py`). So the
 architecture has real route data available, but its own pooling step blurs
 away exactly the directional signal ("which way does my route go from here")
 that would most help — the same mean-pooling design already flagged as a
-cadence question in `docs/theoretical_framework.md` §4 turns out to also cost
+cadence question in `docs/archive/theoretical_framework.md` §4 turns out to also cost
 route-direction fidelity, not just moment-of-divergence freshness.
 
 **Candidate follow-ups, not done (from cheapest to more involved):**
@@ -88,7 +88,7 @@ a good first thing to try if longer-horizon accuracy needs to improve later.
 Already tracked in `TODO.md` P1.6, repeated here for completeness: the current
 model is a single network, so its predicted variance is aleatoric-only
 (irreducible per-situation noise), not the aleatoric+epistemic decomposition
-`docs/stgat_pipeline_plan.md` §1.9 notes the reference repo got right and this
+`docs/archive/stgat_pipeline_plan.md` §1.9 notes the reference repo got right and this
 project intends to reuse. Matters more for Stage 4 (calibration) than for the
 exploratory fault-reaction study, since epistemic uncertainty is specifically
 about "how much would this prediction change with different training data" —
@@ -120,4 +120,4 @@ counts the same as a pedestrian about to cross). Deliberately kept simple for
 a first pass (see `TODO.md` P1.6) — attention-pooling is the natural next
 step if object context turns out to matter for anything (unlikely to be
 high-priority given objects don't carry a hard map-grounded prior per
-`docs/theoretical_framework.md` §3.1, but noted for completeness).
+`docs/archive/theoretical_framework.md` §3.1, but noted for completeness).

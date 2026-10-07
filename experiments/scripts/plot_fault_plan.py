@@ -24,7 +24,7 @@ fall before this point could never actually arm on a trial's first pass
 through it, which is worth being able to see, not just assume away.
 
 Fault END (de-injection) markers added 2026-07-28, alongside the existing
-start/injection markers — see docs/fault_scenario_table.md's "fault start" /
+start/injection markers — see docs/archive/fault_scenario_table.md's "fault start" /
 "fault end" columns for the underlying design this mirrors:
   - `imu_fault_scale`/`imu_fault_stuck` (zone_kind='turn') end on turn-zone
     EXIT (`fault_injector.py`'s `_wait_for_zone_transit_end`) — a real route
@@ -38,7 +38,7 @@ start/injection markers — see docs/fault_scenario_table.md's "fault start" /
     geometry-only plan plot does not have. Rather than draw a marker at a
     guessed position, these get a text note instead (see CAMPAIGN_FAULT_END).
   - `imu_fault_ramp` has no discrete "end" at all (continuous one-shot ramp,
-    see docs/fault_scenario_table.md's "Not currently in scope") — no end
+    see docs/archive/fault_scenario_table.md's "Not currently in scope") — no end
     marker or note drawn for it.
 
 Background is the planned ROUTE's own lanelet geometry (same source
@@ -122,7 +122,7 @@ CAMPAIGN_ZONE_KIND = {
 }
 
 # campaign name -> ('zone_exit', None) | ('fixed_timer', seconds) | ('continuous', None)
-# Matches docs/fault_scenario_table.md's "Fault end" column exactly — the
+# Matches docs/archive/fault_scenario_table.md's "Fault end" column exactly — the
 # on_seconds/fault-duration values here are collect.sh's actual --imu-params/
 # --tl-params/--fault-duration values, not independently guessed.
 CAMPAIGN_FAULT_END = {
@@ -191,7 +191,7 @@ def plot_goal(map_data, campaign, zone_kind, fault_label, fault_end, goal, goal_
     # point (see compute_turn_zones.py/compute_tl_zones.py): kept in the
     # data, not dropped, but can never actually arm a fault on this route.
     # curved_road_zones is intentionally NOT read here — it's excluded from
-    # gating (see docs/fault_scenario_table.md) and, per 2026-07-27
+    # gating (see docs/archive/fault_scenario_table.md) and, per 2026-07-27
     # feedback, a single point is the wrong representation for it anyway
     # (it's a stretch of route, not a discrete corner) — future work if it
     # ever becomes an active scenario should draw it as a highlighted

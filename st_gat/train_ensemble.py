@@ -10,7 +10,7 @@ DataLoaders are built, so members differ in both weight initialization and
 minibatch/shuffle order -- Lakshminarayanan et al. 2017's own finding was
 that random initialization alone (no bootstrap resampling of the training
 set) is enough for real ensemble diversity, so that's what this does; see
-docs/research_notes/model_redesign_literature_2026-08-07.md.
+docs/archive/research_notes/model_redesign_literature_2026-08-07.md.
 
 This script does NOT run STGATEnsemble itself -- that class (ensemble.py)
 is inference-only, combining already-trained member checkpoints via the

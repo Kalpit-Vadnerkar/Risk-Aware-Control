@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-07-24 — restructured around the belief-divergence /
 calibrated-confidence / lead-time reframe (see `TODO.md` and
-`docs/theoretical_framework.md`). Decisions 1–4 below (all RISE/active-control
+`docs/archive/theoretical_framework.md`). Decisions 1–4 below (all RISE/active-control
 design decisions) are marked **legacy** — not wrong, just no longer decisions
 that bear on the claim under defense. Decision 7 is marked **stale/superseded**
 — it's directly contradicted by work already done in this repo. New decisions
@@ -87,7 +87,7 @@ injection caused those diagnostics to fire, triggering MRM and amputating the
 fault before it could be studied.
 
 **Reframed 2026-07-24:** this configuration is exactly **Arm A** in the two-arm
-fault-injection design (`docs/theoretical_framework.md` §4, `TODO.md`) — the
+fault-injection design (`docs/archive/theoretical_framework.md` §4, `TODO.md`) — the
 "science condition" that lets a fault propagate to its full effect. What the
 original decision record didn't anticipate is **Arm B**: a configuration that
 restores Autoware's full/stock diagnostic gate so its own MRM trigger can serve
@@ -162,7 +162,7 @@ directly address rather than route around, since IMU fault detection quality
 contrast case that makes Experiment A's prediction falsifiable. Scoping IMU out
 would have quietly removed the ability to disprove the mechanism.
 
-**See:** `docs/research_notes/dropout_sweep_analysis_mar2026.md` for the original
+**See:** `docs/archive/research_notes/dropout_sweep_analysis_mar2026.md` for the original
 finding that motivated this now-superseded pivot — kept as historical record.
 
 ---
@@ -252,7 +252,7 @@ the claim.
 be beaten on accuracy — it's reactive and rule-based by design, this framework is
 predictive and epistemic; they're not doing the same job, so a head-to-head
 accuracy comparison would be a category error. See
-`docs/theoretical_framework.md` §4.
+`docs/archive/theoretical_framework.md` §4.
 
 **Open gap:** Arm B's diagnostic-gate configuration doesn't exist yet (Decision
 5, above). This decision documents the *design*, not a completed implementation.

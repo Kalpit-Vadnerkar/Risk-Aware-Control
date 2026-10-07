@@ -3,7 +3,7 @@
 ## Context
 
 The 2026-09-03 advisor reframe (see `CLAUDE.md`'s decision log and
-`docs/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`) split
+`docs/archive/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`) split
 Layer 2 into **2a (a priori)** — shape the calibrated interval using scene
 context before rollout — and **2b (a posteriori)** — geometrically trim the
 rolled-forward tube against real map/object constraints. 2a was already
@@ -21,7 +21,7 @@ It was paused specifically because real fault data didn't exist yet
 ("fault-data work, deferred until Kalpit's back at the lab" — the script's
 own docstring). That's no longer true: IMU faults plus the 2026-10-03/04
 TL severity sweep's 18 fixed-severity trials exist and are validated (see
-`docs/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md`'s updated
+`docs/archive/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md`'s updated
 verification section and `TODO.md` §1, now checked off).
 
 **What this plan is not**: a from-scratch reachable-set/object-prediction

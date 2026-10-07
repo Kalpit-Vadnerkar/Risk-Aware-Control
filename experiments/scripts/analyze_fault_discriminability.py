@@ -12,7 +12,7 @@ Same falsifiable prediction either way: traffic_light_color/confidence/
 discrepancy residuals should be selectively high for TL/camera faults and
 much lower for IMU faults. If they're uniformly dominant across both fault
 classes, that's a clean-signal artifact, not evidence for the map-grounded
-negative-evidence mechanism (see docs/theoretical_framework.md §3).
+negative-evidence mechanism (see docs/archive/theoretical_framework.md §3).
 
 For each fault trial, compares in-fault vs. out-of-fault z-scores against
 THAT SAME GOAL's own pooled nominal baseline — not a cross-goal average.

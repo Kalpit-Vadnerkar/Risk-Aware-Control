@@ -22,7 +22,7 @@ Pipeline, per analysis window (time t, the window's "now"):
      only inflates when Layer 1 has real evidence the ego's motion is off
      nominal. Without this, the bootstrap tube is made purely of NOMINAL
      residuals and cannot widen under a fault at all -- the wiring plan
-     (docs/research_notes/layer2b_wiring_plan_2026-10-04.md) had no channel
+     (docs/archive/research_notes/layer2b_wiring_plan_2026-10-04.md) had no channel
      from Layer 1's anomaly signal into Layer 2.
   4. 2b -- a posteriori trim: drop counterfactuals that are kinematically
      infeasible from the current state (|a_long| or |a_lat| > 8 m/s^2,
@@ -44,7 +44,7 @@ Ground truth: fault trials read AWSIM's own ground-truth pose
 -- NOT Autoware's estimate, which is what the ST-GAT pipeline sees. Under
 IMU faults those diverge by 10-20m and the real vehicle leaves the road
 while the estimate never does (see --mode check-safe-set's companion
-findings in docs/research_notes/layer2b_results_2026-10-04.md).
+findings in docs/archive/research_notes/layer2b_results_2026-10-04.md).
 
 Modes:
   check-safe-set  acceptance test for the safe-set + feasibility

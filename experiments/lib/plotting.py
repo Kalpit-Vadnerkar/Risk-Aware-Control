@@ -11,7 +11,7 @@ another, so there is one place that defines e.g. what color a fault zone or
 a "goal reached" trial gets, not three.
 
 Also home to the NEW primitives the coming model-prediction-distribution
-plots need (docs/theoretical_framework.md §5's divergence trace, TODO.md
+plots need (docs/archive/theoretical_framework.md §5's divergence trace, TODO.md
 Phase 1.5's "predicted mean ± variance vs. observed value" plots) — a shaded
 mean±std band and fault-window shading — so those plots are built on the same
 foundation as the map-based ones instead of starting from scratch.
@@ -250,7 +250,7 @@ def mark_event_time(ax, t, color='black', linestyle=':', linewidth=1.5, zorder=1
 # ── Distribution / divergence-trace panels ──────────────────────────────────
 # New primitives for visualizing what the ST-GAT model predicted vs what
 # actually happened — the next kind of plot this project needs (predicted
-# mean ± variance vs observed value, per docs/theoretical_framework.md §5 /
+# mean ± variance vs observed value, per docs/archive/theoretical_framework.md §5 /
 # TODO.md Phase 1.5), built on the same module as the map-based plots rather
 # than started from scratch.
 

@@ -176,7 +176,7 @@ distinction). "Fault end" is where the two families now diverge:
   a stationary vehicle waiting at a red light *inside* the lead-in/turn zone
   still integrates the full bias continuously; an open-ended on-window could
   accumulate heading error well past the 1.2 rad ceiling these magnitudes
-  were calibrated against (docs/design_decisions.md item 7 — old S2 broke
+  were calibrated against (docs/archive/design_decisions.md item 7 — old S2 broke
   localization within ~1s at 0.15 rad/s over a fixed 30s). This was flagged
   and confirmed with the user (2026-07-28) before implementing the
   scale/stuck change, specifically to keep it scale/stuck-only.

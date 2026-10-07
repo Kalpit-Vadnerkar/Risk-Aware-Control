@@ -15,7 +15,7 @@
 #   ./experiments/scripts/run_calibration_pipeline.sh --model path/to/other/checkpoint.pth
 #
 # Added 2026-08-21 per Kalpit's request to keep the pipeline robust as more
-# data/checkpoints arrive -- see docs/research_notes/
+# data/checkpoints arrive -- see docs/archive/research_notes/
 # nll_calibration_arc_and_conformal_pivot_2026-08-20.md and
 # open_world_safety_reframe_2026-08-20.md for what these results mean.
 

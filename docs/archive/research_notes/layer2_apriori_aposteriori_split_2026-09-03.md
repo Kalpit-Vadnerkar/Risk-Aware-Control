@@ -68,7 +68,7 @@ before this reframe.
    already-tracked item, not new.** `GraphBuilder` sets a real `path_node`
    flag per graph node from the actual Autoware route
    (`/planning/mission_planning/route`), and the 2026-08-05 route-aware
-   node-selection + attention-pooling fix (`docs/research_notes/
+   node-selection + attention-pooling fix (`docs/archive/research_notes/
    ablation_study_2026.md` §2/§3) measurably increased on-route node
    representation (5.6%→22.0%) and gave attention weight preference to
    them. But the pooled graph context vector is still one static vector

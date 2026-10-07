@@ -8,7 +8,7 @@ the fault signature is perception failing to report what must be there), reports
 **calibrated confidence**, and measures **lead time** before the divergence degrades
 vehicle safety. Active risk-aware control (RISE — Residual-Informed Safety Envelopes,
 relaxing a velocity constraint using the residual signal) is now a deprioritized
-future-work chapter, not the claim under defense — see `docs/design_decisions.md` item 10
+future-work chapter, not the claim under defense — see `docs/archive/design_decisions.md` item 10
 for why scenario-based avoidance work is scoped out of the current priority queue.
 
 **Principal Investigator:** Kalpit Vadnerkar  
@@ -67,7 +67,10 @@ This repo assumes Autoware and AWSIM are installed in the **parent directory**
     │   ├── checkpoints/                   ← trained model weights
     │   └── results/residuals/             ← per-run residual CSVs
     └── docs/
-        └── research_notes/               ← decision documentation
+        ├── architecture.md                ← current pipeline design
+        ├── findings.md                    ← what has been measured, with numbers
+        ├── experiment_plan.md             ← what to collect next
+        └── archive/                       ← historical notes (not maintained)
 ```
 
 ---
@@ -88,7 +91,7 @@ cd /home/kvadner/Desktop/Kalpit/Risk-Aware-Control
 ./collect.sh obs_noescape
 ```
 
-See `TODO.md` for current task status and `docs/research_notes/advisor_meeting_jun2026.md`
+See `TODO.md` for current task status and `docs/archive/research_notes/advisor_meeting_jun2026.md`
 for the current research direction.
 
 ---
@@ -117,7 +120,7 @@ The Autoware install at `/home/kvadner/Desktop/Dissertation/autoware/` has been 
 
 This is the largest change. The default Autoware diagnostic chain triggers MRM (Minimum Risk Maneuver) on many conditions that are normal during AWSIM experiments — routing resets between trials, TF briefly dropping during teleports, rosbag2_recorder momentarily registering twice, EKF twist updates lagging through the Python IMU relay. Each of these caused MRM_SUCCEEDED deadlocks that permanently wedged the vehicle.
 
-**This configuration is "Arm A" (safety features disabled) in the current two-arm fault-injection design — see `TODO.md` and `docs/theoretical_framework.md` §4.** There is no "Arm B" (stock/full diagnostic gate, used as a ground-truth oracle for lead-time measurement) configuration yet; that's an open gap, not just a documentation one.
+**This configuration is "Arm A" (safety features disabled) in the current two-arm fault-injection design — see `TODO.md` and `docs/archive/theoretical_framework.md` §4.** There is no "Arm B" (stock/full diagnostic gate, used as a ground-truth oracle for lead-time measurement) configuration yet; that's an open gap, not just a documentation one.
 
 **All paths below are relative to** `config/system/diagnostics/` (inside `autoware_launch`).
 

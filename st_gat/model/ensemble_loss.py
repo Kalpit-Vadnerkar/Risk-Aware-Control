@@ -1,7 +1,7 @@
 """
 GaussianMemberLoss — loss for a single STGATEnsemble member (RISE edition).
 
-See docs/research_notes/model_redesign_literature_2026-08-07.md for the
+See docs/archive/research_notes/model_redesign_literature_2026-08-07.md for the
 full design rationale. Each ensemble member uses Gaussian heads
 (model.py's STGAT(distribution='gaussian')) rather than the single-network
 Student-t heads (loss.py's CombinedLoss) -- deliberately simpler than that
@@ -29,7 +29,7 @@ problems that are NOT specific to the distribution family:
     variance falls below that batch's own empirical residual magnitude at
     that timestep, computed fresh every batch. This is the regularizer
     that gave a modest but real improvement in the single-network sweep
-    (docs/research_notes/calibration_training_literature_2026-08-07.md);
+    (docs/archive/research_notes/calibration_training_literature_2026-08-07.md);
     its strength has NOT yet been separately swept for the ensemble/
     Gaussian setting specifically -- the value below is carried over from
     that sweep's best-performing candidate, not independently verified here.
@@ -42,7 +42,7 @@ import torch.nn.functional as F
 SCALE_FLOOR = 1e-4    # must match model.py
 BETA_NLL = 0.5
 VAR_REG_WEIGHT = 1.0   # carried over from the single-network sweep's best
-                       # candidate (docs/research_notes/calibration_training_
+                       # candidate (docs/archive/research_notes/calibration_training_
                        # literature_2026-08-07.md) -- NOT yet independently
                        # verified for the ensemble/Gaussian setting.
 

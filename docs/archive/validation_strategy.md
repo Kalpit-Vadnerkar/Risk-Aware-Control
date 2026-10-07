@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-07-24 — restructured around the belief-divergence /
 calibrated-confidence / lead-time claim (see `TODO.md`,
-`docs/theoretical_framework.md`, `docs/design_decisions.md`). The old
+`docs/archive/theoretical_framework.md`, `docs/archive/design_decisions.md`). The old
 RISE-comparison validation plan (staged obstacle/fault scenarios, collision-proxy
 metrics) is preserved in Section 6 as a deprioritized future-work appendix, not
 deleted — it validates a control claim the dissertation is no longer defending as
@@ -76,7 +76,7 @@ Every fault-injection experiment below (Sections 1, 3, 4, 5) runs in both arms:
 
 Arm B is not a baseline being competed against; it's the yardstick lead time is
 measured against. **Open implementation gap:** Arm B's diagnostic-gate
-configuration does not exist yet in this repo (see `docs/design_decisions.md`
+configuration does not exist yet in this repo (see `docs/archive/design_decisions.md`
 item 5). Sections 3–5 below that depend on Arm B cannot run until it does.
 
 ---
@@ -156,7 +156,7 @@ applies. Not runnable until Section 1's mechanism validation completes.
 
 **Status as of 2026-07-24:** this section is the original validation strategy,
 written for the active risk-aware control framing. Per the scoping decision in
-`docs/design_decisions.md` item 10, it validates a control/handling contribution,
+`docs/archive/design_decisions.md` item 10, it validates a control/handling contribution,
 not the safety-verification claim under defense. Preserved as-is below for a
 future control-extension chapter.
 
@@ -167,7 +167,7 @@ for safety and reliability metrics.
 
 **Results:** 14/15 goal runs succeed (93%). MRM rate 124 ± 40 /km (transient,
 < 0.15s duration). Zero near-misses. Mean velocity 4.46 m/s. See
-`docs/research_notes/nominal_baseline_analysis_mar2026.md`. This result still
+`docs/archive/research_notes/nominal_baseline_analysis_mar2026.md`. This result still
 stands and is useful context (it characterizes nominal system behavior) even
 though it was collected under the old framing.
 
@@ -183,8 +183,8 @@ producing near-misses or MRM events.
 | Cut-in | 40m ahead, 2s / 4s duration | Find tracking failure conditions |
 | Fault overlays | Dropout 30%, position noise 0.5m | Degrade Autoware handling |
 
-**See:** `docs/research_notes/rise_experiment_plan_mar2026.md`,
-`docs/research_notes/scenario_framework.md`.
+**See:** `docs/archive/research_notes/rise_experiment_plan_mar2026.md`,
+`docs/archive/research_notes/scenario_framework.md`.
 
 ### 6.3 Phase 3: RISE Comparison
 
@@ -220,7 +220,7 @@ closest-approach, false-positive tightening rate on nominal runs.
 | Route completion rate with RISE | ≥ baseline |
 | False positive rate on nominal runs | < 5% of timesteps |
 
-### 6.7 Fault Types (as originally scoped — superseded, see `docs/design_decisions.md` item 7)
+### 6.7 Fault Types (as originally scoped — superseded, see `docs/archive/design_decisions.md` item 7)
 
 The original scope below excluded IMU/LiDAR ("sensor-level faults") — this is now
 stale; IMU fault campaigns are core to Section 1's mechanism validation.

@@ -9,7 +9,7 @@ calm driving. Vanilla conformal (conformal_horizon_calibration.py) pools
 every window into ONE global per-step quantile, so it either stays wide
 everywhere to remain valid on turns, or a real fault occurring near/during
 a turn has its residual conflated with the turn's own residual. This was
-already proposed in principle in docs/research_notes/
+already proposed in principle in docs/archive/research_notes/
 open_world_safety_reframe_2026-08-20.md §5 ("condition on the model's own
 learned scene embedding... GraphEncoder's attention-pooled graph context
 (or h_last after the LSTM)") -- this script is the first implementation.

@@ -6,7 +6,7 @@ as a byproduct, expand the held-out nominal calibration set at goal_007/
 012 — closing the exact gap that limited the 2026-08-25 ramp pilot to one
 clean goal (goal_026) out of three.
 
-**Read `docs/research_notes/layer1_paper_structure_2026-08-25.md` §C6 and
+**Read `docs/archive/research_notes/layer1_paper_structure_2026-08-25.md` §C6 and
 the project memory's 2026-08-25 TL-severity-pilot entry first** for why
 this design looks the way it does (a discrete, fixed-severity design was
 chosen specifically because the existing `tl_fault_ramp` data confounds

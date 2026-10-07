@@ -18,289 +18,59 @@ cited context only, not a dependency).
 
 **Repo name is a legacy artifact.** Originally scoped as "RISE" (Residual-
 Informed Safety Envelopes — active control, relaxing velocity constraints
-under uncertainty). That framing is gone; see the decision log.
+under uncertainty). That framing is gone; see `docs/findings.md` §6.
 
-## Current claim and architecture
+## Where things stand — read these first
 
-The question this project answers is **not** "which known fault is this"
-(closed-set classification — needs fault data, a fixed bin set, and says
-nothing about a failure mode outside that set) but **"how far off-nominal
-am I right now, in what way, and what does that imply about whether I'm
-about to do something unsafe."** Three layers:
+The current state lives in three short documents; this file only carries
+operational guidance.
 
-- **Layer 1 — detect the unknown.** A continuous, distribution-free anomaly
-  measure: ST-GAT prediction residuals as conformal nonconformity scores.
-  No fault data required to validate. **Built and validated on nominal
-  data**; checked against real injected faults with a real, useful (if
-  partial) result — see "Current state" below.
-- **Layer 2 — consequence estimation (THE thesis).** Map anomaly to actual
-  risk by trimming/optimizing Layer 1's calibrated envelope against HD-map
-  and scene context — not building an independent reachability set from
-  scratch (2026-09-03 advisor reframe, see decision log). Two stages:
-  **2a, a priori** (scene-conditioned band shaping, before the interval is
-  emitted) — already built, this is the Mondrian/embedding conditional
-  calibration listed under Layer 1 below, relabeled; **2b, a posteriori**
-  (physics trims the rolled-forward tube; the map scores it: drivable-area
-  + object footprints) — **v2 built 2026-10-04**
-  (`layer2_consequence_estimation.py`), currently **blocked on Layer 1
-  map-consistency**, being fixed at the model level (ego_v2 graph schema),
-  see decision log.
-- **Layer 3 — graceful response.** Continuous behavior modulation
-  proportional to quantified ignorance, not limp-mode/ODD binning. Whether
-  this pulls the descoped active-control (RISE) work back into scope is an
-  **open question**, not resolved.
+- `docs/architecture.md` — the pipeline design (Layer 1 multi-source
+  predictor + conformal scores giving when / how much / which way; Layer 2
+  nominal envelope, evidence-driven growth, safe sets; Layer 3 hook).
+  Shareable version with diagram:
+  https://claude.ai/code/artifact/1cc568ab-f9b5-4945-afe4-9cf1c9f55a65
+- `docs/findings.md` — everything measured so far, with numbers, plus a
+  table of superseded ideas not to revive.
+- `docs/experiment_plan.md` — what to collect next and open decisions.
+- `TODO.md` — the task list.
+- `docs/archive/` — historical dated notes; not maintained, often
+  contradicted by the current design. Read only to trace why something was
+  decided.
 
-**Claim to defend:** a principled translation from "my model is uncertain
-in this specific way, right now" to "therefore this specific driving
-behavior is unsafe, by this much" — reported with calibrated confidence (a
-reliability diagram, not just a coverage number), **decomposed** by
-subsystem/uncertainty-source (not just a magnitude), giving measurable lead
-time before a safety-margin violation, evaluated at matched false-alarm
-rates. Novelty is specifically the synthesis of two traditions that don't
-currently talk to each other: distribution-free statistical **calibration**
-(Layer 1) and **reachability-style consequence estimation** (Layer 2, in
-the shape of Johnson/Victor/Engström's "Field of Safe Motion," 2026) —
-not an extension of either alone. A broader literature search to confirm
-this synthesis claim actually holds up is still pending (see TODO.md).
+When a finding changes, edit `docs/findings.md` (and `architecture.md` if
+the design moved) instead of writing a new dated note.
 
-**The project is being written up as two papers**, not one: Paper 1 is
-Layer 1 (calibration/UQ) standalone; Paper 2 is Layer 2 building on it.
-See `docs/research_notes/layer1_paper_structure_2026-08-25.md` for Paper
-1's section-by-section structure and which comparisons are already run.
+**Paper split:** Paper 1 = Layer 1 (calibration / UQ) standalone, Paper 2 =
+Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-08-25.md`).
 
-## Current state: built/validated vs. planned
+**Status in one line each (2026-10-07):**
+- Canonical model is still bbox_v1 (`st_gat/models/h30_30/`); best model is
+  ego_v3 (`h30_30_ego3/`), accepted by Kalpit, not yet promoted. ego_v4
+  (multi-source) is being built.
+- Layer 2 works end-to-end; the hand-built dead-reckoning coupling catches
+  all 4 real IMU departures, behavioral-residual-only couplings catch none —
+  size/direction need redundant sources (`findings.md` §3–4).
+- Work happens on branch `layer2b-ego-frame` (not merged, not pushed).
 
-**Built and validated:**
-- Data collection + two-arm fault-injection infrastructure (TL + IMU
-  faults, zone-gated); Arm A (safety disabled) exercised extensively, Arm B
-  (safety enabled, ground-truth oracle) exists but is untested live.
-- ST-GAT point-predictor training pipeline (14-feature vector), promoted
-  canonical checkpoint at `st_gat/models/h30_30/st_gat_rise.pth` (currently
-  the "v2," zone-weighted retrain — gated through `promote_model.py`, see
-  below).
-- Layer 1: leave-one-trial-out cross-conformal calibration
-  (`experiments/scripts/conformal_horizon_calibration.py`), a systematic
-  per-scenario coverage audit, a training-level fix for the scenario gap it
-  found, and two conditional-calibration variants (Mondrian and embedding
-  k-NN) — see decision log for what each found. These two variants now also
-  serve as **Layer 2a** (a priori reachability-set shaping, 2026-09-03
-  reframe, see decision log).
-- Layer 1 checked against real injected faults across all 8 fault campaigns
-  and all 7 feature series (`experiments/scripts/inspect_fault_predictions.py`).
-- `experiments/scripts/promote_model.py` — gates every model swap (refuses
-  a regression against the worst-performing scenario category, not just
-  the average; auto-regenerates the canonical calibration report on
-  promotion).
+## Standing rules learned the hard way
 
-**Planned / pending, in rough priority order:**
-1. **CURRENT PRIORITY (2026-10-04)**: make the ST-GAT forecast map-
-   consistent enough for Layer 2 — `model_safety_benchmark.py`'s gate.
-   ego_v2 (stages A-C) passes 3 of 4 checks (off-road 3.6% vs <= 2%, worst
-   at intersections); next is stage D (explicit route-ahead polyline input)
-   after a data-loader speed-up, then rerun Layer 2 v2 on all 38 fault
-   trials. See `docs/research_notes/layer2b_v2_and_ego_frame_model_2026-10-04.md`.
-2. More nominal calibration data generally (17 trials now in `CAL_DIR`,
-   up from 7 — see limitations below; still worth more at goals beyond
-   007/012/026).
-3. A broader (non-Waymo-only) literature review to confirm the
-   calibration-x-reachability novelty claim before writing it up.
-4. Layer 3 scoping decision (does active control come back into the core
-   claim, or stay at "define the signal's shape").
-5. Architecture ablation backlog (P1.6 in TODO.md) — several model
-   hyperparameters were set by judgment call, not measured.
-
-**TL fault severity sweep — DONE 2026-10-03/04** (was item 1 here): 6 new
-nominal trials + 18 fixed-severity fault trials collected and validated,
-analysis run (a real contamination-labeling bug was found and fixed along
-the way — see decision log). Paper 1's comparison C6 is no longer
-blocking.
-
-## Decision log
-
-Each entry: what was decided and the load-bearing *why*. Full narrative
-arcs are in `docs/research_notes/` (pointed to per entry) — don't re-derive
-these from scratch, and don't re-litigate a settled one without reading its
-note first.
-
-- **Closed-set fault classification → open-world anomaly detection
-  (2026-08-06, sharpened 2026-08-20).** Stopped optimizing toward
-  "detect and classify a specific fault type" — collapsing a fault into a
-  named bin only licenses a pre-planned canned response and requires fault
-  data to validate at all; it also says nothing about a novel failure mode.
-  Replaced with the continuous, distribution-free "how far off-nominal, so
-  what" framing above. The old "belief-divergence / negative-evidence"
-  claim and its Priority-0 mechanism experiments (per-fault-class feature
-  importance, HD-map ablation) were retired; the HD-map question survives
-  in a different, continuous form as a Layer-2 prerequisite. See
-  `docs/research_notes/open_world_safety_reframe_2026-08-20.md`.
-- **Jointly-trained distributional (Student-t/NLL) heads → conformal
-  calibration on a plain point predictor (2026-08-20).** A multi-week arc
-  trying to get the model's own mean+scale+dof heads calibrated fixed two
-  real bugs (a shared-gradient-contention bug in the horizon-step
-  embedding; a dof-collapse pathology) but never converged — this is a
-  known pathology in jointly training a network to predict a value *and*
-  self-report its own confidence (Wong-Toi et al., UAI 2023), not a bug
-  fixable by one more regularizer. Conformal calibration wrapped around a
-  point predictor sidesteps it entirely: no distribution-family assumption
-  (also fixes traffic-light heads' non-Gaussian, quasi-categorical shape
-  for free), horizon-widening comes from the empirical residual
-  distribution by construction. Decisively confirmed by a direct
-  side-by-side: coverage max-gap 0.066–0.376 (NLL heads, KS-rejects
-  calibration for every feature) vs. 0.004–0.011 (conformal), for all 7
-  series. NLL machinery is not deleted, just paused — see
-  `docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md`
-  §5 for the concrete next step if it's ever resumed.
-- **Leave-one-trial-out cross-conformal, not a fixed split.** Only 7
-  nominal trials exist in the calibration pool; a first attempt at a fixed
-  50/50 split leaked (windows are stride-1 overlapping, so "test" windows
-  were near-duplicates of "fit" windows from the same trial) and, once
-  fixed to a proper trial-level split, showed real per-trial instability a
-  naive split's number hid. LOO-CV pools every trial's out-of-fold coverage
-  into one number while keeping every check point genuinely held out — see
-  the pivot note above, §4.
-- **Pooled coverage is not sufficient evidence of calibration — must audit
-  per-scenario, using the same real zone geometry fault injection uses
-  (2026-08-24).** Pooled steering coverage read ~90%, but a geometry-
-  grounded audit (`experiments/scripts/audit_minority_scenarios.py`, using
-  the actual turn/TL zone files `fault_injector.py` gates on) found it was
-  only 59–76% specifically on turns and near intersections — exactly where
-  faults are injected. A pooled/aggregate number can hide a systematic gap
-  via cancellation. Re-run this audit any time the model or calibration set
-  changes.
-- **Fix the scenario gap at the training level (zone-weighted resampling),
-  not by widening the calibrated interval at inference (2026-08-25).**
-  Widening on turns/intersections to stay valid would cost detection
-  sensitivity exactly where faults are injected — calibration validity and
-  detection power are in tension, not the same objective. Data-driven
-  inverse-frequency resampling (no hand-tuned boost constants,
-  `scenario_zones.compute_train_sample_weights`) closed the gap
-  (tl_zones steering coverage 75.6% → 87.3%) and is now the canonical (v2)
-  model, gated through `promote_model.py`.
-- **Both discrete (Mondrian) and continuous (embedding k-NN) conditional
-  calibration are kept — neither dominates (2026-08-25).** Mondrian
-  (Vovk 2012, 4 real zone-derived groups) hits ~90% per group but is NOT
-  uniformly tighter once weighted by group prevalence — steering and
-  TL-confidence are net *wider* on average, the real statistical cost of
-  fitting a quantile on a fraction of the data. The continuous approach
-  (k-NN in the model's own learned scene embedding `h_last`) improves
-  automatically as the underlying model improves with zero recalibration
-  changes, and can tighten a feature where global calibration was already
-  fine (something a fixed discrete partition can't do) — but is noisier at
-  small k and non-monotonic in k. Report both honestly in the paper, don't
-  present one as a strict win.
-- **Layer 2 pivots from a static lane-boundary margin to forward-
-  reachability-style consequence estimation (2026-08-24).** An independent
-  literature review found Waymo's own published safety research ("Field of
-  Safe Motion," Johnson/Victor/Engström 2026) already does forward-
-  propagated, map-grounded, decomposed consequence estimation via
-  reachable sets — but without this project's calibrated, data-driven
-  uncertainty. A static lane-margin design (`experiments/lib/margin.py`,
-  `experiments/scripts/layer2_consequence_estimation.py`) was built and run
-  once (2026-08-21, nominal-only, pre-dating this pivot) but is now a
-  paused v1 prototype, not the design to build on — see decision log entry
-  above on the two-paper split and `open_world_safety_reframe_2026-08-20.md`
-  §9(c).
-- **Layer 2 split into a priori (2a) and a posteriori (2b) reachability-set
-  optimization, not one combined reachability construction (2026-09-03).**
-  Advisor feedback on the 2026-08-26 deck: the calibrated interval Layer 1
-  already produces, swept across the horizon, IS already a raw reachable
-  tube — building a separate reachability margin on top re-derives the same
-  object instead of reasoning about it. Resolved by treating Layer 2 as
-  trimming/optimizing Layer 1's envelope in two stages rather than
-  constructing an independent one: **2a (a priori)** shapes the interval
-  using scene/zone context *before* it's emitted — a relabeling, not new
-  work, of the Mondrian/embedding conditional calibration already built
-  (entry above); **2b (a posteriori)** geometrically trims the
-  bootstrap-rolled tube against real map/object constraints *after*
-  rollout (lane-containment, tracked-object reachable sets, kinematic
-  feasibility) — the actual not-yet-built reachability work, now explicitly
-  framed as pruning rather than constructing. Also surfaced two
-  data-availability findings for 2b's design: Autoware's own
-  `PredictedObjects.kinematics.predicted_paths` is already recorded in
-  every trial's rosbag (`/perception/object_recognition/objects`,
-  `RECORDING_TOPICS`) but not consumed by the ST-GAT pipeline (which only
-  reads `TrackedObjects`, current state only) — 2b should read it directly
-  at rollout time rather than needing the model to predict object futures;
-  and the route-info dilution issue (route reaches the model via
-  `path_node` graph flags but gets blurred by static per-window pooling) is
-  a known, separately-tracked item (TODO.md §7's graph-cadence entry), not
-  new, and not a 2b blocker since 2b grounds against `lanelet2.geometry`
-  directly. See `docs/research_notes/
-  layer2_apriori_aposteriori_split_2026-09-03.md`.
-- **Multi-feature fault check, not position-only (2026-08-25).** Checking
-  all 7 series against real fault campaigns found position is NOT the most
-  diagnostic feature for either fault family: acceleration's active/clean
-  exceed-rate ratio is 13.66x for IMU faults (vs. position's 1.66x);
-  velocity_lateral/longitudinal beat the directly-spoofed TL-color/
-  confidence features for TL faults. A Layer-2 margin built only on
-  predicted position (the original plan) would miss the sharpest available
-  fault evidence — decomposition by feature is a real, useful signal here,
-  not "structurally vacuous" as earlier judged against the old design.
-- **Two-arm fault-injection design kept from the earlier framing
-  (2026-07-24).** Arm A (Autoware's built-in safety features disabled) lets
-  an injected fault propagate to a full healthy→degraded→dangerous
-  trajectory; Arm B (safety features enabled, stock diagnostic gate) is the
-  ground-truth oracle — Autoware's own MRM trigger is treated as a labeled
-  "this was objectively unsafe" moment, and lead time is measured against
-  it. This mechanic is unaffected by the open-world reframe.
-- **Active control (RISE) descoped, then reopened as an unresolved
-  question.** Scoped out entirely 2026-07-24 (control/handling
-  contribution, not safety-verification evidence — no new staged-avoidance
-  work). The 2026-08-20 reframe's Layer 3 ("graceful response") reopens
-  whether some form of it belongs back in the core claim; not yet decided.
-- **TL severity sweep uses discrete fixed severities (0.3/0.5/0.7), not the
-  existing ramp (2026-08-26).** Confirmed directly: `tl_fault_ramp`
-  confounds severity with elapsed-time-in-zone/physical proximity to the
-  intersection, so a dose-response curve built on it can't cleanly
-  attribute effect to severity alone. Fixed-severity trials plus matched
-  same-goal nominal controls isolate severity from that confound. See
-  `docs/research_notes/tl_severity_sweep_lab_plan_2026-08-26.md`.
-- **TL severity sweep collected and run; a real analysis bug found and
-  fixed along the way (2026-10-03/04).** 6 new nominal + 18 fixed-severity
-  fault trials collected, all valid. `tl_severity_sweep_analysis.py`'s
-  "clean/held-out" check used to be `run_name in CAL_DIR_TRIALS` — today's
-  `CAL_DIR` membership — but the deployed model (`st_gat_rise.pth`,
-  2026-08-25) trained on goal_007/012's *original* 2026-07-22 trials back
-  when they were still in `TRAIN_DIR`; promoting them to `CAL_DIR` this
-  session doesn't retroactively un-train the model on them. Before the fix,
-  `clean_only` and `all_including_contaminated` came out byte-identical —
-  caught, not missed. Fixed to the real rule: clean = goal_026 (never
-  trained on, ever) OR collected after the model's training cutoff.
-- **Layer 2b's engineering mostly already exists — the "not yet started"
-  status was an overstatement (2026-10-04).** Checking the paused v1
-  artifacts found `experiments/lib/margin.py` (real `lanelet2.geometry`
-  lane-boundary distance + a conservative object-clearance bound) and
-  `experiments/scripts/layer2_consequence_estimation.py` (bootstrap
-  calibrated residuals → trim against that margin → P(violation), already
-  produces time-series traces) already implement the full 2b mechanism —
-  built and run once on nominal-only data 2026-08-21, paused specifically
-  because real fault data didn't exist yet. It does now (TL severity sweep
-  above, plus existing IMU campaigns). Concrete wiring plan:
-  `docs/research_notes/layer2b_wiring_plan_2026-10-04.md` — the remaining
-  work is pointing the existing mechanism at a real fault trial for the
-  first time and wiring in 2a's (Mondrian + embedding, build and compare
-  both, Kalpit's call) conditioning into the bootstrap pool, not building
-  reachable-set computation from scratch.
-
-- **Layer 2b v2 built; v1 margin found invalid; Layer 2 then blocked on a
-  Layer 1 model problem, fixed at the model level (2026-10-04).** v1's
-  margin flagged 48.6% of REALIZED nominal futures as violations (its 0.84
-  nominal P(violation) measured the definition, not risk); replaced by a
-  drivable-area SDF + oriented object footprints + a kinematic-feasibility
-  trim, all passing a realized-nominal acceptance test (physics trims, the
-  map scores — road containment can't be a trim or it defines the risk
-  away). Added a causal Layer 1 -> Layer 2 coupling (tube inflation from
-  observed nonconformity; the wiring plan had none). Found that AWSIM
-  ground-truth pose is in every bag and 3 IMU trials have real road
-  departures the estimated pose never shows. Then: the bbox_v1 ST-GAT's
-  own forecast left the road in 18.6% of held-out nominal windows (phantom
-  turns, wrong-direction turns, map graph essentially unused because nodes
-  were bbox-normalized with no link to ego position, plus a future leak in
-  graph centring). Kalpit's call: fixing Layer 1 issues in Layer 2 is
-  patchwork — fix the model, gate it with `model_safety_benchmark.py`
-  (also the ablation table). ego_v2 schema (`STGAT_GRAPH_FRAME=ego_v2`):
-  off-road 18.6% -> 3.6%, lateral 3s p50 0.98 -> 0.15m. See
-  `docs/research_notes/layer2b_v2_and_ego_frame_model_2026-10-04.md`.
+- **Calibrate leave-one-trial-out**, never a per-window split (windows
+  overlap 59/60 frames).
+- **Never trust a pooled coverage number alone** — run
+  `audit_minority_scenarios.py`; pooled 0.90 has hidden 0.59–0.80 in turns.
+- **"Held out" = the deployed model never trained on it**, anchored to its
+  training date, not today's `CAL_DIR` membership.
+- **Every safe set must pass the realized-nominal test** (`layer2 --mode
+  check-safe-set`): real nominal futures must almost never violate it.
+- **Report every fault campaign** in result tables; never silently drop one.
+- **Behavioral residuals tell when, not how much** — don't size an envelope
+  from them alone.
+- **No physics trim** in Layer 2 (`--trim` exists for comparison only).
+- **Train with `--selection normalized`**; the legacy criterion is decided by
+  the traffic-light heads.
+- **Lead time = onset of the alarm episode still active at the violation**,
+  thresholds at a matched nominal false-alarm rate.
 
 ## Known gotchas (hit and fixed this repo's history — don't reintroduce)
 
@@ -418,7 +188,7 @@ note first.
   `awsim_labs_v1.6.1/`'s Linux player binary — no Editor is installed on
   this machine yet, and building one is an interactive/GUI step for
   Kalpit, same as never launching AWSIM itself via Bash. See
-  `docs/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`.
+  `docs/archive/research_notes/layer2_apriori_aposteriori_split_2026-09-03.md`.
 - **AWSIM itself can get stuck in a way restarting Autoware alone does
   NOT fix** (found 2026-10-03): vehicle stays frozen in Park, velocity
   pinned at 0, while Autoware reports itself completely healthy
@@ -511,82 +281,18 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
   `st_gat/models/<tag>/st_gat_rise.pth` (deployed/canonical, gated by
   `promote_model.py`).
 
-## Trusting the model itself (before trusting any Layer 1 result)
+## Trusting a model before trusting its results
 
-`./experiments/scripts/run_calibration_pipeline.sh` runs the full Layer-1
-result set in one command (repo venv only, no ROS needed).
-
-**Primary check**: `experiments/scripts/conformal_horizon_calibration.py`
-— leave-one-trial-out cross-conformal per feature-series per horizon step,
-wrapped around the plain point predictor. Reports pooled + per-fold-spread
-coverage, `conformal_vs_actual.png`, and `reliability_diagram.png`.
-**Read the pooled number carefully** — see decision log's per-scenario-audit
-entry; also run `audit_minority_scenarios.py` before trusting a pooled
-number in isolation. Conditional-calibration variants:
-`conformal_mondrian_calibration.py` (discrete, zone-grouped),
-`conformal_embedding_calibration.py`/`conformal_scene_conditioning.py`
-(continuous, k-NN in the model's `h_last` scene embedding) — see decision
-log for the honest trade-offs between them.
-
-The paused NLL/Student-t diagnostics (`plot_calibration_diagrams.py`,
-`plot_sprt_signal_behavior.py`) are still real, working tools if that arc
-or the old SPRT sequential-evidence signal is ever resumed, but are not
-part of the current critical path — see
-`docs/research_notes/nll_calibration_arc_and_conformal_pivot_2026-08-20.md`.
-
-## Real, current limitations (qualify any claim made right now)
-
-- **17 trials in the nominal calibration set** (up from 7 as of
-  2026-10-03 — goal_007/012 promoted to `CAL_DIR`, now with 4 trials
-  each). Better than before, but a claim about realized coverage at any
-  goal beyond 007/012/026 is still thin without more nominal data at
-  those other goals. This was flagged as load-bearing-weak by three
-  independent sources (this project's own notes, the reframe note, and an
-  independent novelty-check agent) — real progress, not a closed item.
-- **`lane_change_zones` has essentially zero matching windows** in the
-  current dataset — a data gap, not a calibration gap.
-- **`open_road` (44% of the data) under-covers unexpectedly** (85–86% on
-  position/velocity) despite being the "easy" majority case — not yet
-  investigated.
-- **TL-fault detection is confounded with intersection difficulty**: TL
-  faults are gated to fire only at real intersections, already the
-  hardest nominal scenario, so elevated residual near a TL fault can't yet
-  be cleanly attributed to "the fault" vs. "the intersection." The severity
-  sweep's matched same-goal nominal controls are now collected and run
-  (2026-10-03/04) — see `TODO.md` §1 for what the dose-response result
-  showed and what's still not isolated (the goal_026-vs-ramp-pilot
-  sanity check).
-- **IMU-fault consequence keeps growing past 120s post-fault** (compounding
-  EKF state-estimation corruption that doesn't self-heal) — Layer 2's
-  intended ~3s rollout horizon is plausibly well-matched to TL faults but
-  structurally too short to see a slow-compounding IMU fault coming.
-- **Epistemic disagreement (independently-trained point predictors) only
-  widens with horizon for 2 of 7 series** (position, partially
-  acceleration) — not yet reassuring evidence that the model's behavior
-  stays trustworthy under real out-of-distribution/fault shift, though not
-  yet a blocking problem either (no fault data has been run through this
-  check yet, only nominal).
-- **Layer 2's matched-false-alarm thresholds are still ~0.95 with ego_v2**
-  (nominal P(violation) p99 tail at intersections, where the forecast
-  hedges straight through a planned turn) — lead-time numbers at matched
-  FAR aren't meaningful until that tail drops (stage D target).
-- **v2 object safe set uses constant-velocity objects** with heading from
-  0.5s nearest-neighbour association (lanelet direction fallback) — not
-  Autoware's own `predicted_paths` (still separable future work).
-- **Under IMU faults the object positions are also in the corrupted
-  estimated frame**; only the road-departure ground truth uses AWSIM GT pose.
-
-## Don't duplicate context that's already written down
-
-- `TODO.md` — current task list, read fresh every session.
-- `README.md` — environment setup, Autoware source patches to reapply after
-  any reinstall/rebuild, data collection campaign commands.
-- `docs/theoretical_framework.md` — the two-arm fault-injection design and
-  divergence-trace schema (still applies); its "belief divergence" claim
-  language is superseded by the open-world reframe above.
-- `docs/research_notes/` — dated findings docs, one per topic/session. Check
-  the relevant one for the *why* behind a non-obvious decision before
-  re-deriving it; this file only carries the compressed conclusion.
+1. `experiments/scripts/model_safety_benchmark.py --tag <name>` — the
+   "good enough for Layer 2" gate and the ablation table (one row per model).
+2. Layer 1: `conformal_horizon_calibration.py`, then
+   `audit_minority_scenarios.py`, `conformal_mondrian_calibration.py`,
+   `conformal_scene_conditioning.py`; against faults
+   `inspect_fault_predictions.py --campaigns <all fault campaigns>`.
+3. Layer 2: `layer2_consequence_estimation.py --mode all`.
+Run non-canonical models with the matching `STGAT_GRAPH_FRAME`; their outputs
+go to `experiments/analysis/<DATA_TAG>/` (`cfg.ANALYSIS_ROOT`), never over
+the canonical results.
 
 ## Working style notes
 

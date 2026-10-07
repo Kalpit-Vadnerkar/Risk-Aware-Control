@@ -57,7 +57,7 @@ class GraphBuilder:
 
     def _get_sorted_lanelets(self, center_position):
         # Radius-gated, route-aware fill order (audited/fixed 2026-08-05 --
-        # see docs/research_notes/ablation_study_2026.md). Route-first
+        # see docs/archive/research_notes/ablation_study_2026.md). Route-first
         # sorting (§2) fixed route lanelets losing the node budget to nearby
         # off-route ones in dense intersections, but without a radius cap it
         # overshot the other way: an on-route lanelet arbitrarily far away
@@ -166,7 +166,7 @@ class GraphBuilder:
         routing relations (successor / adjacent-left / adjacent-right)
         instead of relying entirely on the reactive nearest-pair repair in
         _ensure_graph_connectivity (added 2026-08-05 -- see
-        docs/research_notes/ablation_study_2026.md: the repair step was
+        docs/archive/research_notes/ablation_study_2026.md: the repair step was
         firing on effectively every graph build, 60% of a trial's total
         extraction runtime, precisely because lanelets were never connected
         to each other by anything but coincidence). Only connects pairs

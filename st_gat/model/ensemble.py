@@ -2,7 +2,7 @@
 STGATEnsemble — deep ensemble of the ST-GAT backbone (RISE edition, added
 2026-08-07).
 
-See docs/research_notes/model_redesign_literature_2026-08-07.md for the
+See docs/archive/research_notes/model_redesign_literature_2026-08-07.md for the
 full literature review and design rationale this implements. Short version:
 three same-day attempts to fix a single Student-t network's calibration
 (two-phase training, learned task weighting, a variance-collapse

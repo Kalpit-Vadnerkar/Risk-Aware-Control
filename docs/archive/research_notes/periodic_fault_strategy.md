@@ -1,7 +1,7 @@
 # Periodic, Location-Aware Fault Injection Strategy — Camera (TL) & IMU
 
 **Status:** Draft strategy for review, 2026-07-22. Grounds the redesign in
-`docs/research_notes/fault_literature_review.md` and the 11 papers now in
+`docs/archive/research_notes/fault_literature_review.md` and the 11 papers now in
 `docs/papers/` (gitignored). Not yet implemented — `experiments/lib/fault_injector.py`
 still runs the one-shot design described below until this is approved.
 

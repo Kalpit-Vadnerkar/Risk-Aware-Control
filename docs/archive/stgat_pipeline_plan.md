@@ -5,7 +5,7 @@ re-reading this plan against the actual implementation, both fixed same-day:
 the TL entity-collapse bug reproduced in this repo's own pipeline, and missing
 model output heads for the perception-report channel) and checked off which
 Stage 0-3 items are now actually implemented, driven by reconciling this plan
-against Kalpit's sharper thesis framing in `docs/theoretical_framework.md`.
+against Kalpit's sharper thesis framing in `docs/archive/theoretical_framework.md`.
 
 **Originally drafted:** 2026-07-26 — first draft, written before any
 implementation.
@@ -195,7 +195,7 @@ tracked `traffic_light_group` in the message, and `sequence_builder`'s
 them — the identical collapse §1.10 found and fixed in
 `compare_fault_vs_nominal.py`, just never ported back to the pipeline that
 actually builds training data. This muted exactly the signal
-`docs/theoretical_framework.md` leans on hardest (the perception-vs-map
+`docs/archive/theoretical_framework.md` leans on hardest (the perception-vs-map
 negative-evidence channel) for every TL-fault trial that would ever be used for
 training or evaluation. **Fixed:** `bag_reader.read_bag()` now accepts a
 `goal_id`, loads `experiments/configs/tl_zones.json` (same file, same
@@ -218,7 +218,7 @@ in hindsight is the less interesting of the two to predict. **Fixed:** added a
 Gaussian (mean+var) head for `traffic_light_state` and a Bernoulli/sigmoid head
 for `traffic_light_discrepancy` in `st_gat/model/model.py`, with matching NLL/
 BCE terms in `st_gat/model/loss.py`. This is what makes the epistemic-stance
-argument in `docs/theoretical_framework.md` §3/§5 actually computable rather
+argument in `docs/archive/theoretical_framework.md` §3/§5 actually computable rather
 than just asserted.
 
 ---
@@ -261,7 +261,7 @@ re-litigated against the interpolation alternative below.
   signal belongs to; do keep the structural/categorical context (map graph,
   entity identity) the negative-evidence mechanism depends on.
 - **Compute budget is a real constraint, not an afterthought.** The lead-time
-  claim (§ Stage 6, `docs/theoretical_framework.md`) is only meaningful if the
+  claim (§ Stage 6, `docs/archive/theoretical_framework.md`) is only meaningful if the
   state representation can be computed fast enough to matter for an online
   detector, not just a post-hoc analysis script — a feature step that's fine
   for offline discriminability ranking (this repo's current

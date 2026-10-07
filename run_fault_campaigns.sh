@@ -74,7 +74,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
 AUTOWARE_DIR="$WORKSPACE_DIR/autoware"
 
-# ── Defaults (finalized goal set — see docs/research_notes/periodic_fault_strategy.md) ──
+# ── Defaults (finalized goal set — see docs/archive/research_notes/periodic_fault_strategy.md) ──
 GOALS="goal_007,goal_012,goal_026"
 GOALS_FILE="$SCRIPT_DIR/experiments/configs/captured_goals.json"
 TRIALS=3

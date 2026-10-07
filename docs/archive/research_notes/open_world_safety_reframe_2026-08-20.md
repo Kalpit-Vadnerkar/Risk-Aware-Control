@@ -1,7 +1,7 @@
 # Open-world safety reframe: from closed-set fault classification to consequence estimation (2026-08-20)
 
 **Read this first if you're touching the dissertation's core claim, `TODO.md`'s
-Research Direction, or `docs/theoretical_framework.md`.** This supersedes
+Research Direction, or `docs/archive/theoretical_framework.md`.** This supersedes
 the 2026-07-24 "belief divergence / negative evidence" framing and its
 Priority 0 mechanism experiments (kept below as history, not deleted).
 Prompted by Kalpit, same day as the conformal-calibration pivot
@@ -189,7 +189,7 @@ Not yet implemented.
      number triggers a response; the decomposition directs it (slow down,
      change viewpoint, buy information). This is a natural fit for the
      ST-GAT's already-existing per-feature residual/NLL trace design — see
-     `docs/theoretical_framework.md`'s divergence-trace schema — don't
+     `docs/archive/theoretical_framework.md`'s divergence-trace schema — don't
      rebuild that machinery, extend it.
   2. **Risk as currency, not alarm** — a planner-optimizable quantity
      (e.g. "braking harder cuts violation probability from 1e-3 to 1e-5 at

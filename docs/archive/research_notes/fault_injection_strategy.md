@@ -48,7 +48,7 @@ IMU noise, localization drift). This was deprioritized for the following reasons
 2. **Dropout pivot finding:** The Feb 2026 perception dropout sweep showed that NPCs
    in AWSIM yield to ego — no real collision threat is created even at 100% dropout.
    Sensor-level dropout would have the same problem plus an indirect signal path.
-   See `docs/research_notes/dropout_sweep_analysis_mar2026.md`.
+   See `docs/archive/research_notes/dropout_sweep_analysis_mar2026.md`.
 
 3. **Perception scenarios are more direct:** Injecting a static obstacle or cut-in
    directly into the perception stream creates a clear, reproducible collision threat.
@@ -75,7 +75,7 @@ of perceived objects.
 
 ### 3. Object Injection (Scenarios, not fault)
 Inject a synthetic object at a specified distance along the planned trajectory (static
-obstacle or cut-in). See `docs/research_notes/scenario_framework.md` for details.
+obstacle or cut-in). See `docs/archive/research_notes/scenario_framework.md` for details.
 
 ---
 

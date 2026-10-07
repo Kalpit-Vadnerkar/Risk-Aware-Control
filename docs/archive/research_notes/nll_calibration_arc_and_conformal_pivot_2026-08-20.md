@@ -15,7 +15,7 @@ changes day-to-day priorities.
 
 ## 1. The original problem
 
-`docs/research_notes/trust_and_signal_behavior_2026-08-06.md` found the
+`docs/archive/research_notes/trust_and_signal_behavior_2026-08-06.md` found the
 model's predicted uncertainty didn't widen with prediction horizon for 5 of
 6 features (only `position` did), despite actual error growing 2-4x over
 the 3s window for every feature. Three single-network fix attempts followed

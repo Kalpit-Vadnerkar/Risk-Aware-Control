@@ -144,10 +144,10 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
     is not periodic — a single trial is meant to walk from clearly-fused
     (sub Mahalanobis-gate) through the crossing point into clearly-rejected
     (supra-gate, cascading into NDT/planning/MRM failure — see
-    docs/design_decisions.md item 7) exactly once, giving a well-defined
+    docs/archive/design_decisions.md item 7) exactly once, giving a well-defined
     "when did this become unsafe" timestamp for lead-time measurement
     against Autoware's own MRM trigger (the two-arm design's Arm B — see
-    docs/theoretical_framework.md §4). The S1-S4 tiers above were
+    docs/archive/theoretical_framework.md §4). The S1-S4 tiers above were
     deliberately redesigned to stay well clear of that boundary; this mode
     exists specifically to find and cross it, in one continuous trial rather
     than guessing a step value.
@@ -221,7 +221,7 @@ FaultInjector — ROS2 relay node for RISE sensor fault experiments.
 
   Severity tiers (gyro_bias_rads is the active parameter) — REDESIGNED
   2026-07-23 after old S2 (0.15 rad/s, on=30s) broke localization within ~1s
-  of activation (see docs/design_decisions.md item 7 for the root-cause
+  of activation (see docs/archive/design_decisions.md item 7 for the root-cause
   writeup — Mahalanobis twist-gate rejection cascading into NDT/planning
   failure, not just an overly-cautious flag). Bounded to keep peak accumulated heading
   error (gyro_bias_rads × on_seconds) <= 1.2 rad, comfortably under old S1's
@@ -480,7 +480,7 @@ _DEFAULT_MAP_FILE = os.path.join(_WORKSPACE_DIR, 'Map', 'nishishinjuku_autoware_
 _DEFAULT_GOALS_FILE = os.path.join(_REPO_DIR, 'experiments', 'configs', 'captured_goals.json')
 _DEFAULT_TURN_ZONES_FILE = os.path.join(_REPO_DIR, 'experiments', 'configs', 'turn_zones.json')
 _DEFAULT_TL_ZONES_FILE = os.path.join(_REPO_DIR, 'experiments', 'configs', 'tl_zones.json')
-# Fixed production goal set (docs/research_notes/periodic_fault_strategy.md
+# Fixed production goal set (docs/archive/research_notes/periodic_fault_strategy.md
 # §4/§5, run_fault_campaigns.sh's default GOALS) — not the whole 383-TL-point
 # map, since fault campaigns only ever run on these three routes. Bounding
 # box per goal (start_position to goal.position, with margin), not one bbox
@@ -1737,7 +1737,7 @@ class FaultInjector(Node):
           still integrates the full bias continuously — a long red-light
           wait could accumulate heading error well past the 1.2 rad
           ceiling the severity tiers (0.03/0.08 rad/s) were specifically
-          calibrated against (docs/design_decisions.md item 7: old S2,
+          calibrated against (docs/archive/design_decisions.md item 7: old S2,
           0.15 rad/s over just 30s, broke localization within ~1s of
           activation). Confirmed with the user 2026-07-28 before
           implementing — deliberate scope decision, not an oversight.

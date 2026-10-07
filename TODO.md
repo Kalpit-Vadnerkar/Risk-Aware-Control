@@ -1,167 +1,78 @@
 # Risk-Aware Control — Task List
 
-**Last updated:** 2026-10-04 (evening). For the current architecture, claims, decision
-log, and gotchas, read `CLAUDE.md` first — this file is only the actionable
-task list. Retired framings (closed-set fault classification, "belief
-divergence," the original active-control/RISE plan) are not reproduced here
-— see `CLAUDE.md`'s decision log and `docs/research_notes/
-open_world_safety_reframe_2026-08-20.md` if you need that history; git
-history has every prior version of this file if more detail is ever needed.
+**Last updated:** 2026-10-07. Design: `docs/architecture.md`. Measured state:
+`docs/findings.md`. Collection plan: `docs/experiment_plan.md`. This file is
+only the actionable list; completed items move to `findings.md`.
 
----
+## 1. Build the architecture (CURRENT)
 
-## 1. TL severity sweep — DONE 2026-10-03/04
+- [x] ego_v3 predictor (ego-frame map, route fix, route-ahead input,
+      normalized selection) — accepted by Kalpit, not yet promoted.
+- [x] Model safety benchmark / ablation table.
+- [x] Layer 2 machinery: safe sets (road, objects), 2a pools, matched-FAR
+      evaluation against AWSIM ground truth; hand-built dead-reckoning
+      baseline (4/4 departures).
+- [ ] **ego_v4 multi-source predictor** (in progress 2026-10-07): redundant
+      inputs + consistency heads; extract, train (`--selection normalized`),
+      benchmark against ego_v3.
+- [ ] Layer 1 scores for the consistency heads (conformal, per step) and a
+      combined onset statistic over all channels.
+- [ ] Layer 2b: integrate calibrated consistency gaps from onset into the
+      pose-error distribution (replaces the dead-reckoning coupling as the
+      method; keep dead-reckoning as a baseline).
+- [ ] Layer 2a: lane-keeping prior under trust (fixes the nominal open-loop
+      tail that sets every threshold).
+- [ ] Baselines from Autoware's own monitors (gyro bias/scale validator, pose
+      instability detector, EKF gate).
+- [ ] Rerun all 38 fault trials; update `findings.md` §4.
+- [ ] Promote the chosen model via `promote_model.py` (wire the benchmark
+      gate into it), then rerun the Layer 1 results for Paper 1.
 
-Ran to completion: 6 new nominal trials (goal_007/012/026, now 4/goal) +
-18 fixed-severity fault trials (3 severities × 3 goals × 2 trials), all
-`goal_reached`/`fault_validation.valid`, confidence_scale confirmed
-0.7/0.5/0.3 for fixed_030/050/070 in each trial's own `fault_log.jsonl`.
-goal_007/012 promoted to `CAL_DIR` via `manage_goal_split.py` (see
-`CLAUDE.md`'s directory-conventions entry). `tl_severity_sweep_analysis.py`
-run successfully — dose-response result saved to
-`experiments/analysis/tl_severity_sweep/`.
+## 2. Violation types beyond road departure
 
-**Real bug found and fixed in the analysis itself, not just the data**:
-the script's "clean/held-out" check was `run_name in CAL_DIR_TRIALS`
-(today's `CAL_DIR` membership) — but the deployed model
-(`st_gat_rise.pth`, 2026-08-25) trained on goal_007/012's *original*
-2026-07-22 trials back when they were still in `TRAIN_DIR`; promoting them
-to `CAL_DIR` today doesn't retroactively un-train the model on them. Fixed
-to the real rule (`_trial_is_clean()`): clean = goal_026 (never trained on,
-ever) OR collected after the model's training cutoff. Before the fix,
-`clean_only` and `all_including_contaminated` were byte-identical — a
-red flag that got caught, not missed.
+- [ ] Red-light running: stop-line safe set + labeller on the unfaulted
+      signal topic; validate on existing TL + nominal data.
+- [ ] Speed-limit safe set.
+- [ ] Object conflicts with real ground truth (needs cross traffic).
 
-**Not done** (lower priority, revisit if time allows — not blocking
-Layer 2 work): the TODO item "goal_026's new curve should agree
-directionally with the 2026-08-25 ramp-based pilot's goal_026 result" —
-the current analysis pools all 3 goals together, so this specific
-goal_026-only comparison against the old pilot hasn't been isolated and
-run separately.
+## 3. Experiments (Kalpit runs collection) — see `docs/experiment_plan.md`
 
-**Operational notes from this session, for the next lab run**:
-- AWSIM itself can get stuck (vehicle stays in Park, Autoware reports
-  itself fully healthy — `DRIVING`/`AUTONOMOUS`/MRM `NORMAL`, NDT/LiDAR
-  fine, velocity pinned at 0) in a way that restarting Autoware alone does
-  NOT fix — restart AWSIM too (`./Run_AWSIM.sh`) when this happens, not
-  just `Run_Autoware_Headless.sh`. `experiments/scripts/diagnose_system.py
-  --continuous` is the fast way to tell "Autoware's own view of itself"
-  from "is the vehicle actually moving."
-- Added a hard cap (`--max-batch`, default 12) on `collect.sh`/
-  `run_fault_campaigns.sh` so a batch can't silently chain past the known
-  behavior_path_planner state-exhaustion threshold (README item 5,
-  ~18-36 experiments) unattended — restart Autoware manually between
-  batches instead of relying on auto-restart.
-- `count_existing_trials()` (auto-resume) counts ANY trial with a
-  `result.json`, regardless of outcome — a leftover `stuck`/`timeout`/
-  `engage_failed` trial directory silently blocks that slot from ever
-  being retried. Delete broken trial directories before re-running, don't
-  just leave them.
-- Across this whole sweep, every failure (6 total: `engage_failed`,
-  `timeout` ×3, `stuck` ×2) was at `goal_026`specifically — goal_007/012
-  never failed once. Not yet root-caused; two live hypotheses (a real
-  goal_026 map/routing issue, vs. goal_026 simply always being listed last
-  in `--goals` so it absorbs whatever degrades with trial count regardless
-  of which goal it is) — worth a real test (run goal_026 first in a batch
-  sometime) before trusting goal_026-specific results at face value.
+- [ ] IMU severity x geometry campaign.
+- [ ] `tl_false_green` injector mode (decision pending).
+- [ ] AWSIM rebuild for traffic density; Arm B batch.
+- [ ] More nominal trials per goal.
+- [ ] Open from the TL severity sweep: goal_026 vs the ramp pilot.
+- [ ] Root-cause the goal_026 failures (try it first in a batch).
 
-## 2. More nominal calibration data (ongoing, not just this session)
+## 4. Writing and scope
 
-Partially addressed 2026-10-03/04: goal_007/012 each went from 2→4 trials
-and are now in `CAL_DIR` (16 trials there now, up from 7) — still worth
-collecting more nominal trials generally beyond that, at other goals.
+- [ ] Broader literature review (reachability, conformal-for-planning,
+      AV safety verification) before claiming the calibration x
+      consequence synthesis is novel.
+- [ ] Layer 3 scope: signal definition only, or closed-loop response.
+- [ ] Revisit embedding k (k = 150 under-covers at 0.857).
 
-## 3. Layer 2 — 2b v2 built; blocked on model map-consistency (CURRENT)
+## 5. Ablation backlog (lower priority)
 
-Full record: `docs/research_notes/layer2b_v2_and_ego_frame_model_2026-10-04.md`.
+Graph re-pooling cadence; capacity sweep (128/128/128/2/4 never revisited);
+object-set pooling; sparse-adjacency GCN; `MAX_GRAPH_NODES` as a variable.
+Each gets a row in the benchmark table.
 
-- [x] v2 safe set (drivable-area SDF, oriented object footprints,
-      kinematic-feasibility trim) passing the realized-nominal acceptance test.
-- [x] 2a pools (pooled/Mondrian/embedding) + causal Layer1->Layer2 coupling.
-- [x] AWSIM ground-truth pose wired in; lead time vs real departures.
-- [x] `model_safety_benchmark.py` gate + ablation table.
-- [x] ego_v2 graph schema (A: ego frame, B: past-only centring, C: lane
-      direction) — 3/4 gate checks pass, off-road 3.6% (needs <= 2%).
-- [ ] Data-loader speed-up (vectorize graph tensor building, ~9.5 min/epoch).
-- [ ] Stage D: explicit route-ahead polyline input; re-extract, retrain,
-      benchmark (target: intersection off-road + under-turn rate).
-- [ ] Once the gate passes: Layer 2 v2 on all 38 fault trials (every
-      campaign), matched-FAR lead times, featured plots; then promote via
-      `promote_model.py` (wire the benchmark gate into it).
-- [ ] Deferred: Autoware `predicted_paths` for objects; reliability diagram
-      for P(violation) across many trials.
+## Out of scope
 
-## 4. Broader literature review (before writing up Layer 2 as novel)
+- New obstacle/staged-avoidance experiments (`obs_*`): control contribution,
+  not safety evidence.
+- New LiDAR fault collection here (the T-ITS paper's data is the reference).
+- Multiple speed levels (all runs at 11.11 m/s).
+- Reviving the closed-set / belief-divergence framing (`findings.md` §6).
 
-The existing lit-review pass was scoped to Waymo's own published safety
-research only (reasonable first pass, is what surfaced the reachability
-pivot) — not a substitute for a broader search across reachability
-analysis, conformal-prediction-for-planning, and AV-safety-verification
-generally. Needed to confirm the "calibration × reachability" synthesis
-claim isn't already done elsewhere under different terminology. Scope this
-before writing up Layer 2 as a contribution, not after.
-
-## 5. Layer 3 scoping decision (open, needs Kalpit's call)
-
-Does "graceful response" pull the previously-descoped active-control
-(RISE) work back into the core claim, or does Layer 3 stay at "define the
-shape the signal should take" without rebuilding an actual controller?
-Not yet decided — see `CLAUDE.md` decision log.
-
-## 6. Arm B live validation
-
-Arm B (stock/full MRM diagnostic gate, the ground-truth oracle for
-lead-time measurement) is built (`experiments/scripts/
-switch_diagnostic_arm.sh B`) but has never actually run a fault campaign —
-untested whether it reintroduces the MRM deadlocks (routing resets, TF
-drops during teleports) that Arm A was built to route around. Needed before
-any lead-time-vs-Arm-B result can be claimed.
-
-## 7. Architecture ablation backlog (P1.6 — lower priority, revisit once 1-4 land)
-
-Several `st_gat/model/model.py` architecture choices were set by judgment
-call, not measurement. Tracked with results so far in
-`docs/research_notes/ablation_study_2026.md` — check that file before
-re-running any of these, several already have a done/measured verdict:
-
-- [x] Frame-gap contiguity gate, route-aware graph node selection,
-      attention-weighted pooling, TL-discrepancy temperature scaling,
-      `MAX_GRAPH_NODES` (raised 150→1024, direct measurement showed 150 was
-      still discarding ~80% of in-radius nodes) — all done, see the
-      ablation study doc for numbers.
-- [ ] Graph cadence: `graph_ctx` is pooled once per window (static across
-      all 30 input timesteps) — measure whether finer re-pooling cadence
-      improves tracking or fault-reaction lead time.
-- [ ] Capacity sweep: `d_model`/`d_graph`/`hidden_size`/`num_layers`/
-      `nhead` (currently 128/128/128/2/4, never revisited).
-- [ ] Object-set encoder: mean-pool vs. attention-pool for tracked objects.
-- [ ] Sparse-adjacency GCN — more relevant now than at the old 150-node cap.
-- [ ] `MAX_GRAPH_NODES` itself as a studied variable (150/300/600/1024
-      against detection/calibration/lead-time results, not just the
-      extraction-side node-count fix already measured).
-
-## Explicitly out of scope
-
-- **New staged-avoidance/obstacle-scenario experiments** (`obs_*`
-  campaigns) — control/handling contribution, not safety-verification
-  evidence. Existing infrastructure/data kept as illustrative context.
-- **New LiDAR fault data collection in this repo** — out of scope; the
-  published T-ITS paper's own LiDAR fault data is the reference if ever
-  needed for a comparison.
-- **Multiple velocity levels / per-speed calibration** — all experiments
-  run at max map-limit velocity (11.11 m/s) only.
-- **Rewriting or re-litigating the closed-set/"belief divergence" framing**
-  — retired, see `CLAUDE.md` decision log; don't resurrect Priority-0-style
-  mechanism experiments without a new, explicit reason.
-
-## Key parameters (current)
+## Key parameters
 
 | Parameter | Value | Notes |
 |---|---|---|
-| Velocity | 11.11 m/s (map limit) | Single operating condition, all experiments |
-| NPC density | 10 (AWSIM GUI slider) | Single condition, all data collected so far (confirmed 2026-10-04) — config-driven override now exists (see `CLAUDE.md`'s AWSIM gotcha) but not yet used; plan is to keep it at 10 for now and collect a higher-density round later, once Layer 2b exists to evaluate it |
-| Conformal target coverage | 90% (δ=0.10) | Headline is the reliability diagram, coverage is the secondary check |
-| ST-GAT features | 14 | Includes `traffic_light_discrepancy`; retrain required after any further feature-vector change |
-| Fault goals | goal_007, goal_012, goal_026 | Most TL-zone entries per trial |
-| Canonical model | `st_gat/models/h30_30/st_gat_rise.pth` | v2 (zone-weighted retrain), gated via `promote_model.py` |
-| Nominal calibration trials | 17 (goal-split `CAL_DIR`, up from 7 as of 2026-10-03) | goal_007/012 added this session; still worth more at other goals, see `CLAUDE.md` limitations |
+| Speed | 11.11 m/s (map limit) | single condition |
+| NPC density | 10 | single condition; override plumbed, needs AWSIM rebuild |
+| Conformal target | 90% | reliability diagram is the headline |
+| Fault goals | goal_007, goal_012, goal_026 | most TL-zone entries per trial |
+| Canonical model | `st_gat/models/h30_30/st_gat_rise.pth` (bbox_v1) | best: `h30_30_ego3` |
+| Calibration trials | 17 (`CAL_DIR`) | more needed beyond goals 007/012/026 |

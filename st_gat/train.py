@@ -14,7 +14,7 @@ Expects pkl files already produced by:
     python3 -m st_gat.pipeline.run_pipeline
 
 Two-phase training (2026-08-07, see Trainer's own docstring and
-docs/research_notes/calibration_training_literature_2026-08-07.md):
+docs/archive/research_notes/calibration_training_literature_2026-08-07.md):
 --warmup-epochs controls Phase 1 (mean-only warmup, fixed duration, no
 early stopping); --epochs/--patience control Phase 2's ceiling (full
 Student-t NLL + learned task weighting, early-stopped as before);

@@ -10,7 +10,7 @@ competing framing.
 > **Status:** the mechanism (Section 3) is stated as a claim, not yet a proven
 > result — Priority 0 in `TODO.md` (Experiments A & B) is what proves or kills it.
 > Section 5 (calibration) is the next blocking piece of work — Stage 4 in
-> `docs/stgat_pipeline_plan.md`, not yet started. The original RISE/active-control
+> `docs/archive/stgat_pipeline_plan.md`, not yet started. The original RISE/active-control
 > content is preserved in Section 11 as future-work, not deleted.
 
 ---
@@ -221,7 +221,7 @@ deciding early rather than backfilling it.
   `static_collision.permanent_stop_time_s` / `likely_static_collision` heuristic
   (Arm A) — a real "the vehicle stopped moving and never recovered" event,
   validated against multiple fault trials in the 2026-07-25 fault-sweep session
-  (see `docs/research_notes/` history). Not literal ground-truth collision
+  (see `docs/archive/research_notes/` history). Not literal ground-truth collision
   (AWSIM's own collision topic isn't wired to the ego prefab), but a defensible,
   already-implemented proxy.
 - **Threshold-based (secondary / sensitivity check):** EKF-vs-ground-truth
@@ -282,7 +282,7 @@ apply calibration offline → draw a curve → produce a figure.
 
 ## 8. Calibration — Methods Menu (Reference, Not Yet Built)
 
-**Status: Stage 4 in `docs/stgat_pipeline_plan.md` — not started.** Listed here
+**Status: Stage 4 in `docs/archive/stgat_pipeline_plan.md` — not started.** Listed here
 for reference, not all required:
 
 - **Conformal prediction** — distribution-free, converts a divergence score into
@@ -297,7 +297,7 @@ for reference, not all required:
 **Severity axis note:** the severity axis (Section 2, item 3) is load-bearing for
 the eventual dose-response curves, so fault-magnitude parameterization needs to be
 explicit and documented per fault type (IMU bias in what units, traffic-light
-corruption at what rate, etc.) — see `docs/fault_scenario_table.md` for the
+corruption at what rate, etc.) — see `docs/archive/fault_scenario_table.md` for the
 current per-campaign parameterization; keep it current as new severity tiers are
 added.
 
@@ -337,7 +337,7 @@ making lead time cleanly measurable.
 (Arm A and Arm B), toggleable via `experiments/scripts/switch_diagnostic_arm.sh`.
 Arm B hasn't been run against a real fault campaign yet, so whether it
 reintroduces the deadlocks Arm A was built to avoid is still open. See `TODO.md`'s
-"Two-Arm Fault Injection Design" section and `docs/design_decisions.md` item 5.
+"Two-Arm Fault Injection Design" section and `docs/archive/design_decisions.md` item 5.
 
 ---
 
