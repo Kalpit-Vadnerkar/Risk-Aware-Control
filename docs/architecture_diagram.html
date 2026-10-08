@@ -1,0 +1,271 @@
+<title>Risk-Aware Control Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working sheet — header strip, the full architecture diagram, then status key and change log in two columns. */
+:root {
+  --bg: #f5f6f4;
+  --panel: #ffffff;
+  --fg: #1d2326;
+  --muted: #5d676c;
+  --line: #9aa4a8;
+  --rule: #dde1e0;
+  --accent: #1f6f8b;
+  --accent-tint: #e1eef3;
+  --built: #2e7d4f;
+  --progress: #b26b00;
+  --review: #6b4fa3;
+  --planned: #7b858a;
+  --open: #a8433a;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141a1d; --panel: #1b2226; --fg: #e3e8ea; --muted: #9aa6ab; --line: #6c787d; --rule: #2b3439;
+    --accent: #5fb3cf; --accent-tint: #1d3540; --built: #5cc189; --progress: #e0a13d; --review: #a98de0;
+    --planned: #8d979c; --open: #e07a6f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141a1d; --panel: #1b2226; --fg: #e3e8ea; --muted: #9aa6ab; --line: #6c787d; --rule: #2b3439;
+  --accent: #5fb3cf; --accent-tint: #1d3540; --built: #5cc189; --progress: #e0a13d; --review: #a98de0;
+  --planned: #8d979c; --open: #e07a6f; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 40px; display: grid; gap: 22px; }
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 24px; border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
+h1 { font-size: 1.55rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 62ch; }
+.meta { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); display: grid; gap: 2px; text-align: right; }
+.meta a { color: var(--accent); }
+.sheet { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px; overflow-x: auto; }
+.sheet svg { display: block; width: 100%; min-width: 760px; height: auto; }
+svg text { font-family: var(--sans); fill: var(--fg); }
+svg .muted { fill: var(--muted); }
+svg .name { font-weight: 600; font-size: 15px; }
+svg .line { font-size: 12.5px; }
+svg .key { font-size: 12.5px; font-weight: 600; fill: var(--accent); }
+svg .layer { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; fill: var(--muted); }
+svg .box { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; }
+svg .box.core { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 2; }
+svg .container { fill: none; stroke: var(--rule); stroke-width: 1.5; }
+svg .wire { fill: none; stroke: var(--line); stroke-width: 1.3; }
+svg .wire.ev { stroke: var(--accent); stroke-width: 1.8; }
+svg .edge { font-size: 11.5px; fill: var(--muted); }
+svg .badge rect { stroke-width: 1.2; fill: var(--panel); }
+svg .badge text { font-family: var(--mono); font-size: 10.5px; }
+svg .b-built rect { stroke: var(--built); } svg .b-built text { fill: var(--built); }
+svg .b-progress rect { stroke: var(--progress); } svg .b-progress text { fill: var(--progress); }
+svg .b-review rect { stroke: var(--review); } svg .b-review text { fill: var(--review); }
+svg .b-planned rect { stroke: var(--planned); stroke-dasharray: 3 2; } svg .b-planned text { fill: var(--planned); }
+svg .b-open rect { stroke: var(--open); } svg .b-open text { fill: var(--open); }
+svg marker path { fill: var(--line); }
+svg #arrow-ev path { fill: var(--accent); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; }
+.cols > section { min-width: 0; }
+h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.status { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.status li { display: grid; grid-template-columns: 112px 1fr; gap: 12px; align-items: baseline; }
+.pill { font-family: var(--mono); font-size: 0.75rem; border: 1.2px solid currentColor; border-radius: 999px; padding: 1px 8px; justify-self: start; }
+.pill.built { color: var(--built); } .pill.progress { color: var(--progress); } .pill.review { color: var(--review); }
+.pill.planned { color: var(--planned); border-style: dashed; } .pill.open { color: var(--open); }
+.log { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.log li { display: grid; grid-template-columns: 92px 1fr; gap: 12px; }
+.log time { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px; }
+@media (max-width: 520px) { .meta { text-align: left; } .status li, .log li { grid-template-columns: 1fr; gap: 2px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Risk-Aware Control Architecture</h1>
+      <p class="sub">How the pipeline turns "my state or forecast is off-nominal" into a calibrated probability of a safety violation that grows while a fault goes unmitigated. Current state, not the plan of record for every box.</p>
+    </div>
+    <div class="meta">
+      <span>Updated 2026-10-07</span>
+      <span>Model in use: ego_v5 (training)</span>
+      <a href="https://claude.ai/code/artifact/1cc568ab-f9b5-4945-afe4-9cf1c9f55a65">Design document</a>
+    </div>
+  </header>
+
+  <div class="sheet">
+    <svg viewBox="0 0 1000 880" role="img" aria-label="Pipeline architecture: Layer 1 detects when and how much, Layer 2 turns it into P(violation), Layer 3 responds">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+        <marker id="arrow-ev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <!-- inputs -->
+      <g>
+        <rect class="box" x="20" y="20" width="230" height="100" rx="8"/>
+        <text class="name" x="34" y="46">Estimated ego state</text>
+        <text class="line muted" x="34" y="68">pose and heading (EKF)</text>
+        <text class="line muted" x="34" y="86">speed, steering, acceleration</text>
+        <text class="line muted" x="34" y="104">EKF covariance</text>
+      </g>
+      <g>
+        <rect class="box" x="270" y="20" width="230" height="100" rx="8"/>
+        <text class="name" x="284" y="46">Redundant sources</text>
+        <text class="line muted" x="284" y="68">vehicle yaw rate, wheel speed</text>
+        <text class="line muted" x="284" y="86">EKF yaw rate and speed</text>
+        <text class="line muted" x="284" y="104">LiDAR-map match, EKF gate</text>
+      </g>
+      <g>
+        <rect class="box" x="520" y="20" width="230" height="100" rx="8"/>
+        <text class="name" x="534" y="46">Map and route</text>
+        <text class="line muted" x="534" y="68">lanelets in the ego frame</text>
+        <text class="line muted" x="534" y="86">lane direction</text>
+        <text class="line muted" x="534" y="104">route ahead, 57 m</text>
+      </g>
+      <g>
+        <rect class="box" x="770" y="20" width="210" height="100" rx="8"/>
+        <text class="name" x="784" y="46">Scene</text>
+        <text class="line muted" x="784" y="68">tracked objects</text>
+        <text class="line muted" x="784" y="86">traffic-light state</text>
+        <text class="line muted" x="784" y="104">as perceived</text>
+      </g>
+
+      <!-- Layer 1 -->
+      <rect class="container" x="10" y="150" width="980" height="300" rx="10"/>
+      <text class="layer" x="26" y="174">LAYER 1 · DETECT — trained and calibrated on nominal driving only</text>
+
+      <rect class="box core" x="30" y="190" width="940" height="50" rx="8"/>
+      <text class="name" x="500" y="221" text-anchor="middle">Multi-source ST-GAT: behaviour heads and consistency heads</text>
+      <g class="badge b-progress"><rect x="852" y="203" width="106" height="22" rx="11"/><text x="905" y="218" text-anchor="middle">in training</text></g>
+
+      <g>
+        <rect class="box" x="30" y="270" width="300" height="110" rx="8"/>
+        <text class="name" x="44" y="296">Behaviour heads</text>
+        <text class="line muted" x="44" y="318">position, velocity, steering,</text>
+        <text class="line muted" x="44" y="336">acceleration, traffic lights</text>
+        <text class="line muted" x="44" y="354">conformal, per horizon step</text>
+        <text class="key" x="44" y="372">gives WHEN</text>
+        <g class="badge b-built"><rect x="262" y="354" width="56" height="20" rx="10"/><text x="290" y="368" text-anchor="middle">built</text></g>
+      </g>
+      <g>
+        <rect class="box" x="350" y="270" width="300" height="110" rx="8"/>
+        <text class="name" x="364" y="296">Consistency: EKF vs vehicle</text>
+        <text class="line muted" x="364" y="318">EKF minus vehicle yaw rate, speed</text>
+        <text class="line muted" x="364" y="336">sees IMU errors directly, misses</text>
+        <text class="line muted" x="364" y="354">LiDAR scan-match corrections</text>
+        <text class="key" x="364" y="372">gives WHEN</text>
+        <g class="badge b-built"><rect x="582" y="354" width="56" height="20" rx="10"/><text x="610" y="368" text-anchor="middle">built</text></g>
+      </g>
+      <g>
+        <rect class="box" x="670" y="270" width="300" height="110" rx="8"/>
+        <text class="name" x="684" y="296">Consistency: pose vs vehicle</text>
+        <text class="line muted" x="684" y="318">estimated-pose minus vehicle</text>
+        <text class="line muted" x="684" y="336">yaw rate and speed, including</text>
+        <text class="line muted" x="684" y="354">LiDAR scan-match corrections</text>
+        <text class="key" x="684" y="372">gives HOW MUCH, WHICH WAY</text>
+        <g class="badge b-progress"><rect x="902" y="354" width="56" height="20" rx="10"/><text x="930" y="368" text-anchor="middle">new</text></g>
+      </g>
+
+      <g>
+        <rect class="box" x="350" y="400" width="300" height="38" rx="8"/>
+        <text class="line" x="364" y="424">Onset: CUSUM, distrust on 1% nominal</text>
+      </g>
+      <g class="badge b-review"><rect x="660" y="408" width="104" height="22" rx="11"/><text x="712" y="423" text-anchor="middle">under review</text></g>
+
+      <!-- wires inside / out of Layer 1 -->
+      <g class="wire">
+        <path d="M135 120V150" marker-end="url(#arrow)"/>
+        <path d="M385 120V150" marker-end="url(#arrow)"/>
+        <path d="M635 120V150" marker-end="url(#arrow)"/>
+        <path d="M875 120V150" marker-end="url(#arrow)"/>
+        <path d="M180 240V270" marker-end="url(#arrow)"/>
+        <path d="M500 240V270" marker-end="url(#arrow)"/>
+        <path d="M820 240V270" marker-end="url(#arrow)"/>
+        <path d="M290 380V419H350" marker-end="url(#arrow)"/>
+        <path d="M500 380V400" marker-end="url(#arrow)"/>
+        <path d="M150 380V520" marker-end="url(#arrow)"/>
+      </g>
+      <g class="wire ev">
+        <path d="M500 438V520" marker-end="url(#arrow-ev)"/>
+        <path d="M820 380V466H590V520" marker-end="url(#arrow-ev)"/>
+      </g>
+      <text class="edge" x="158" y="470">forecast</text>
+      <text class="edge" x="508" y="470">when (onset)</text>
+      <text class="edge" x="828" y="420">how much, which way</text>
+
+      <!-- Layer 2 -->
+      <rect class="container" x="10" y="480" width="980" height="280" rx="10"/>
+      <text class="layer" x="980" y="504" text-anchor="end">LAYER 2 · CONSEQUENCE</text>
+
+      <g>
+        <rect class="box" x="30" y="520" width="300" height="122" rx="8"/>
+        <text class="name" x="44" y="546">2a Nominal envelope</text>
+        <text class="line muted" x="44" y="568">200 counterfactual trajectories:</text>
+        <text class="line muted" x="44" y="586">forecast plus recorded errors from</text>
+        <text class="line muted" x="44" y="604">the 150 most similar scenes</text>
+        <text class="line muted" x="44" y="626">lane-keeping prior: planned</text>
+        <g class="badge b-built"><rect x="262" y="532" width="56" height="20" rx="10"/><text x="290" y="546" text-anchor="middle">built</text></g>
+      </g>
+      <g>
+        <rect class="box core" x="350" y="520" width="300" height="122" rx="8"/>
+        <text class="name" x="364" y="546">2b Evidence growth</text>
+        <text class="line" x="364" y="568">integrate the pose gaps from onset</text>
+        <text class="line" x="364" y="586">rotate and shift every trajectory</text>
+        <text class="line" x="364" y="604">grows while the fault persists,</text>
+        <text class="line" x="364" y="622">slows when the vehicle slows</text>
+        <g class="badge b-progress"><rect x="566" y="532" width="72" height="20" rx="10"/><text x="602" y="546" text-anchor="middle">iterating</text></g>
+      </g>
+      <g>
+        <rect class="box" x="670" y="520" width="300" height="122" rx="8"/>
+        <text class="name" x="684" y="546">2c Safe sets</text>
+        <text class="line muted" x="684" y="568">road edge, tracked objects</text>
+        <text class="line muted" x="684" y="586">stop line on red: planned</text>
+        <text class="line muted" x="684" y="604">speed limit: planned</text>
+        <text class="line muted" x="684" y="626">P = share of trajectories that violate</text>
+        <g class="badge b-built"><rect x="902" y="532" width="56" height="20" rx="10"/><text x="930" y="546" text-anchor="middle">built</text></g>
+      </g>
+      <g class="wire">
+        <path d="M330 581H350" marker-end="url(#arrow)"/>
+        <path d="M650 581H670" marker-end="url(#arrow)"/>
+        <path d="M820 642V664" marker-end="url(#arrow)"/>
+      </g>
+
+      <g>
+        <rect class="box" x="30" y="664" width="940" height="76" rx="8"/>
+        <text class="name" x="44" y="690">P(violation within 3 s), per violation type: its level and its growth rate</text>
+        <text class="line muted" x="44" y="712">Alarm thresholds set on nominal driving (matched false-alarm rate); scored against AWSIM ground truth,</text>
+        <text class="line muted" x="44" y="730">against a dead-reckoning baseline and the Layer 1 alarm alone</text>
+        <g class="badge b-review"><rect x="854" y="676" width="104" height="22" rx="11"/><text x="906" y="691" text-anchor="middle">under review</text></g>
+      </g>
+
+      <!-- Layer 3 -->
+      <path class="wire" d="M500 740V790" marker-end="url(#arrow)"/>
+      <g>
+        <rect class="box" x="10" y="790" width="980" height="70" rx="10"/>
+        <text class="layer" x="26" y="814">LAYER 3 · RESPONSE</text>
+        <text class="line" x="26" y="840">Graded response in proportion to P and its growth: slow down, widen gaps, hand over, stop. Mitigation shows up as P levelling off.</text>
+        <g class="badge b-open"><rect x="904" y="802" width="72" height="22" rx="11"/><text x="940" y="817" text-anchor="middle">scope open</text></g>
+      </g>
+    </svg>
+  </div>
+
+  <div class="cols">
+    <section>
+      <h2>Status key</h2>
+      <ul class="status">
+        <li><span class="pill built">built</span><span>Implemented and measured on the current data.</span></li>
+        <li><span class="pill progress">in progress</span><span>Being built or retrained now (new, iterating, in training).</span></li>
+        <li><span class="pill review">under review</span><span>Works, but the design is being reconsidered: the alarm and onset logic, and how results are reported.</span></li>
+        <li><span class="pill planned">planned</span><span>Specified in the design, not built yet.</span></li>
+        <li><span class="pill open">open</span><span>Scope not decided.</span></li>
+      </ul>
+    </section>
+    <section>
+      <h2>Recent changes</h2>
+      <ul class="log">
+        <li><time datetime="2026-10-07">2026-10-07</time><span>Pose-based consistency channel added (ego_v5): it sees the LiDAR scan-match corrections the EKF channel misses, so the envelope no longer over-rotates while localization is still being corrected.</span></li>
+        <li><time datetime="2026-10-07">2026-10-07</time><span>Vehicle yaw-rate sign fixed: AWSIM reports it opposite to ROS, which had made the first consistency channel twice the yaw rate.</span></li>
+        <li><time datetime="2026-10-07">2026-10-07</time><span>Onset moved from fixed-hold flags to a calibrated CUSUM; its saturation under large faults is now under review, with the alarm strategy.</span></li>
+        <li><time datetime="2026-10-07">2026-10-07</time><span>Redundant ego-state sources moved inside the predictor as inputs and consistency heads (ego_v4).</span></li>
+        <li><time datetime="2026-10-05">2026-10-05</time><span>Ego-frame map, route fix and route-ahead input (ego_v3); predictor lateral error at 3 s down from 0.98 m to 0.13 m.</span></li>
+      </ul>
+    </section>
+  </div>
+</div>
