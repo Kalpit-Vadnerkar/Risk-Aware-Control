@@ -44,13 +44,13 @@ the design moved) instead of writing a new dated note.
 **Paper split:** Paper 1 = Layer 1 (calibration / UQ) standalone, Paper 2 =
 Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-08-25.md`).
 
-**Status in one line each (2026-10-07):**
-- Canonical model is still bbox_v1 (`st_gat/models/h30_30/`); best model is
-  ego_v3 (`h30_30_ego3/`), accepted by Kalpit, not yet promoted. ego_v4
-  (multi-source) is being built.
-- Layer 2 works end-to-end; the hand-built dead-reckoning coupling catches
-  all 4 real IMU departures, behavioral-residual-only couplings catch none —
-  size/direction need redundant sources (`findings.md` §3–4).
+**Status in one line each (2026-10-08):**
+- Canonical model is still bbox_v1 (`st_gat/models/h30_30/`); Layer 2 work
+  uses ego_v6 (`h30_30_ego6/`, multi-source + planar pose consistency), not
+  promoted. Run with `STGAT_GRAPH_FRAME=ego_v6`.
+- Layer 2 method = `experiments/scripts/layer2_envelope.py`: catches 4/4
+  real IMU departures (2.0-3.4 s lead), harmless IMU faults in alarm 0-18%
+  of fault time (`findings.md` §4). Next: response-conditioned P (Layer 3 probe).
 - Work happens on branch `layer2b-ego-frame` (not merged, not pushed).
 
 ## Standing rules learned the hard way
