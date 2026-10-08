@@ -84,8 +84,8 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
       <p class="sub">How the pipeline turns "my state or forecast is off-nominal" into a calibrated probability of a safety violation that grows while a fault goes unmitigated. Current state, not the plan of record for every box.</p>
     </div>
     <div class="meta">
-      <span>Updated 2026-10-07</span>
-      <span>Model in use: ego_v5 (training)</span>
+      <span>Updated 2026-10-08</span>
+      <span>Model in use: ego_v6</span>
       <a href="https://claude.ai/code/artifact/1cc568ab-f9b5-4945-afe4-9cf1c9f55a65">Design document</a>
     </div>
   </header>
@@ -133,7 +133,7 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
 
       <rect class="box core" x="30" y="190" width="940" height="50" rx="8"/>
       <text class="name" x="500" y="221" text-anchor="middle">Multi-source ST-GAT: behaviour heads and consistency heads</text>
-      <g class="badge b-progress"><rect x="852" y="203" width="106" height="22" rx="11"/><text x="905" y="218" text-anchor="middle">in training</text></g>
+      <g class="badge b-progress"><rect x="852" y="203" width="106" height="22" rx="11"/><text x="905" y="218" text-anchor="middle">iterating</text></g>
 
       <g>
         <rect class="box" x="30" y="270" width="300" height="110" rx="8"/>
@@ -156,16 +156,16 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
       <g>
         <rect class="box" x="670" y="270" width="300" height="110" rx="8"/>
         <text class="name" x="684" y="296">Consistency: pose vs vehicle</text>
-        <text class="line muted" x="684" y="318">estimated-pose minus vehicle</text>
-        <text class="line muted" x="684" y="336">yaw rate and speed, including</text>
+        <text class="line muted" x="684" y="318">estimated-pose minus vehicle yaw</text>
+        <text class="line muted" x="684" y="336">rate, along and lateral speed, with</text>
         <text class="line muted" x="684" y="354">LiDAR scan-match corrections</text>
         <text class="key" x="684" y="372">gives HOW MUCH, WHICH WAY</text>
-        <g class="badge b-progress"><rect x="902" y="354" width="56" height="20" rx="10"/><text x="930" y="368" text-anchor="middle">new</text></g>
+        <g class="badge b-built"><rect x="902" y="354" width="56" height="20" rx="10"/><text x="930" y="368" text-anchor="middle">built</text></g>
       </g>
 
       <g>
         <rect class="box" x="350" y="400" width="300" height="38" rx="8"/>
-        <text class="line" x="364" y="424">Onset: CUSUM, distrust on 1% nominal</text>
+        <text class="line" x="364" y="424">Onset: bounded score, CUSUM, recovery</text>
       </g>
       <g class="badge b-review"><rect x="660" y="408" width="104" height="22" rx="11"/><text x="712" y="423" text-anchor="middle">under review</text></g>
 
@@ -206,8 +206,8 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
       <g>
         <rect class="box core" x="350" y="520" width="300" height="122" rx="8"/>
         <text class="name" x="364" y="546">2b Evidence growth</text>
-        <text class="line" x="364" y="568">integrate the pose gaps from onset</text>
-        <text class="line" x="364" y="586">rotate and shift every trajectory</text>
+        <text class="line" x="364" y="568">heading error integrated from onset,</text>
+        <text class="line" x="364" y="586">position error over a 3 s window</text>
         <text class="line" x="364" y="604">grows while the fault persists,</text>
         <text class="line" x="364" y="622">slows when the vehicle slows</text>
         <g class="badge b-progress"><rect x="566" y="532" width="72" height="20" rx="10"/><text x="602" y="546" text-anchor="middle">iterating</text></g>
@@ -260,6 +260,8 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
     <section>
       <h2>Recent changes</h2>
       <ul class="log">
+        <li><time datetime="2026-10-08">2026-10-08</time><span>Alarm logic: every channel becomes a conformal p-value, combined into one bounded score; capped CUSUM with a 2 s recovery test, so alarms end. 2b carries the pose error after distrust ends. Traffic-light channels now feed Layer 1.</span></li>
+        <li><time datetime="2026-10-08">2026-10-08</time><span>Pose consistency made planar (ego_v6): lateral and along-track pose-velocity gaps, integrated over a sliding 3 s window; heading from onset. Checked against AWSIM ground truth.</span></li>
         <li><time datetime="2026-10-07">2026-10-07</time><span>Pose-based consistency channel added (ego_v5): it sees the LiDAR scan-match corrections the EKF channel misses, so the envelope no longer over-rotates while localization is still being corrected.</span></li>
         <li><time datetime="2026-10-07">2026-10-07</time><span>Vehicle yaw-rate sign fixed: AWSIM reports it opposite to ROS, which had made the first consistency channel twice the yaw rate.</span></li>
         <li><time datetime="2026-10-07">2026-10-07</time><span>Onset moved from fixed-hold flags to a calibrated CUSUM; its saturation under large faults is now under review, with the alarm strategy.</span></li>
