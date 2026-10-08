@@ -56,6 +56,7 @@ Usage (ROS + venv):
 
 import argparse
 import json
+import pickle
 import math
 import os
 import sys
@@ -528,6 +529,7 @@ def build_pool(model, device, args):
             ev[k][m] = sub[k]
     ev['u'] = u
     pool['ev'] = ev
+    pool['t_all'] = t_all
     eps = sum(len(L2._alarm_episodes(t_all[trial == tid], ev['D'][trial == tid] > 0, 1.0)) for tid in np.unique(trial))
     hours = len(trial) * DT / 3600
     print(f"Calibration: {len(trial)} windows ({hours:.2f} h), {len(np.unique(trial))} trials; integrating channels {int_ch}")
@@ -569,6 +571,9 @@ def mode_nominal(pool, drivable, map_data, args):
     print(f"  layer1 flag on nominal windows: {res['layer1_flag_rate']:.2%}")
     with open(os.path.join(args.output_dir, 'nominal_floor.json'), 'w') as f:
         json.dump(res, f, indent=2)
+    # per-window series, for threshold sweeps (operating curves) offline
+    np.savez(os.path.join(args.output_dir, 'series_nominal.npz'), trial=pool['trial'][idx],
+             t=pool['t_all'][idx], D=pool['ev']['D'][idx], **{f'P_{v}': P[v] for v in ALARMS})
     return res
 
 
@@ -637,7 +642,7 @@ def mode_faults(model, device, pool, drivable, map_data, nominal, args):
     builder = SequenceBuilder(MapProcessor(cfg.MAP_FILE).map_data, route=[])
     thr = nominal['thresholds']
     camps = sorted(c for c in os.listdir(L2.DATA_DIR) if not c.startswith('nom'))
-    summaries = []
+    summaries, series = [], []
     for run_dir in L2._fault_trials(camps):
         rel = os.path.relpath(run_dir, L2.DATA_DIR)
         if args.trials and not any(rel.startswith(x) for x in args.trials):
@@ -660,6 +665,10 @@ def mode_faults(model, device, pool, drivable, map_data, nominal, args):
         t = tr['t'][idx]
         s = summarize(rel, t, P, tr['ev']['D'][idx], tr['fault_windows'], g['departure'], thr, args.alarm_gap_s)
         summaries.append(s)
+        series.append({'trial': rel, 't': t, 'D': tr['ev']['D'][idx], 'fault_windows': tr['fault_windows'],
+                       'departure': g['departure'], 'true_psi': g['true_psi'][idx], 'true_lat': g['true_lat'][idx],
+                       'Psi': tr['ev']['Psi'][idx], 'Y': tr['ev']['Y'][idx], 'u': tr['ev']['u'][idx],
+                       'rm_t': g['gt_t'], 'rm': g['rm'], **{f'P_{v}': P[v] for v in ALARMS}})
         print("  " + "  ".join(f"{k}: {s[k].get('lead_time_s')}" if g['departure'] else
                                f"{k}: {s[k]['in_fault_alarm_rate']}" for k in ALARMS + ['layer1']))
         if any(rel.startswith(x) for x in FEATURED):
@@ -669,6 +678,9 @@ def mode_faults(model, device, pool, drivable, map_data, nominal, args):
                 make_gif(tr, g, pool, drivable, map_data, args)
         with open(os.path.join(args.output_dir, 'fault_summary.json'), 'w') as f:
             json.dump(summaries, f, indent=2)
+    if not args.trials:
+        with open(os.path.join(args.output_dir, 'series_faults.pkl'), 'wb') as f:
+            pickle.dump(series, f)
     print_table(summaries)
     return summaries
 
