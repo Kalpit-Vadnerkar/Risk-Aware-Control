@@ -114,8 +114,8 @@ Benchmark table (held-out CAL, every model):
 - **Open-loop tail.** Normal driving at tight spots gives P ≈ 1 because
   counterfactuals ignore lane-keeping; it sets every 1%-false-alarm threshold
   (~0.82–0.93). Fix planned: lane-keeping prior under trust.
-- **Coupling Layer 1 into the envelope** (4 real IMU departures, 1% nominal
-  false-alarm rate):
+- **Coupling Layer 1 into the envelope** (4 real IMU departures, alarms at a
+  1% nominal false-alarm rate; earlier couplings, ego_v3):
 
 | Coupling | Uses | Departures caught | Lead |
 |---|---|---|---|
@@ -125,6 +125,27 @@ Benchmark table (held-out CAL, every model):
 | Dead-reckoning pose correction (baseline) | redundancy (hand-built) | 4/4 | 1.8–3.0 s |
 | Layer 1 alone (no map) | behavioral | 3/4 | 0.2–3.0 s |
 
+- **The architecture method** (`layer2_envelope.py`, ego_v6, 2026-10-08):
+  per-channel conformal p-values combined into a bounded score; capped
+  CUSUM onset calibrated to <= 6 nominal distrust episodes per hour (4.2/h
+  achieved, 0.3% of driving); 2 s recovery test; heading error integrated
+  from onset with the pose-consistency channel, along/lateral over a sliding
+  3 s window; carried error released once LiDAR-map matching is healthy
+  for 2 s. Results, lead time (alarm start after fault onset):
+
+| Departure | Layer 1 alone | 2a+2b evidence | dead-reckoning |
+|---|---|---|---|
+| s3/goal_007 | 10.0 s (f+28.7) | 2.0 s (f+36.7) | 1.6 s (f+37.1) |
+| scale/goal_007 | 6.2 s (f+3.3) | 2.0 s (f+7.5) | 2.4 s (f+7.1) |
+| stuck/goal_007 | 4.2 s (f+3.2) | 3.0 s (f+4.4) | 3.0 s (f+4.4) |
+| stuck/goal_012 | 3.6 s (f+22.8) | 3.4 s (f+23.0) | 3.4 s (f+23.0) |
+
+  Harmless IMU faults (s1/007, s1/012, s3/012, scale/012), share of fault
+  time in alarm: Layer 1 0.98/0.98/0.99/0.21 (the anomaly is real),
+  evidence 0.18/0.00/0.18/0.00, dead-reckoning 0.05/0.00/0.59/0.00.
+  Heading error tracks AWSIM truth closely (stuck: +115 deg vs +115 true).
+  dP (evidence - nominal) misses scale/goal_007 because P is already high
+  at that tight spot before the fault.
 - No alarms of note on traffic-light trials (in-fault ≤ 0.07). One IMU
   trial without departure alarms 55% of its fault windows — its real
   footprint came within ~5 cm of the edge.

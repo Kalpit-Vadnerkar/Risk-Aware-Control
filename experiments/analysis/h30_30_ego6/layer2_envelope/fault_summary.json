@@ -9,7 +9,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.19666666666666666
+      "in_fault_alarm_rate": 0.18333333333333332
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -17,11 +17,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.2733333333333333
+      "in_fault_alarm_rate": 0.23
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 1.0
+      "in_fault_alarm_rate": 0.98
     }
   },
   {
@@ -42,11 +42,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.428927680798005
+      "in_fault_alarm_rate": 0.03740648379052369
     },
     "layer1": {
-      "pre_fault_alarm_rate": 0.02411873840445269,
-      "in_fault_alarm_rate": 0.9975062344139651
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.9775561097256857
     }
   },
   {
@@ -73,15 +73,15 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.23333333333333334,
+      "in_fault_alarm_rate": 0.18,
       "lead_time_s": 3.2156364917755127,
       "alarm_start_after_fault_s": 35.48913550376892
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 1.0,
-      "lead_time_s": 10.406089067459106,
-      "alarm_start_after_fault_s": 28.298682928085327
+      "in_fault_alarm_rate": 0.9733333333333334,
+      "lead_time_s": 10.022116899490356,
+      "alarm_start_after_fault_s": 28.682655096054077
     }
   },
   {
@@ -94,7 +94,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.031073446327683617,
-      "in_fault_alarm_rate": 0.21298701298701297
+      "in_fault_alarm_rate": 0.18441558441558442
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.022598870056497175,
@@ -102,11 +102,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.06753246753246753
+      "in_fault_alarm_rate": 0.06233766233766234
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 1.0
+      "in_fault_alarm_rate": 0.9896103896103896
     }
   },
   {
@@ -139,9 +139,9 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.7592592592592593,
-      "lead_time_s": 6.800597429275513,
-      "alarm_start_after_fault_s": 2.6924092769622803
+      "in_fault_alarm_rate": 0.7037037037037037,
+      "lead_time_s": 6.201417446136475,
+      "alarm_start_after_fault_s": 3.2915892601013184
     }
   },
   {
@@ -161,12 +161,12 @@
       "in_fault_alarm_rate": 0.0
     },
     "evidence_dP": {
-      "pre_fault_alarm_rate": 0.023411371237458192,
+      "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.053691275167785234
     },
     "layer1": {
-      "pre_fault_alarm_rate": 0.03678929765886288,
-      "in_fault_alarm_rate": 0.30201342281879195
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.2080536912751678
     }
   },
   {
@@ -199,9 +199,9 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.9763636363636363,
-      "lead_time_s": 4.610547065734863,
-      "alarm_start_after_fault_s": 2.7848892211914062
+      "in_fault_alarm_rate": 0.9727272727272728,
+      "lead_time_s": 4.210295915603638,
+      "alarm_start_after_fault_s": 3.185140371322632
     }
   },
   {
@@ -216,7 +216,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.01891891891891892,
-      "in_fault_alarm_rate": 0.5489614243323442,
+      "in_fault_alarm_rate": 0.5445103857566765,
       "lead_time_s": 3.3712003231048584,
       "alarm_start_after_fault_s": 23.046693563461304
     },
@@ -227,16 +227,16 @@
       "alarm_start_after_fault_s": 23.046693563461304
     },
     "evidence_dP": {
-      "pre_fault_alarm_rate": 0.02972972972972973,
+      "pre_fault_alarm_rate": 0.0,
       "in_fault_alarm_rate": 0.04747774480712166,
       "lead_time_s": 1.7505970001220703,
       "alarm_start_after_fault_s": 24.667296886444092
     },
     "layer1": {
-      "pre_fault_alarm_rate": 0.05945945945945946,
-      "in_fault_alarm_rate": 0.8531157270029673,
-      "lead_time_s": 4.5504844188690186,
-      "alarm_start_after_fault_s": 21.867409467697144
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.8308605341246291,
+      "lead_time_s": 3.570276975631714,
+      "alarm_start_after_fault_s": 22.84761691093445
     }
   },
   {
@@ -274,7 +274,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.0
+      "in_fault_alarm_rate": 0.0036900369003690036
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -286,7 +286,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.08118081180811808
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -298,7 +298,7 @@
       "in_fault_alarm_rate": 0.0
     },
     "evidence": {
-      "pre_fault_alarm_rate": 0.029535864978902954,
+      "pre_fault_alarm_rate": 0.02531645569620253,
       "in_fault_alarm_rate": 0.0
     },
     "deadreckon": {
@@ -310,8 +310,8 @@
       "in_fault_alarm_rate": 0.0
     },
     "layer1": {
-      "pre_fault_alarm_rate": 0.0379746835443038,
-      "in_fault_alarm_rate": 0.040229885057471264
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -323,7 +323,7 @@
       "in_fault_alarm_rate": 0.024883359253499222
     },
     "evidence": {
-      "pre_fault_alarm_rate": 0.024,
+      "pre_fault_alarm_rate": 0.016,
       "in_fault_alarm_rate": 0.024883359253499222
     },
     "deadreckon": {
@@ -349,7 +349,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.012320328542094456
+      "in_fault_alarm_rate": 0.01026694045174538
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -357,11 +357,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.006160164271047228
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
-      "pre_fault_alarm_rate": 0.02857142857142857,
-      "in_fault_alarm_rate": 0.07186858316221766
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -385,8 +385,8 @@
       "in_fault_alarm_rate": 0.0
     },
     "layer1": {
-      "pre_fault_alarm_rate": 0.0650887573964497,
-      "in_fault_alarm_rate": 0.01834862385321101
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -411,7 +411,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.11224489795918367
+      "in_fault_alarm_rate": 0.07397959183673469
     }
   },
   {
@@ -461,7 +461,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.02108433734939759
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -474,7 +474,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.001834862385321101
+      "in_fault_alarm_rate": 0.0
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -486,7 +486,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.07889908256880734
+      "in_fault_alarm_rate": 0.04954128440366973
     }
   },
   {
@@ -511,7 +511,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.058315334773218146
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -549,7 +549,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.04044117647058824
+      "in_fault_alarm_rate": 0.058823529411764705
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -557,11 +557,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.003676470588235294
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.04044117647058824
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -574,7 +574,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.02962962962962963
+      "in_fault_alarm_rate": 0.05185185185185185
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -586,7 +586,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.03333333333333333
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -607,11 +607,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.050816696914700546
+      "in_fault_alarm_rate": 0.0054446460980036296
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.07985480943738657
+      "in_fault_alarm_rate": 0.018148820326678767
     }
   },
   {
@@ -636,7 +636,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.023076923076923078
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -657,11 +657,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.062111801242236024
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.045548654244306416
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -674,7 +674,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.016286644951140065
+      "in_fault_alarm_rate": 0.013029315960912053
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -682,11 +682,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.02768729641693811
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.08631921824104234
+      "in_fault_alarm_rate": 0.043973941368078175
     }
   },
   {
@@ -707,11 +707,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.0024509803921568627
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
-      "pre_fault_alarm_rate": 0.06097560975609756,
-      "in_fault_alarm_rate": 0.051470588235294115
+      "pre_fault_alarm_rate": 0.0,
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -736,7 +736,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.05415860735009671
+      "in_fault_alarm_rate": 0.04061895551257253
     }
   },
   {
@@ -761,7 +761,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.055312954876273655
+      "in_fault_alarm_rate": 0.026200873362445413
     }
   },
   {
@@ -786,7 +786,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.21691176470588236
+      "in_fault_alarm_rate": 0.09191176470588236
     }
   },
   {
@@ -807,11 +807,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.048484848484848485
+      "in_fault_alarm_rate": 0.04242424242424243
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.15151515151515152
+      "in_fault_alarm_rate": 0.11818181818181818
     }
   },
   {
@@ -832,11 +832,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.006564551422319475
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.061269146608315096
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -857,11 +857,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.014760147601476014
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.04059040590405904
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -874,7 +874,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.0847145488029466
+      "in_fault_alarm_rate": 0.0055248618784530384
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -882,11 +882,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.15469613259668508
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.06077348066298342
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -907,11 +907,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.014686248331108143
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.042723631508678236
+      "in_fault_alarm_rate": 0.0
     }
   },
   {
@@ -924,7 +924,7 @@
     },
     "evidence": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.04477611940298507
+      "in_fault_alarm_rate": 0.09701492537313433
     },
     "deadreckon": {
       "pre_fault_alarm_rate": 0.0,
@@ -936,7 +936,7 @@
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.14925373134328357
+      "in_fault_alarm_rate": 0.05970149253731343
     }
   },
   {
@@ -957,11 +957,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.046468401486988845
+      "in_fault_alarm_rate": 0.016728624535315983
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.09665427509293681
+      "in_fault_alarm_rate": 0.03903345724907063
     }
   },
   {
@@ -982,11 +982,11 @@
     },
     "evidence_dP": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.03602305475504323
+      "in_fault_alarm_rate": 0.0
     },
     "layer1": {
       "pre_fault_alarm_rate": 0.0,
-      "in_fault_alarm_rate": 0.15706051873198848
+      "in_fault_alarm_rate": 0.01440922190201729
     }
   }
 ]

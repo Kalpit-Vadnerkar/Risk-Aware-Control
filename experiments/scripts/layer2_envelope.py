@@ -107,6 +107,15 @@ def recent_consistency(cons_obs, cons_pred, prev_ok):
     return out
 
 
+def window_locq(seqs):
+    """(N,2) localization health at each window's 'now': log1p(EKF gate
+    Mahalanobis), LiDAR-map transform probability / 10 (ego_v4+); None if the
+    schema has no loc_quality."""
+    if 'loc_quality' not in seqs[0]['past'][-1]:
+        return None
+    return np.array([s['past'][-1]['loc_quality'] for s in seqs], dtype=float)
+
+
 def window_speed(seqs):
     lo, hi = cfg.VELOCITY_X_RANGE
     return np.array([s['past'][-1]['velocity'][0] * (hi - lo) + lo for s in seqs])
@@ -258,7 +267,7 @@ def sliding_position_error(t, e_along, e_lat, v, Psi, w=POS_WINDOW_S):
     return X, Y
 
 
-def evidence_state(t, u, flag, e, v, cal):
+def evidence_state(t, u, flag, e, v, cal, lq=None):
     """Layer-1 WHEN + 2b carried pose error over one trial's windows, causal.
     - distrust ON when the capped CUSUM S of the bounded score u exceeds h;
       onset (change-point) = last time S was 0
@@ -269,6 +278,12 @@ def evidence_state(t, u, flag, e, v, cal):
       back inside the nominal drift band (a LiDAR correction shows up in that
       channel with the opposite sign, so the integral comes back by itself)
     - spread = the nominal drift band at time-since-onset (distribution-free)
+    - LiDAR-confirmed release: once distrust has ended, the carried error is
+      also released when the absolute reference confirms the pose -- LiDAR-
+      to-map matching healthy (EKF gate distance <= nominal q95, match
+      probability >= nominal q05) for RECOVERY_W_S. A slow correction can
+      leave a few degrees in the integral that the band test never clears
+      (imu_fault_s1: ~3 deg carried while the true error was ~0).
     The envelope is moved while distrusted or carrying."""
     n = len(t)
     o = {k: np.zeros(n) for k in ('D', 'S', 'N', 'active', 'tau', 'Psi', 'X', 'Y',
@@ -281,6 +296,9 @@ def evidence_state(t, u, flag, e, v, cal):
     S = np.zeros(n)
     distrusted, carrying = False, False
     psi_hist = np.zeros(n)
+    healthy_since = None
+    healthy = (np.ones(n, bool) if lq is None or 'lq_q' not in cal else
+               (lq[:, 0] <= cal['lq_q'][0]) & (lq[:, 1] >= cal['lq_q'][1]))
     last_zero = t[0]
     onset = None
     Psi = X = Y = 0.0
@@ -320,10 +338,12 @@ def evidence_state(t, u, flag, e, v, cal):
         psi_hist[i] = Psi if carrying else 0.0
         if carrying and elat is not None:
             X, Y = _window_xy(t, es, elat, v, psi_hist, i)
+        healthy_since = (healthy_since if healthy_since is not None else t[i]) if healthy[i] else None
         if carrying:
             tau = t[i] - onset + DT
             bP, bY = drift_band(cal['bands'], tau, 'Psi'), drift_band(cal['bands'], tau, 'Y')
-            if not distrusted and abs(Psi) <= bP and abs(Y) <= bY:
+            lidar_ok = lq is not None and healthy_since is not None and t[i] - healthy_since >= RECOVERY_W_S
+            if not distrusted and ((abs(Psi) <= bP and abs(Y) <= bY) or lidar_ok):
                 carrying = False      # back to nominal: release the carried error
                 Psi = X = Y = 0.0
                 continue
@@ -454,11 +474,22 @@ def build_pool(model, device, args):
            'q90': np.nanquantile(np.abs(e), 0.90, axis=0),
            'q99': np.nanquantile(np.abs(e), 0.99, axis=0),
            'kappa': float(np.quantile(u, args.kappa_q))}
-    # h: capped CUSUM above h on args.distrust_rate of nominal windows (the cap
-    # = 2h only acts above h, so it doesn't change that share)
-    S_unc = np.concatenate([capped_cusum(t_all[trial == tid], u[trial == tid], cal['kappa'], np.inf)
-                            for tid in np.unique(trial)])
-    cal['h'] = max(float(np.quantile(S_unc, 1 - args.distrust_rate)), 1e-6)
+    # (h is calibrated on distrust episodes per hour below; the cap = 2h only acts above h)
+    # h: the lowest threshold giving <= args.max_episodes_per_hour distrust
+    # episodes on nominal driving (episodes = runs of S > h merged across the
+    # recovery window) -- an operational rate rather than a share of windows
+    S_by = {tid: capped_cusum(t_all[trial == tid], u[trial == tid], cal['kappa'], np.inf) for tid in np.unique(trial)}
+    hours = len(trial) * DT / 3600
+    S_unc = np.concatenate(list(S_by.values()))
+    cal['h'] = float(np.quantile(S_unc, 0.9999))
+    for q in np.linspace(0.95, 0.9999, 200):
+        h = float(np.quantile(S_unc, q))
+        if h <= 0:
+            continue
+        eps = sum(len(L2._alarm_episodes(t_all[trial == tid], S_by[tid] > h, RECOVERY_W_S)) for tid in S_by)
+        if eps / hours <= args.max_episodes_per_hour:
+            cal['h'] = h
+            break
     cal['cap'] = 2.0 * cal['h']
     Nall = np.concatenate([scan_count(t_all[trial == tid], flag[trial == tid]) for tid in np.unique(trial)])
     cal['n_off'] = float(np.quantile(Nall, 0.95))
@@ -479,6 +510,9 @@ def build_pool(model, device, args):
         bands[k] = np.array([np.quantile(a, 0.95) if len(a) else np.nan for a in acc[k]])
         bands[k] = np.maximum.accumulate(np.nan_to_num(bands[k], nan=np.nanmax(bands[k])))
     cal['bands'] = bands
+    lq_all = window_locq(seqs)
+    if lq_all is not None:
+        cal['lq_q'] = (float(np.quantile(lq_all[:, 0], 0.95)), float(np.quantile(lq_all[:, 1], 0.05)))
     pool['cal'] = cal
     pool['se_rate'] = cal['q90'][list(int_ch[:2])] / 1.645
     pe = np.array([L2.pose_error(s) for s in seqs[::5]])
@@ -486,7 +520,8 @@ def build_pool(model, device, args):
     ev = None
     for tid in np.unique(trial):
         m = np.where(trial == tid)[0]
-        sub = evidence_state(t_all[m], u[m], flag[m], e[m], v_all[m], cal)
+        sub = evidence_state(t_all[m], u[m], flag[m], e[m], v_all[m], cal,
+                             lq_all[m] if lq_all is not None else None)
         if ev is None:
             ev = {k: np.zeros(len(trial)) for k in sub}
         for k in sub:
@@ -496,7 +531,8 @@ def build_pool(model, device, args):
     eps = sum(len(L2._alarm_episodes(t_all[trial == tid], ev['D'][trial == tid] > 0, 1.0)) for tid in np.unique(trial))
     hours = len(trial) * DT / 3600
     print(f"Calibration: {len(trial)} windows ({hours:.2f} h), {len(np.unique(trial))} trials; integrating channels {int_ch}")
-    print(f"  bounded score u: kappa {cal['kappa']:.2f}, h {cal['h']:.2f}, cap {cal['cap']:.2f}, recovery n_off {cal['n_off']:.0f} "
+    print(f"  bounded score u: kappa {cal['kappa']:.2f}, h {cal['h']:.2f} (target <= {args.max_episodes_per_hour}/h), "
+          f"cap {cal['cap']:.2f}, recovery n_off {cal['n_off']:.0f} "
           f"in {RECOVERY_W_S:.0f} s")
     print(f"  nominal (LOO): distrusted {ev['D'].mean():.2%}, envelope active {ev['active'].mean():.2%}, "
           f"distrust episodes {eps} = {eps / hours:.1f} per hour")
@@ -552,7 +588,7 @@ def process_trial(run_dir, model, device, pool, builder, args):
     P = pvalues(Xch, pool['cal']['ref'])
     u, pc = combined_score(P)
     v = window_speed(seqs)
-    ev = evidence_state(t, u, (pc < ALPHA_FLAG).astype(float), e, v, pool['cal'])
+    ev = evidence_state(t, u, (pc < ALPHA_FLAG).astype(float), e, v, pool['cal'], window_locq(seqs))
     ev['u'] = u
     ev['pchan'] = P
     bag = os.path.join(run_dir, 'rosbag')
@@ -835,7 +871,8 @@ def main():
     ap.add_argument('--fault-stride', type=int, default=2)
     ap.add_argument('--kappa-q', type=float, default=0.99,
                     help='CUSUM reference kappa = this nominal quantile of the combined evidence strength')
-    ap.add_argument('--distrust-rate', type=float, default=0.01, help='CUSUM threshold set so this share of nominal windows is distrusted')
+    ap.add_argument('--max-episodes-per-hour', type=float, default=6.0,
+                    help='onset threshold h = lowest value giving at most this many distrust episodes per hour of nominal driving')
     ap.add_argument('--far', type=float, default=0.01)
     ap.add_argument('--alarm-gap-s', type=float, default=1.0)
     ap.add_argument('--trials', nargs='*', default=None)

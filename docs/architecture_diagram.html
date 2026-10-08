@@ -260,6 +260,7 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
     <section>
       <h2>Recent changes</h2>
       <ul class="log">
+        <li><time datetime="2026-10-08">2026-10-08</time><span>Onset threshold calibrated to at most 6 distrust episodes per hour of nominal driving (4.2/h achieved, was 47/h); carried pose error released once LiDAR-map matching is healthy for 2 s. Evidence method: 4/4 real departures, 2.0–3.4 s warning; harmless IMU faults in alarm 0–18% of fault time.</span></li>
         <li><time datetime="2026-10-08">2026-10-08</time><span>Alarm logic: every channel becomes a conformal p-value, combined into one bounded score; capped CUSUM with a 2 s recovery test, so alarms end. 2b carries the pose error after distrust ends. Traffic-light channels now feed Layer 1.</span></li>
         <li><time datetime="2026-10-08">2026-10-08</time><span>Pose consistency made planar (ego_v6): lateral and along-track pose-velocity gaps, integrated over a sliding 3 s window; heading from onset. Checked against AWSIM ground truth.</span></li>
         <li><time datetime="2026-10-07">2026-10-07</time><span>Pose-based consistency channel added (ego_v5): it sees the LiDAR scan-match corrections the EKF channel misses, so the envelope no longer over-rotates while localization is still being corrected.</span></li>
