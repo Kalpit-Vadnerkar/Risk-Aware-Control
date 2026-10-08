@@ -46,7 +46,7 @@ Benchmark table (held-out CAL, every model):
 |---|---|---|---|---|---|
 | bbox_v1 (canonical) | 1.60 m | 0.98 / 4.04 m | 18.6% | 21.7% | +0.19 m |
 | ego_v3 | 0.63 m | 0.13 / 0.71 m | 3.3% | 0% | +0.54 m |
-| ego_v4, kinematic selection (current best, first to pass the gate) | 0.58 m | 0.11 m (p50) | 1.7% | 0% | — |
+| ego_v4 (sign-bug inputs), kinematic selection — first to pass the gate | 0.58 m | 0.11 m (p50) | 1.7% | 0% | — |
 
 - **Why bbox_v1 failed:** graph nodes normalized to each graph's own box,
   no link to the ego's position, graph centred on a future point — the model
@@ -56,12 +56,15 @@ Benchmark table (held-out CAL, every model):
   criterion was dominated by the traffic-light heads, ~20x position's scale,
   which overfit within a few epochs).
 - **ego_v4 (2026-10-07):** + redundant ego-state inputs and a consistency
-  head (EKF − vehicle yaw rate / speed). The head learns the nominal,
-  turn-dependent disagreement (corr 0.97), so its residual p90 is 0.037
-  rad/s vs a raw-gap p90 of 0.138 — a fault has a 3.7x lower bar to clear.
-  Selection must ignore the traffic-light heads (`--selection kinematic`):
-  with them in, the kept epoch had under-trained position (under-turn 93%);
-  without, 20%. Single seed each.
+  head (EKF − vehicle yaw rate / speed). **First version had a sign bug:**
+  AWSIM's `heading_rate` has the opposite sign to ROS (corr −0.998 with the
+  pose-derived yaw rate), so the "gap" was EKF + true yaw rate ≈ 2x the yaw
+  rate in every turn; the head's 0.97 correlation was it predicting that.
+  Its benchmark numbers (below) are still valid for forecasting; its
+  consistency evidence is not. Fixed in `bag_reader.py`; retrained model
+  pending. Selection must ignore the traffic-light heads
+  (`--selection kinematic`): with them in, the kept epoch had under-trained
+  position (under-turn 93%); without, 20%. Single seed each.
 - **Remaining forecast error** is footprint clipping by ~0.3 m at 13 tight
   traffic-light-zone spots (real clearance 0.33–0.75 m); single-seed runs
   vary ±0.5–1 pp off-road.
@@ -94,10 +97,12 @@ Benchmark table (held-out CAL, every model):
    (heading +8° vs true −60°) and their sign relation to the truth flips
    between trials. The estimated trajectory cannot reveal its own error.
 6. **Redundant sources carry the size.** Before the imu_fault_stuck
-   departure (60.0 s): EKF − vehicle yaw-rate gap 0.35 rad/s (nominal median
-   ≤ 0.013), EKF gate Mahalanobis 7.0 (nominal ~0.5–1), NDT match 2.3
-   (nominal ~6). Estimated vs physical heading change correlate 0.999
-   nominally.
+   departure (60.0 s): EKF gate Mahalanobis 7.0 (nominal ~0.5–1), NDT match
+   2.3 (nominal ~6). Estimated vs physical (bicycle-model) heading change
+   correlate 0.999 nominally. (A "0.35 rad/s yaw-rate gap" reported earlier
+   was contaminated by the heading_rate sign bug, §2.)
+7. **Sign/units of every redundant source must be checked against the
+   pose** before use: AWSIM `heading_rate` is sign-flipped vs ROS.
 
 ## 4. Layer 2 — consequence
 

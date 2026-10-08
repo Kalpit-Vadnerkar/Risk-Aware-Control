@@ -474,6 +474,40 @@ def _multi_source_feats(frame: dict) -> dict:
     }
 
 
+def _add_pose_consistency(frames: List[dict], static_feats: List[dict],
+                          yaw_lag: int = 5, pos_lag: int = 10) -> None:
+    """ego_v5: append pose-based consistency to each frame's 'consistency'
+    (causal backward differences on the frame list): estimated-pose yaw change
+    over yaw_lag frames vs the vehicle's yaw rate, and estimated-pose
+    displacement over pos_lag frames (1 s: single frames jitter ~1 m at 11 m/s
+    because pose is forward-filled onto the object clock) vs wheel speed.
+    Integrated over time these give estimated-minus-true heading / along-track
+    error INCLUDING the LiDAR scan-match corrections the EKF twist never shows."""
+    n = len(frames)
+    t = np.array([f['t_sim'] for f in frames])
+    yaw = np.unwrap(np.array([_yaw(f['ego']['orientation']) for f in frames]))
+    xy = np.array([[f['ego']['position']['x'], f['ego']['position']['y']] for f in frames])
+    for j in range(n):
+        a, b = max(0, j - yaw_lag), max(0, j - pos_lag)
+        dt_y, dt_p = t[j] - t[a], t[j] - t[b]
+        pose_rate = (yaw[j] - yaw[a]) / dt_y if dt_y > 0.05 else 0.0
+        vel = frames[j]['ego']['velocity']
+        if cfg.POSE_PLANAR:
+            # pose velocity in the estimate's own heading frame (mid-window
+            # heading): along-track and lateral components, each compared with
+            # the vehicle's own report. Integrated, they give the estimated-
+            # minus-true along-track / lateral error, LiDAR corrections included.
+            d = (xy[j] - xy[b]) / dt_p if dt_p > 0.05 else np.zeros(2)
+            hm = 0.5 * (yaw[j] + yaw[b])
+            along = d[0] * math.cos(hm) + d[1] * math.sin(hm)
+            lat = -d[0] * math.sin(hm) + d[1] * math.cos(hm)
+            extra = [pose_rate - vel['yaw_rate'], along - vel['longitudinal'], lat - vel['lateral']]
+        else:
+            pose_speed = float(np.hypot(*(xy[j] - xy[b]))) / dt_p if dt_p > 0.05 else 0.0
+            extra = [pose_rate - vel['yaw_rate'], pose_speed - vel['longitudinal']]
+        static_feats[j] = dict(static_feats[j], consistency=list(static_feats[j]['consistency']) + extra)
+
+
 def _with_position(static_feats: dict, frame: dict, ref_x: float, ref_y: float) -> dict:
     """Add the one genuinely window-dependent feature (position, relative to
     this window's reference frame) to an already-computed static feature
@@ -676,6 +710,8 @@ class SequenceBuilder:
         # fix, mostly LaneletAdjacencyChecker.query()).
         static_feats = [_process_frame_static(f, self._adj_checker, self._tl_checker)
                         for f in frames]
+        if cfg.POSE_CONSISTENCY:
+            _add_pose_consistency(frames, static_feats)
 
         sequences   = []
         n_windows   = 0

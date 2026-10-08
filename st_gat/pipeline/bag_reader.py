@@ -121,7 +121,14 @@ def _extract_velocity(msg: VelocityReport) -> dict:
     return {
         'longitudinal': float(msg.longitudinal_velocity),
         'lateral':      float(msg.lateral_velocity),
-        'yaw_rate':     float(msg.heading_rate),
+        # AWSIM publishes heading_rate with the OPPOSITE sign to ROS (REP-103)
+        # yaw rate: on nominal turning frames it correlates -0.998 (slope
+        # -0.99) with the yaw rate derived from the pose, while the EKF twist
+        # and a bicycle model from speed x tire angle both correlate +0.998
+        # (checked 2026-10-07). Flipped here, once, so every consumer sees ROS
+        # convention. Before this fix, ego_v4's 'consistency' yaw channel was
+        # EKF + true yaw rate (~2x the yaw rate in every turn), not a gap.
+        'yaw_rate':     -float(msg.heading_rate),
     }
 
 

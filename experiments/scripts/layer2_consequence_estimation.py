@@ -155,7 +155,7 @@ def infer(model, device, ds, batch):
     """One pass. Returns pos_mean (N,T,2) and pos_err (N,T,2) [normalized],
     series {report_key: (N,T) residual magnitude}, h (N,D)."""
     loader = DataLoader(ds, batch_size=batch, shuffle=False, num_workers=0)
-    means, errs, hs = [], {k: [] for k in _FEATURES}, []
+    means, errs, hs, cons_p, cons_o = [], {k: [] for k in _FEATURES}, [], [], []
     with torch.no_grad():
         for past, future, graph, _b in loader:
             past = {k: v.to(device) for k, v in past.items()}
@@ -169,9 +169,15 @@ def infer(model, device, ds, batch):
                     actual = actual.squeeze(-1)
                 errs[key].append((actual - mean).numpy())
             means.append(preds['position_mean'].cpu().numpy())
+            if 'consistency_mean' in preds:   # ego_v4 consistency head
+                cons_p.append(preds['consistency_mean'].cpu().numpy())
+                cons_o.append(future['consistency'].numpy())
     err = {k: np.concatenate(v) for k, v in errs.items()}
-    return {'pos_mean': np.concatenate(means), 'pos_err': err['position'],
-            'series': _extract_series(err), 'h': np.concatenate(hs)}
+    out = {'pos_mean': np.concatenate(means), 'pos_err': err['position'],
+           'series': _extract_series(err), 'h': np.concatenate(hs)}
+    if cons_p:
+        out['cons_pred'], out['cons_obs'] = np.concatenate(cons_p), np.concatenate(cons_o)
+    return out
 
 
 # ── Window geometry ─────────────────────────────────────────────────────────

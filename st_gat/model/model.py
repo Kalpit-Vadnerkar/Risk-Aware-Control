@@ -472,7 +472,8 @@ class STGAT(nn.Module):
         self.head_tl_confidence  = _StepConditionedHead(d_h, d_pos, _w2(1))
         self.head_tl_discrepancy = _StepConditionedHead(d_h, d_pos, 1)
         if self.has_consistency:
-            self.head_consistency = _StepConditionedHead(d_h, d_pos, _w2(2))
+            self.n_consistency = config['feature_sizes']['consistency']
+            self.head_consistency = _StepConditionedHead(d_h, d_pos, _w2(self.n_consistency))
 
         self._init_weights()
 
@@ -606,7 +607,7 @@ class STGAT(nn.Module):
         out.update(_split(tl_color, 'traffic_light_color',       1))
         out.update(_split(tl_conf,  'traffic_light_confidence',  1))
         if self.has_consistency:
-            out.update(_split(self.head_consistency(_h_cond('consistency')), 'consistency', 2))
+            out.update(_split(self.head_consistency(_h_cond('consistency')), 'consistency', self.n_consistency))
         out['traffic_light_discrepancy'] = torch.sigmoid(tl_disc)
         # Raw pre-sigmoid logit, also returned (added 2026-08-05) so
         # temperature scaling (Guo et al. 2017 — calibrated_prob =

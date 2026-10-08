@@ -1,0 +1,54 @@
+{
+  "n_windows": 6923,
+  "n_moving": 4990,
+  "ade": 0.5569274944093316,
+  "fde_p50": 0.611144089987996,
+  "fde_p90": 3.250727979928235,
+  "lat_err_1s_p50": 0.024140116213749,
+  "lat_err_2s_p50": 0.059450804880138555,
+  "lat_err_3s_p50": 0.1479466408763172,
+  "lat_err_3s_p90": 0.63250903551464,
+  "lon_err_3s_p50": 0.7196340958943803,
+  "lon_err_3s_p90": 3.7684826830941187,
+  "offroad_rate": 0.0319225769175213,
+  "offroad_rate_realized_future": 0.0,
+  "offroad_rate_moving": 0.04428857715430862,
+  "phantom_turn_rate": 0.015595463137996219,
+  "n_turns": 332,
+  "wrong_direction_rate": 0.0,
+  "under_turn_rate": 0.37349397590361444,
+  "map_reliance_fde_delta_graph_swap": 0.3369202662453509,
+  "route_reliance_fde_delta_zero_path_node": 0.0023780626077402056,
+  "offroad_rate_by_group": {
+    "curved_road_zones": 0.03636363636363636,
+    "open_road": 0.026227303295225286,
+    "tl_zones": 0.12423625254582485,
+    "turn": 0.022620169651272386
+  },
+  "gate": {
+    "offroad_rate": {
+      "threshold": "<= 0.02",
+      "value": 0.0319225769175213,
+      "pass": false
+    },
+    "lat_err_3s_p50": {
+      "threshold": "<= 0.5",
+      "value": 0.1479466408763172,
+      "pass": true
+    },
+    "phantom_turn_rate": {
+      "threshold": "<= 0.05",
+      "value": 0.015595463137996219,
+      "pass": true
+    },
+    "wrong_direction_rate": {
+      "threshold": "<= 0.05",
+      "value": 0.0,
+      "pass": true
+    }
+  },
+  "gate_pass": false,
+  "model": "/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/st_gat/models/h30_30_ego6/st_gat_rise.pth",
+  "tag": "ego_v6_planar_pose",
+  "date": "2026-10-08T02:04:20"
+}

@@ -157,11 +157,25 @@ MODEL_ROOT   = os.path.join(REPO_ROOT, 'st_gat', 'models')
 #   probability). Behavioural residuals say WHEN the state stops being
 #   trustworthy; only a disagreement between two independent sources can say
 #   HOW MUCH and WHICH WAY (docs/architecture.md).
+# 'ego_v5' (2026-10-07) = ego_v4 + POSE-based consistency: the estimated
+#   pose's own yaw change / displacement vs the vehicle's reports. The EKF
+#   twist channels see the IMU error but not the LiDAR scan-match corrections
+#   that keep the pose right while NDT is healthy (imu_fault_s1: EKF gap
+#   integrated to 60 deg while the true heading error stayed ~2 deg); the pose
+#   channels measure what the envelope needs -- estimated vs true motion.
+# 'ego_v6' (2026-10-08) = ego_v5 with the pose channels as a full planar
+#   velocity gap in the estimate's own heading frame: [pose yaw rate - vehicle
+#   yaw rate, pose along-track speed - wheel speed, pose lateral speed -
+#   vehicle lateral speed]. ego_v5 derived the lateral error as int v sin(Psi),
+#   which cannot see LiDAR POSITION corrections (imu_fault_s1: integrated
+#   lateral 7.7 m vs true ~0); integrating the measured lateral gap can.
 GRAPH_FRAME = os.environ.get('STGAT_GRAPH_FRAME', 'bbox_v1')
-assert GRAPH_FRAME in ('bbox_v1', 'ego_v2', 'ego_v3', 'ego_v4'), GRAPH_FRAME
-EGO_FRAME = GRAPH_FRAME in ('ego_v2', 'ego_v3', 'ego_v4')
-ROUTE_AHEAD = GRAPH_FRAME in ('ego_v3', 'ego_v4')
-MULTI_SOURCE = GRAPH_FRAME == 'ego_v4'
+assert GRAPH_FRAME in ('bbox_v1', 'ego_v2', 'ego_v3', 'ego_v4', 'ego_v5', 'ego_v6'), GRAPH_FRAME
+EGO_FRAME = GRAPH_FRAME in ('ego_v2', 'ego_v3', 'ego_v4', 'ego_v5', 'ego_v6')
+ROUTE_AHEAD = GRAPH_FRAME in ('ego_v3', 'ego_v4', 'ego_v5', 'ego_v6')
+MULTI_SOURCE = GRAPH_FRAME in ('ego_v4', 'ego_v5', 'ego_v6')
+POSE_CONSISTENCY = GRAPH_FRAME in ('ego_v5', 'ego_v6')
+POSE_PLANAR = GRAPH_FRAME == 'ego_v6'
 GRAPH_NODE_SCALE_M = 50.0   # ego frames: node / route offsets in metres / this
 ROUTE_AHEAD_POINTS = 20
 ROUTE_AHEAD_SPACING_M = 3.0
@@ -354,7 +368,7 @@ STRIDE         = 1
 # checkpoints to coexist without one silently overwriting another's cache.
 HORIZON_TAG = f"h{INPUT_SEQ_LEN}_{OUTPUT_SEQ_LEN}"
 DATA_TAG = {'bbox_v1': HORIZON_TAG, 'ego_v2': f"{HORIZON_TAG}_ego", 'ego_v3': f"{HORIZON_TAG}_ego3",
-            'ego_v4': f"{HORIZON_TAG}_ego4"}[GRAPH_FRAME]
+            'ego_v4': f"{HORIZON_TAG}_ego4", 'ego_v5': f"{HORIZON_TAG}_ego5", 'ego_v6': f"{HORIZON_TAG}_ego6"}[GRAPH_FRAME]
 # Analysis artifacts (experiments/scripts/* default output dirs, and the
 # reports those scripts read from each other): the canonical bbox_v1 results
 # stay where they always were; other schemas get their own subtree so an
@@ -420,7 +434,8 @@ FEATURE_SIZES = {
     'uncertainty':              2,   # EKF x_var, y_var
 }
 if MULTI_SOURCE:
-    FEATURE_SIZES['consistency'] = 2   # EKF - vehicle yaw rate (rad/s), EKF - wheel speed (m/s); also predicted
+    # EKF - vehicle yaw rate (rad/s), EKF - wheel speed (m/s)[, pose - vehicle yaw rate, pose - wheel speed]; also predicted
+    FEATURE_SIZES['consistency'] = 5 if POSE_PLANAR else (4 if POSE_CONSISTENCY else 2)
     FEATURE_SIZES['loc_quality'] = 2   # log1p(EKF gate Mahalanobis), LiDAR-map transform probability / 10
 
 # ── Schema versioning (added 2026-08-07 — see the ST-GAT pipeline audit in

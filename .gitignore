@@ -53,3 +53,4 @@ experiments/analysis/**/layer2_consequence_estimation/**/*.log
 experiments/analysis/**/layer2_consequence_estimation/**/trial_*.json
 # Same per-window fault-inspection dump, under any schema's analysis subtree (2026-10-05)
 experiments/analysis/**/fault_prediction_inspection/fault_prediction_summary.json
+experiments/analysis/**/layer2_envelope/*.npz
