@@ -1,0 +1,13 @@
+HOW MUCH AND WHICH WAY: THE ESTIMATE TRACKS GROUND TRUTH
+
+(Plot: heading_tracking.png - all 8 IMU fault trials; black = true
+ heading error from AWSIM ground truth, purple = 2b's estimate)
+
+  → On the 4 real departures, estimate and truth overlap to within a few
+    degrees, up to +/-200° (stuck gyro)
+  → Harmless faults (s1): truth ~2°, estimate 0-1.4°. LiDAR matching is
+    healthy there, so the estimator trusts it and pulls toward zero -
+    the right side to err on when the error is too small to matter
+    (the previous mechanism read 2-5°, too high)
+  → Nothing here was fitted to fault data: the consistency heads are
+    trained and calibrated on nominal driving only

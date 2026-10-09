@@ -1,0 +1,27 @@
+WHERE THIS GOES: THE CLOSED-LOOP COMPARISON
+
+Same fault scenarios, four configurations, run in AWSIM:
+
+  Autoware alone   nothing                   departs on s3, scale, stuck
+  + Layer 1        stop on any anomaly       safe, but stops on every
+                                             harmless fault
+  + Layer 2        stop when P(violation)    safe, stops only when it
+                   rises                     matters
+  + Layer 3        correct the pose; stop    safe AND finishes the
+                   only if it cannot         mission
+
+Measured: departures prevented (safety), unnecessary stops and mission
+completion / distance driven under fault (availability).
+
+What it needs:
+  1. The pose-error filter (done) and the offline "what if" (done)
+  2. An online node running Layers 1-2 at 10 Hz
+  3. One interface into Autoware: corrected pose, velocity limit, or stop
+     request
+  4. The same fault scenarios rerun per configuration (lab sessions)
+
+Proposed paper plan:
+  Paper 1  Layer 1: calibration, audit and fix, fault validation
+  Paper 2  Layers 1+2 + offline correction (close: needs more departure
+           scenarios)
+  Paper 3 / dissertation capstone: the closed-loop comparison

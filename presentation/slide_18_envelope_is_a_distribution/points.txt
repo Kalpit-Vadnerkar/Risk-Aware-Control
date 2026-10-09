@@ -1,0 +1,21 @@
+WHAT THE ENVELOPE IS: A DISTRIBUTION, CARRIED BY SAMPLES
+
+(Plot: envelope_explainer.png - one moment, 2 s before a real departure)
+
+  a. 200 counterfactual futures: the ST-GAT forecast plus ONE real
+     recorded error trajectory each, drawn from the 150 calibration
+     windows most similar to this scene (the model's own embedding)
+  b. Together they are an empirical distribution over future paths -
+     drawn here as a density with 50% / 90% regions at 3 s
+  c. 2b moves that distribution: each sample is rotated and shifted by a
+     draw of the estimated pose error (mean = which way, spread = how much)
+  d. P(violation) = the share of the distribution that leaves the road
+     (here 200 of 200)
+
+Why samples and not a Gaussian tube:
+  → Errors are correlated over the horizon (a car 1 m left at 1 s is
+    still left at 2 s); whole recorded trajectories keep that shape
+  → The safe set is a map region, not an ellipse: counting samples
+    outside it is the direct Monte Carlo estimate of the probability
+  → No distribution family assumed - same reason conformal replaced the
+    Student-t heads

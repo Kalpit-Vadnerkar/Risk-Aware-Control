@@ -56,3 +56,6 @@ experiments/analysis/**/fault_prediction_inspection/fault_prediction_summary.jso
 experiments/analysis/**/layer2_envelope/*.npz
 experiments/analysis/**/layer2_envelope/series_*.npz
 experiments/analysis/**/layer2_envelope/series_*.pkl
+experiments/analysis/**/layer2_envelope/pose_traces.pkl
+experiments/analysis/**/layer2_envelope_filter/*.npz
+experiments/analysis/**/layer2_envelope_filter/series_*.pkl

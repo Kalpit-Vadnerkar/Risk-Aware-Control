@@ -1,0 +1,15 @@
+This replaces three hand-made mechanisms of the previous iteration
+(heading integrated from onset, a 3 s sliding window for position, a
+binary "release" after 2 s of healthy LiDAR) with one rule. Full
+derivation and the invariant table: design document, "Formal model and
+consistency checks".
+
+Results vs the previous mechanisms: harmless s1 faults max lateral
+error 1.45 -> 0.44 m and heading 3.4 -> 2.7°; nominal driving
+untouched; on departures, heading within 1.0-2.6° and lateral within
+0.35-1.2 m. Known limit: the lateral component is underestimated by up
+to ~1 m at departure, independent of how strictly LiDAR is trusted -
+a measurement limit of the lateral gap, not a tuning problem. Another
+limit: a vehicle standing still while its heading estimate spins
+(s3/goal_012) - the consistency head is out of its training
+distribution there.

@@ -41,3 +41,8 @@ Scoping decision: split into two papers, not one.
   → Paper 2 (Layer 2): consequence estimation, building on Paper 1's
     validated calibration as its input — a distinct mechanism, not a
     fragment of one story
+
+UPDATE 2026-10: Layer 2 is now built end to end on real map geometry
+(slides 14-23); Layer 3 is scoped as a closed-loop comparison
+(slide 24). Proposed split: Paper 1 = Layer 1, Paper 2 = Layers 1+2 +
+offline correction, Paper 3 / capstone = closed loop.

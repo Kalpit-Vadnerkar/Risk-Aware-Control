@@ -1,0 +1,20 @@
+SECOND PROBLEM: RESIDUALS TELL YOU WHEN, NOT HOW MUCH OR WHICH WAY
+
+The obvious way to couple Layer 1 into Layer 2: grow the envelope in
+proportion to the residuals. It does not work.
+
+(Plot: coupling_ladder.png - real road departures warned, of 4)
+
+  → Scale the residuals by the anomaly                 0/4
+  → Residual-triggered symmetric "trust region"        0/4
+  → Hand-built dead-reckoning pose check (baseline)    4/4
+  → Learned consistency heads (this work)              4/4
+
+Why: a behavioural residual compares the forecast with ONE source - the
+corrupted estimate itself. It reliably says something is wrong 2-4 s
+before the departures, but it underestimates the true pose error about
+10x and its sign flips between trials. The estimated trajectory cannot
+reveal its own error.
+
+Size and direction need a second, independent measurement of the same
+quantity. That is the design principle for the rest of the architecture.

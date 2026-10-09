@@ -1,0 +1,18 @@
+WHAT EACH MODULE ADDS, ON ONE REAL DEPARTURE
+
+(Plot: envelope_stages.png - IMU scale fault; columns 11.5 s, 4.8 s,
+ 2.0 s and 0.3 s before the vehicle left the road)
+
+Row 1 - Layer 1 only: forecast + 90% conformal band. Follows the
+  vehicle's corrupted estimate; the band is calibrated but in the wrong
+  place. No notion of the road.
+Row 2 - + 2a: counterfactual futures checked against the map. Still
+  anchored to the corrupted estimate: P = 0.14 two seconds before the
+  departure.
+Row 3 - + 2b: the same futures moved by the estimated pose error. They
+  land on the TRUE path: P = 1.00 two seconds before the departure.
+Row 4 - + correction (Layer 3 preview): the vehicle's past path
+  corrected by the same estimate (purple) lies on the true path
+  (orange), not on the estimate (black).
+
+Heading error at -2.0 s: true -13.9°, estimated -12.8°.

@@ -1,0 +1,13 @@
+Lead time is bounded by the 3 s forecast horizon (P is "violation
+within 3 s"), which is why it clusters at 2-3.4 s. Layer 1 alone warns
+earlier (4-10 s) because it flags the anomaly, not the danger.
+
+If asked about s3/goal_012: the previous iteration showed 18% there, but
+only because its drifting position estimate moved the envelope AWAY
+from the tight spot - an artifact. With the formal-model filter the
+envelope stays put, and the alarm is the nominal risk of standing at
+that spot. Separating "risk of the scene" from "risk added by the
+fault" is what the dP variant does (0.22 there).
+
+Internal benchmarking (alarm rates, operating curves) is in the backup
+slide - not a headline.

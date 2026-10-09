@@ -216,10 +216,10 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
       <g>
         <rect class="box core" x="350" y="520" width="300" height="122" rx="8"/>
         <text class="name" x="364" y="546">2b Evidence growth</text>
-        <text class="line" x="364" y="568">heading error integrated from onset,</text>
-        <text class="line" x="364" y="586">position error over a 3 s window</text>
-        <text class="line" x="364" y="604">grows while the fault persists,</text>
-        <text class="line" x="364" y="622">slows when the vehicle slows</text>
+        <text class="line" x="364" y="568">pose error from one filter: consistency</text>
+        <text class="line" x="364" y="586">gaps, corrected by LiDAR-map health</text>
+        <text class="line" x="364" y="604">moves the envelope while distrusted;</text>
+        <text class="line" x="364" y="622">grows while the fault persists</text>
         <g class="badge b-progress"><rect x="566" y="532" width="72" height="20" rx="10"/><text x="602" y="546" text-anchor="middle">iterating</text></g>
       </g>
       <g>
@@ -250,7 +250,7 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
       <g>
         <rect class="box" x="10" y="790" width="980" height="70" rx="10"/>
         <text class="layer" x="26" y="814">LAYER 3 · RESPONSE</text>
-        <text class="line" x="26" y="840">Graded response in proportion to P and its growth: slow down, widen gaps, hand over, stop. Mitigation shows up as P levelling off.</text>
+        <text class="line" x="26" y="840">Correct the pose with the 2b estimate, or slow down / stop when it cannot be sized. P decides which, and shows the fix working.</text>
         <g class="badge b-open"><rect x="904" y="802" width="72" height="22" rx="11"/><text x="940" y="817" text-anchor="middle">scope open</text></g>
       </g>
 
@@ -285,6 +285,7 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
     <section>
       <h2>Recent changes</h2>
       <ul class="log">
+        <li><time datetime="2026-10-09">2026-10-09</time><span>2b now uses one pose-error filter (the formal model) instead of three hand-made mechanisms; nominal envelope never moves, harmless s1 fault in alarm 4% (was 18%), departures unchanged. Offline correction cuts the heading error at departure from 23–95° to 1–2.6°. Layer 3 scoped as correct-or-stop.</span></li>
         <li><time datetime="2026-10-08">2026-10-08</time><span>The three contributions are marked on the diagram. Formal pose-error model and invariants added to the design document: the LiDAR-correction mechanisms are read as special cases of one estimator.</span></li>
         <li><time datetime="2026-10-08">2026-10-08</time><span>Onset threshold calibrated to at most 6 distrust episodes per hour of nominal driving (4.2/h achieved, was 47/h); carried pose error released once LiDAR-map matching is healthy for 2 s. Evidence method: 4/4 real departures, 2.0–3.4 s warning; harmless IMU faults in alarm 0–18% of fault time.</span></li>
         <li><time datetime="2026-10-08">2026-10-08</time><span>Alarm logic: every channel becomes a conformal p-value, combined into one bounded score; capped CUSUM with a 2 s recovery test, so alarms end. 2b carries the pose error after distrust ends. Traffic-light channels now feed Layer 1.</span></li>

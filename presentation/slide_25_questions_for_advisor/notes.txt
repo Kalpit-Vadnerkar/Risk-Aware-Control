@@ -1,0 +1,3 @@
+Q3 matters for lab time: a corrected-pose interface means the
+correction competes with Autoware's own EKF; a speed-limit interface is
+safer to implement but only tests "slow down", not "correct".

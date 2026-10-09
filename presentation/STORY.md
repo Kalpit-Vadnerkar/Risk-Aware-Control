@@ -1,118 +1,71 @@
-# Presentation story, slide by slide (rewritten 2026-08-26)
+# Presentation story, slide by slide (rewritten 2026-10-09)
 
-A narrative walkthrough of the deck's flow — the bird's-eye view, for
-getting the whole story in one pass before diving into per-slide detail
-(`points.txt`/`notes.txt` in each `slide_NN_*/` folder). Not slide content
-itself.
+The bird's-eye walkthrough of the deck, for getting the whole story in one
+pass before the per-slide detail (`points.txt` / `notes.txt` in each
+`slide_NN_*/` folder). Slides 01-13 are the background and the Layer 1
+results from the 2026-08-26 meeting (05, 04 and 06 refreshed); 14-25 are
+this update. The August interpretation / next-steps slides are in
+`_retired_2026-08_update/`.
 
-This deck replaces the prior "belief-divergence fault detection" story
-entirely (retired slides preserved in `_retired_pre_pivot/` for history).
-The core message: **Layer 1 (a calibrated, validated uncertainty signal)
-is close to done. Layer 2 (translating that signal into physical
-consequence) is the real remaining thesis work, and this deck exists to
-show the concrete path from one to the other.**
+**Core message:** Layer 2 now works on the real map, and the advisor's
+critique shaped it: the envelope is Layer 1's own calibrated tube,
+shaped a priori by the scene (2a) and a posteriori by evidence (2b). The
+key finding is that size and direction of a state error need a second
+measurement of the same quantity - so redundant sources went inside the
+predictor. Knowing how much and which way turns warning into correction,
+which sets up the closed-loop result.
 
-**01 — Title.** Same core framing as every prior presentation — AI safety
-in AVs via digital twins. The subtitle is what changed again: calibrated
-uncertainty and consequence estimation, not fault detection or belief
-divergence. Signals a maturation of the claim, not a change of subject.
+**01-13 - Background (unchanged except 04-06).** Motivation, gap, the
+three-layer architecture, platform, data, and the Layer 1 calibration
+story (audit -> fix -> conditional calibration -> fault validation). 05
+now shows the current framework; 04 and 06 carry short "update" notes.
 
-**02 — Motivation.** Opens with the same move as before: our prior T-ITS
-paper proved the twin CAN detect faults accurately — but accuracy alone
-doesn't answer whether a prediction's confidence can be trusted. Reframes
-"can it detect" into "does it know what it doesn't know, and does that
-self-knowledge respond correctly when something goes wrong."
+**14 - Where we left off.** Last meeting's story, the 2026-09-03
+feedback (the interval already is a reachable tube: shape it, don't
+rebuild it), and the five things this update shows.
 
-**03 — Literature gap.** Two traditions that don't talk to each other:
-uncertainty quantification (treats confidence as an alarm to threshold)
-and risk-aware planning (assumes its own predictions are correct). Names
-the closest real prior work (Reuter et al., ITSC 2026) precisely and
-states exactly how this differs. Reports an independent literature-review
-agent's verdict: the specific combination here wasn't found anywhere.
+**15 - The predictor left the road.** Building 2a/2b on the drivable area
+exposed 19% off-road nominal forecasts. Fixed in the model (ego-centred
+map, lane direction, route bug, route ahead, selection): lateral error
+0.98 -> 0.13 m, wrong-way turns 22% -> 0%.
 
-**04 — Problem statement.** The three-layer architecture (Detect /
-Consequence / Respond) and the thesis statement. States plainly what's
-banked (Layer 1, this update) vs. what's the real remaining claim (Layer
-2). Introduces the decision to split into two papers rather than one,
-and why that's not a hedge.
+**16 - When, not how much.** Residual-only couplings catch 0 of 4 real
+departures; size and direction need redundancy. The design principle.
 
-**05 — Framework.** The mechanism, replacing belief-divergence entirely:
-calibrated interval → **Layer 2a** (a priori, scene-conditioned band
-shaping) → bootstrap counterfactual futures → **Layer 2b** (a posteriori,
-map-grounded trimming against lane-containment + object reachable sets) →
-calibrated P(violation). Reframed 2026-09-03 per advisor feedback: Layer 2
-optimizes/trims Layer 1's calibrated envelope in two stages rather than
-constructing an independent reachability set — explains precisely why this
-is the one path that doesn't drop the thread between the two literature
-traditions from slide 3.
+**17 - The architecture now.** Behaviour heads (when) + consistency heads
+(how much, which way) in one ST-GAT; 2a / 2b / 2c; Layer 3. The three
+contributions marked.
 
-**06 — Digital twin (architecture).** The ST-GAT model, and — importantly
-— the abandoned approach that came before it: jointly-trained
-distributional heads, which measurably failed to calibrate. States
-plainly that the switch to conformal calibration was about calibration
-quality, not point accuracy (which is actually mixed). A real "we tried
-the obvious thing, here's why it didn't work" narrative beat.
+**18 - The envelope is a distribution.** Samples = forecast + recorded
+error trajectories of similar scenes, moved by pose-error draws;
+P(violation) = share outside the road. Why samples, not a Gaussian tube.
 
-**07 — Experimental platform.** AWSIM + Autoware, unchanged from prior
-work. Notes that the same zone geometry built for fault-injection gating
-turned out to be exactly the right taxonomy for this cycle's calibration
-auditing too.
+**19 - What each module adds.** One real departure, four rows: Layer 1
+band follows the corrupted estimate; 2a checks it against the map; 2b
+moves it onto the true path (P 0.14 -> 1.00 two seconds before the
+departure); correction puts the past path on the truth.
 
-**08 — Data collection.** What's actually on disk: the 26-goal nominal
-baseline (with the honest caveat that only 7 trials are truly held out —
-load-bearing, not polish) and the fault taxonomy (IMU state-estimation
-corruption vs. TL perception spoofing, 8 campaigns + 3 new fixed-severity
-ones). Previews the IMU-vs-TL failure-signature distinction that pays off
-on slide 13.
+**20 - How much and which way.** 2b's heading-error estimate vs AWSIM
+ground truth on all 8 IMU trials.
 
-**09 — Fault plans and impacts.** The message-level verification step:
-did each fault mechanism actually change the raw signal it targets, on
-the real driven trajectory — necessary but not sufficient, sets up
-slide 13's deeper question.
+**21 - Anomaly is not consequence.** Layer 1 flags every IMU fault;
+Layer 2 warns on the 4 departures (2.0-3.4 s) and stays mostly quiet on
+harmless faults and all 30 traffic-light trials.
 
-**10 — Calibration baseline, and the gap found.** Shows the good result
-first (reliability diagram, efficiency curve — both real, both
-validated), then the concrete example (the sharpest turn in the dataset)
-that surfaced a real, hidden per-scenario failure the aggregate numbers
-couldn't show. The "before" half of this update's central before/after
-story.
+**22 - One model for the pose error.** Exact error dynamics from the
+consistency gaps; LiDAR matching as the one direct measurement; one
+filter replaces three hand-made mechanisms; invariants every change must
+pass.
 
-**11 — Finding and fixing the gap.** The geometry-grounded audit
-quantifies the hidden gap (75.6% intersection coverage inside a 90%
-pooled number), then the fix: retrain the model itself, not just widen
-the interval — a real methodological argument, not just an engineering
-choice. Shows the SAME turn window as slide 10, after the fix — the "after"
-half of the story, and the deck's most persuasive visual.
+**23 - From warning to correction.** Subtracting the estimate cuts the
+pose error at departure from 23-95 deg to 1.0-2.6 deg (open loop).
+Caveats stated.
 
-**12 — Conditional calibration, compared honestly.** Two ways to make the
-calibrated interval scenario-aware: discrete (Mondrian) vs. continuous
-(the model's own learned scene similarity) — as of the 2026-09-03 reframe,
-this IS Layer 2a (a priori reachability-set shaping), not a Layer 1 side
-quest. Reports the real, quantified trade-offs of each — including that
-Mondrian is NOT a free efficiency win once properly weighted, a finding
-caught and corrected before being oversold.
+**24 - Where this goes.** The closed-loop comparison (Autoware / +L1 /
++L2 / +L3), what it needs, the paper plan.
 
-**13 — Layer 1 meets real faults.** The fault-validation payload: two
-qualitatively different fault signatures (IMU compounding vs. TL
-contained), and a likely-novel finding that the most diagnostic feature
-isn't the obvious one. Closes with a first-look severity dose-response
-result from data nobody had analyzed this way before, including an
-honestly-reported confound that directly shaped the next data collection
-round's design.
+**25 - Questions.** Capstone, paper split, Autoware interface, scenario
+priorities.
 
-**14 — Interpretation.** Steps back to state plainly what's solid (the
-methodology, the audit-fix cycle, the fault validation) and what needs to
-be treated as a real limitation (calibration-set size, the sweep's pilot
-status, Mondrian's real cost) — not glossed over. Reports the independent
-novelty verdict's exact conditions. Closes by recommending Layer 2 as the
-next real payoff, not further Layer 1 polish.
-
-**15 — Next steps.** The concrete, already-planned path to closing Paper
-1 (the redesigned severity sweep, matched-pair data collection) running
-in parallel with starting **Layer 2b** (the a posteriori, map-grounded
-trimming redesign — Layer 2a already exists as slide 12's conditional
-calibration), the target result shape — four artifacts in priority order.
-Ends on two real questions for the advisor: the two-paper split, and
-whether NPC/traffic-density belongs in Layer 2's scope (still open —
-2026-09-03: not recommended for the near-term collection plan, since its
-purpose can't be evaluated until 2b's violation-checking exists).
+**B1 - Backup.** Operating curves and alarm rates: internal sanity
+checks, shown only if asked.

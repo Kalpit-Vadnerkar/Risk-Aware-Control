@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from st_gat.pipeline import config as cfg  # noqa: E402
 
-SRC = os.path.join(cfg.ANALYSIS_ROOT, 'layer2_envelope')
+SRC = os.path.join(cfg.ANALYSIS_ROOT, os.environ.get('L2_RESULTS', 'layer2_envelope_filter'))
 OUT = os.path.join(cfg.ANALYSIS_ROOT, 'highlights')
 GAP = 1.0            # alarm episodes closer than this merge (as in layer2_envelope)
 STOP_S = 1.7         # stop from 5 m/s at 3 m/s^2

@@ -1,0 +1,26 @@
+WHERE WE LEFT OFF, AND WHAT YOU SAID
+
+Last meeting (2026-08-26 deck):
+  → Layer 1 nearly done: conformal calibration over the ST-GAT, a hidden
+    per-scenario gap found and fixed by retraining, the calibrated signal
+    responds to real IMU and traffic-light faults
+  → Layer 2 proposed as: bootstrap counterfactual futures, check them
+    against a separately built reachability margin, output P(violation)
+
+Your feedback (2026-09-03):
+  → Layer 1 on track
+  → A separate reachability set is redundant: the calibrated interval,
+    swept over the horizon, already IS a reachable tube
+  → Instead: shape that envelope a priori (scene) and a posteriori
+    (map, evidence) rather than building a second one
+
+What this update shows:
+  1. Building Layer 2 on real map geometry exposed a model problem, fixed
+     in the model, not patched in Layer 2 (slide 15)
+  2. Residuals tell WHEN, not HOW MUCH or WHICH WAY (slide 16)
+  3. Redundant sources inside the predictor give size and direction
+     (slides 17, 20)
+  4. The envelope now grows from that evidence; P(violation) follows the
+     real consequence, not the anomaly (slides 18-21)
+  5. Knowing how much and which way lets us CORRECT, not just warn
+     (slides 22-23) - and that sets up the closed-loop result (slide 24)

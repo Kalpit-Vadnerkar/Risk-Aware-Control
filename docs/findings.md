@@ -146,6 +146,37 @@ Benchmark table (held-out CAL, every model):
   Heading error tracks AWSIM truth closely (stuck: +115 deg vs +115 true).
   dP (evidence - nominal) misses scale/goal_007 because P is already high
   at that tight spot before the fault.
+- **Pose-error estimator from the formal model** (2026-10-09, default in
+  `layer2_envelope.py`, `--estimator legacy` for the above). One filter on
+  (psi, x, y): predict with the consistency gaps, update with delta = 0 from
+  LiDAR-to-map matching weighted by its health. Assumption checked first:
+  in every window with true error > 5 deg or > 1 m, LiDAR health is never
+  nominal (0/6 faults); small-error windows are healthy 66–97%.
+  - vs the legacy mechanisms, against AWSIM truth: nominal envelope moved
+    0.00% of windows (was 0.30%); harmless s1 max lateral error 1.45 ->
+    0.44 m, heading 3.4 -> 2.7 deg; departures heading 1.0–2.6 deg left,
+    lateral 0.35–1.2 m left (legacy 0.17–1.1 m). The lateral floor is
+    insensitive to how strictly LiDAR is trusted: a measurement limit.
+  - Integrating the raw gap (minus nominal bias) instead of the head's
+    residual, and the rotating-frame terms: tried, worse overall (nominal
+    moved 2.9%, departures worse); fixes only s3/goal_012.
+  - Known limit: s3/goal_012, vehicle stopped while its heading estimate
+    spins past 180 deg; the consistency head is out of distribution
+    (lateral error up to 5.8 m).
+  - Full run: departures unchanged (4/4, same leads); harmless in alarm
+    s1/007 0.18 -> 0.04, s1/012 0, scale/012 0, s3/012 0.18 -> 0.65 (the
+    nominal envelope alone reads 0.63 there: stopped at a tight spot;
+    legacy's lower value came from its drift moving the envelope away).
+- **Offline correction** (open loop, estimator above): subtracting the
+  estimate at the moment of departure leaves heading 1.0–2.6 deg (Autoware
+  23–95 deg) and lateral 0.4–1.2 m (0.8–5.9 m). On harmless s1 it raises
+  lateral error 0.1 -> 0.4 m: correct only when Layer 1 distrusts.
+  Figure: `experiments/analysis/h30_30_ego6/highlights/correction_offline.png`.
+- **Alarm floor** (internal benchmark): at the 1%-of-windows threshold the
+  nominal envelope fires ~35 episodes/h at tight spots (P_evidence =
+  P_nominal on 99.96% of nominal windows). Alarming only while Layer 1
+  distrusts: 0 episodes in 0.96 h, 4/4 departures (rule chosen after
+  seeing them). `plot_highlights.py`.
 - No alarms of note on traffic-light trials (in-fault ≤ 0.07). One IMU
   trial without departure alarms 55% of its fault windows — its real
   footprint came within ~5 cm of the edge.

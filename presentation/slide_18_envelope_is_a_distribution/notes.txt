@@ -1,0 +1,10 @@
+If asked "is the bunch of trajectories the data?": no - each line is a
+sample from a distribution. The randomness has two sources: which
+recorded error trajectory (non-parametric, from real calibration data,
+conditioned on the scene) and which pose error (Gaussian with the 2b
+mean and calibrated spread). 200 samples give P to about +/-0.03 at
+P = 0.5.
+
+The orange dashed line is the TRUE path from AWSIM ground truth. In
+panel c the moved envelope sits on the true path, while the forecast
+(blue) follows the corrupted estimate.

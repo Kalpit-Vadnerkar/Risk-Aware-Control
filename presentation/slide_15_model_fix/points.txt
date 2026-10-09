@@ -1,0 +1,25 @@
+FIRST PROBLEM: THE PREDICTOR ITSELF LEFT THE ROAD
+
+Building 2a/2b on the real drivable area showed that 19% of the
+ST-GAT's own NOMINAL forecasts left the road. Any P(violation) built on
+that is noise. Fixed in the model, not patched in Layer 2.
+
+(Plot: model_progress.png)
+
+Root causes and fixes:
+  → Map graph in a bounding-box frame, centred on the window -> the model
+    could not tell where it was relative to the lanes. Now: ego-centred,
+    metres, past-only graph centred on the CURRENT position with a 150 m
+    radius (map ahead for the forecast, no future leak)
+  → Lane direction per node added
+  → Route bug: the first route message in 38 of 45 bags was the PREVIOUS
+    goal's route. Now the last route message; plus 20 route points ahead
+  → Checkpoint selection on kinematic heads only (traffic-light heads
+    overfit early and were picking under-trained epochs)
+
+Result (held-out nominal):
+  lateral error at 3 s  0.98 m -> 0.13-0.15 m
+  off-road forecasts    19%    -> 3%   (gate 2%: borderline, varies run to run)
+  wrong-way turns       22%    -> 0%
+  phantom turns         35%    -> 2%
+  3 s position interval 47% narrower at the same 90% coverage

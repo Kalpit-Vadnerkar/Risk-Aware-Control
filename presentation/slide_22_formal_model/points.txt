@@ -1,0 +1,24 @@
+ONE MODEL FOR THE POSE ERROR (NOT PATCHWORK)
+
+Pose error, estimate minus truth, in the estimate's heading frame:
+  ψ = θ̂ − θ,    (x, y) = R(θ̂)ᵀ (p̂ − p)
+
+Measured gaps (the consistency heads' targets):
+  g_ψ = r̂ − r_v,   g_a = â − v,   g_l = l̂ − v_l
+
+Error dynamics - exact kinematics, nothing tuned:
+  ψ̇ = g_ψ − b_ψ + n
+  ẋ = g_a + v(1 − cos ψ)
+  ẏ = g_l + v sin ψ
+
+LiDAR-to-map matching is the one source that observes the error
+directly (δ ≈ 0 when healthy). One filter: predict with the dynamics,
+update with δ = 0, trusted in proportion to LiDAR health.
+
+Checked before building it: in every window where the true error is
+large (> 5° or > 1 m), LiDAR health is never nominal; where it is small,
+it is healthy 66-97% of the time.
+
+Invariants every change must pass: calibrated on nominal (I1); inside
+the nominal band the envelope does not move (I2: 100% of nominal
+windows); derived, not tuned (I3); validated against ground truth (I6).

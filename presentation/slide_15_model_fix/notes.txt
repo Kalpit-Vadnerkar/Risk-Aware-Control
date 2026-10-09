@@ -1,0 +1,13 @@
+A "good enough for safety" benchmark gate was added for this: off-road
+<= 2%, lateral error p50 <= 0.5 m, phantom and wrong-direction turns <=
+5%. It doubles as the ablation table for the paper (one row per model,
+experiments/analysis/model_safety_benchmark/benchmark_table.md).
+
+Be honest that the off-road rate sits at 1.7-3.2% depending on the
+training run: right at the gate, not comfortably under it. It does not
+drive the Layer 2 results (the nominal envelope is calibrated on the
+model's own errors), but it is the first thing a reviewer will ask.
+
+If asked "why not keep the original model and recalibrate": a wider
+interval around a forecast that is on the wrong road does not fix the
+forecast - same argument as the slide 11 turn fix last time.

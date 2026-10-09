@@ -38,3 +38,12 @@ THE FIX — conformal calibration wraps the point predictor instead:
     abandoned approach is slightly better on 4/6 features) — say this
     plainly, calibration quality is the reason for the switch, not
     accuracy
+
+UPDATE 2026-10 (slides 15-17):
+  → Map graph now ego-centred, in metres, past-only around the CURRENT
+    position (150 m), with lane direction and 20 route points ahead
+  → Redundant ego-state sources as inputs (vehicle yaw rate, wheel speed,
+    EKF gate distance, LiDAR-to-map match probability)
+  → New consistency heads: estimated pose vs the vehicle's own yaw rate,
+    along-track and lateral speed
+  → Checkpoint chosen on the kinematic heads only

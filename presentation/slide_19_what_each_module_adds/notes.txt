@@ -1,0 +1,7 @@
+Walk the columns left to right on row 3 vs row 2: this is the single
+best visual of the thesis. Nothing in rows 2-3 knows about the fault
+type; the move in row 3 comes from the consistency heads alone.
+
+The full filmstrips with every featured trial are in
+experiments/analysis/h30_30_ego6/layer2_envelope/ (filmstrip_*.png),
+and an animation: envelope_imu_fault_scale__goal_007__*.gif.

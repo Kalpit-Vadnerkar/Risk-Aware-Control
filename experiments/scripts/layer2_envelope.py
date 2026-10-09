@@ -268,6 +268,77 @@ def sliding_position_error(t, e_along, e_lat, v, Psi, w=POS_WINDOW_S):
     return X, Y
 
 
+def reference_health(lq, D, cal):
+    """w in [0, 1]: how far LiDAR-to-map matching can be trusted as a
+    measurement of the pose error delta = 0. 1 = as healthy as typical nominal
+    driving, 0 = no information (or Layer 1 distrusts the state). Graded
+    between the nominal median and the nominal 1% tail of each signal."""
+    m50, m99, p01, p50 = cal['lq_ref']
+    w_m = np.clip((m99 - lq[:, 0]) / max(m99 - m50, 1e-6), 0, 1)
+    w_p = np.clip((lq[:, 1] - p01) / max(p50 - p01, 1e-6), 0, 1)
+    return w_m * w_p
+
+
+def pose_error_filter(t, e_int, v, w, cal, r_hat=None):
+    """The pose-error estimator of docs/architecture.md (Formal model):
+    delta = (psi, x, y), estimate minus truth in the estimate's heading frame.
+    Predict with the error dynamics driven by the consistency gaps (process
+    noise from the nominal drift bands); update with the pseudo-measurement
+    delta = 0 from the absolute reference, noise R0 / w (w = 0: no update).
+    Replaces onset integration, the sliding position window and the binary
+    release with one rule. r_hat: the estimate's own yaw rate, for the
+    rotating-frame terms (needed when the estimate spins, e.g. a stopped
+    vehicle under a stuck gyro); default g_psi, exact when the vehicle itself
+    does not turn. Returns delta and its std."""
+    n = len(t)
+    bands = cal['bands']
+    q = np.array([(drift_band(bands, 3, 'Psi') / 1.96) ** 2 / 3,
+                  (drift_band(bands, 3, 'Y') / 1.96) ** 2 / 3,
+                  (drift_band(bands, 3, 'Y') / 1.96) ** 2 / 3])            # variance per second
+    R0 = np.diag([np.radians(0.5) ** 2, 0.1 ** 2, 0.1 ** 2])
+    gp, ga = np.nan_to_num(e_int[:, 0]), np.nan_to_num(e_int[:, 1])
+    gl = np.nan_to_num(e_int[:, 2]) if e_int.shape[1] > 2 else np.zeros(n)
+    rh = gp if r_hat is None else np.nan_to_num(r_hat)
+    d = np.zeros(3)
+    P = np.diag(q)
+    out = np.zeros((n, 3)); sd = np.zeros((n, 3))
+    for k in range(n):
+        dt = DT if k == 0 else min(max(t[k] - t[k - 1], 0.0), 0.3)
+        psi, x, y = d
+        r = rh[k]
+        d = d + np.array([gp[k], ga[k] + v[k] * (1 - math.cos(psi)) + r * y,
+                          gl[k] + v[k] * math.sin(psi) - r * x]) * dt
+        F = np.array([[1, 0, 0], [v[k] * math.sin(psi) * dt, 1, r * dt], [v[k] * math.cos(psi) * dt, -r * dt, 1]])
+        P = F @ P @ F.T + np.diag(q) * dt
+        if w[k] > 0:
+            K = P @ np.linalg.inv(P + R0 / w[k])
+            d = d - K @ d
+            P = (np.eye(3) - K) @ P
+        out[k], sd[k] = d, np.sqrt(np.diag(P))
+    return out, sd
+
+
+ESTIMATOR = 'filter'      # 2b pose-error estimate: 'filter' (formal model) or 'legacy' (onset integral + window)
+
+
+def apply_estimator(ev, t, e, v, lq, cal):
+    """Replace the legacy pose-error estimate in ev with the formal-model
+    filter (docs/architecture.md). The envelope moves while Layer 1 distrusts
+    the state or the estimate is outside the nominal drift band (I2)."""
+    if ESTIMATOR != 'filter' or lq is None or 'lq_ref' not in cal:
+        return ev
+    ic = list(cal['int_ch'])
+    d, sd = pose_error_filter(t, e[:, ic], v, reference_health(lq, ev['D'], cal), cal, r_hat=np.zeros(len(t)))
+    bP, bY = drift_band(cal['bands'], 3, 'Psi'), drift_band(cal['bands'], 3, 'Y')
+    moved = (ev['D'] > 0) | (np.abs(d[:, 0]) > bP) | (np.abs(d[:, 2]) > bY)
+    ev = dict(ev)
+    ev['Psi'], ev['X'], ev['Y'] = d[:, 0], d[:, 1], d[:, 2]
+    ev['sPsi'], ev['sX'], ev['sY'] = sd[:, 0], sd[:, 1], sd[:, 2]
+    ev['active'] = moved.astype(float)
+    ev['tau'] = np.where(moved, np.maximum(ev['tau'], DT), 0.0)
+    return ev
+
+
 def evidence_state(t, u, flag, e, v, cal, lq=None):
     """Layer-1 WHEN + 2b carried pose error over one trial's windows, causal.
     - distrust ON when the capped CUSUM S of the bounded score u exceeds h;
@@ -514,6 +585,8 @@ def build_pool(model, device, args):
     lq_all = window_locq(seqs)
     if lq_all is not None:
         cal['lq_q'] = (float(np.quantile(lq_all[:, 0], 0.95)), float(np.quantile(lq_all[:, 1], 0.05)))
+        cal['lq_ref'] = tuple(float(x) for x in (np.quantile(lq_all[:, 0], 0.5), np.quantile(lq_all[:, 0], 0.99),
+                                                  np.quantile(lq_all[:, 1], 0.01), np.quantile(lq_all[:, 1], 0.5)))
     pool['cal'] = cal
     pool['se_rate'] = cal['q90'][list(int_ch[:2])] / 1.645
     pe = np.array([L2.pose_error(s) for s in seqs[::5]])
@@ -523,6 +596,7 @@ def build_pool(model, device, args):
         m = np.where(trial == tid)[0]
         sub = evidence_state(t_all[m], u[m], flag[m], e[m], v_all[m], cal,
                              lq_all[m] if lq_all is not None else None)
+        sub = apply_estimator(sub, t_all[m], e[m], v_all[m], lq_all[m] if lq_all is not None else None, cal)
         if ev is None:
             ev = {k: np.zeros(len(trial)) for k in sub}
         for k in sub:
@@ -530,6 +604,7 @@ def build_pool(model, device, args):
     ev['u'] = u
     pool['ev'] = ev
     pool['t_all'] = t_all
+    pool['e'], pool['v'], pool['lq'], pool['flag'] = e, v_all, lq_all, flag
     eps = sum(len(L2._alarm_episodes(t_all[trial == tid], ev['D'][trial == tid] > 0, 1.0)) for tid in np.unique(trial))
     hours = len(trial) * DT / 3600
     print(f"Calibration: {len(trial)} windows ({hours:.2f} h), {len(np.unique(trial))} trials; integrating channels {int_ch}")
@@ -593,7 +668,9 @@ def process_trial(run_dir, model, device, pool, builder, args):
     P = pvalues(Xch, pool['cal']['ref'])
     u, pc = combined_score(P)
     v = window_speed(seqs)
-    ev = evidence_state(t, u, (pc < ALPHA_FLAG).astype(float), e, v, pool['cal'], window_locq(seqs))
+    lq = window_locq(seqs)
+    ev = evidence_state(t, u, (pc < ALPHA_FLAG).astype(float), e, v, pool['cal'], lq)
+    ev = apply_estimator(ev, t, e, v, lq, pool['cal'])
     ev['u'] = u
     ev['pchan'] = P
     bag = os.path.join(run_dir, 'rosbag')
@@ -839,7 +916,7 @@ def _frame_title(ax, tr, g, i, out):
     rel = f" (fault {tr['t'][i] - fs:+.1f} s)" if fs is not None else ''
     ax.set_title(f"t = {tr['t'][i]:.1f} s{rel}\n"
                  f"heading error: 2b {np.degrees(ev['Psi'][i]):+.1f}°, true {np.degrees(g['true_psi'][i]):+.1f}°\n"
-                 f"P(violation): nominal {out['nominal']:.2f} → evidence {out['evidence']:.2f}", fontsize=8.5)
+                 f"P(violation): nominal {out['nominal']:.2f} → evidence {out['evidence']:.2f}", fontsize=11)
 
 
 def _snapshot_times(tr, g):
@@ -862,13 +939,14 @@ def _snapshot_times(tr, g):
 
 def plot_filmstrip(tr, g, pool, drivable, map_data, args):
     idxs = _snapshot_times(tr, g)
-    fig, axes = plt.subplots(1, len(idxs), figsize=(4.2 * len(idxs), 6.0))
+    fig, axes = plt.subplots(1, len(idxs), figsize=(4.4 * len(idxs), 7.6))
     axes = np.atleast_1d(axes)
     for ax, i in zip(axes, idxs):
         _frame_panel(ax, tr, g, i, pool, drivable, map_data, args)
-    fig.suptitle(f"{tr['rel']}: the envelope over time (56 m x 56 m around the vehicle)", fontsize=10)
-    fig.legend(handles=_frame_legend_handles(), loc='lower center', ncol=3, fontsize=8.5, frameon=False)
-    fig.tight_layout(rect=[0, 0.14, 1, 0.95])
+    fig.suptitle(f"{tr['rel']}: the envelope over time (56 m x 56 m around the vehicle)", fontsize=13)
+    fig.legend(handles=_frame_legend_handles(), loc='lower center', ncol=3, fontsize=12.5, frameon=False,
+               handlelength=3)
+    fig.tight_layout(rect=[0, 0.22, 1, 0.95])
     fig.savefig(os.path.join(args.output_dir, f"filmstrip_{tr['rel'].replace('/', '__')}.png"), dpi=110)
     plt.close(fig)
 
@@ -881,7 +959,7 @@ def make_gif(tr, g, pool, drivable, map_data, args):
     frames = [int(np.argmin(np.abs(t - x))) for x in np.arange(fs - 3, end, 0.3)]
     fig = plt.figure(figsize=(6, 8.2))
     ax = fig.add_axes([0.04, 0.27, 0.92, 0.64])
-    fig.legend(handles=_frame_legend_handles(), loc='lower center', ncol=1, fontsize=7.5, frameon=False)
+    fig.legend(handles=_frame_legend_handles(), loc='lower center', ncol=1, fontsize=9.5, frameon=False)
 
     def draw(i):
         ax.clear()
@@ -912,7 +990,10 @@ def main():
     ap.add_argument('--no-cache', action='store_true')
     ap.add_argument('--seed', type=int, default=20261007)
     ap.add_argument('--output-dir', default=OUT_DIR)
+    ap.add_argument('--estimator', choices=['filter', 'legacy'], default='filter')
     args = ap.parse_args()
+    global ESTIMATOR
+    ESTIMATOR = args.estimator
     os.makedirs(args.output_dir, exist_ok=True)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = L2._load_model(args.model, device)

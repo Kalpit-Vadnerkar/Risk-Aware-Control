@@ -133,18 +133,16 @@ K = P^- (P^- + R(h_k))^{-1}, \quad
 \hat\delta_{k+1} = (I - K)\,\hat\delta_{k+1}^-
 ```
 
-What the code does now, read as special cases of this filter:
-
-| Current mechanism | Filter reading | Gap |
-|---|---|---|
-| Heading integrated from onset t0 | R = ∞ from t0 (pure prediction) | consistent |
-| Position over a sliding 3 s window | a fixed-gain leaky update, gain ≈ 1/3 s | the window is tuned, not derived from R(h) |
-| Release after 2 s of healthy LiDAR | K = I once healthy | binary, not graded by h |
-| Spread ± integrated band | P from Q | P never shrinks except at release |
-
-The filter replaces the three by one rule. The assumption it rests on is
-untested: that LiDAR health is poor whenever the true error is large (true
-on the four departures? check before building).
+Implemented as `pose_error_filter` in `layer2_envelope.py` (default since
+2026-10-09; health weight graded between the nominal median and 1% tail of
+the EKF gate distance and scan-match probability, independent of Layer 1
+distrust). It replaced three hand-made mechanisms: heading integrated from
+onset, a 3 s sliding window for position, and a binary release after 2 s of
+healthy LiDAR. The assumption it rests on held: wherever the true error is
+large, LiDAR health is never nominal. Input is the consistency heads'
+residual (the head's prediction acts as the bias b); the r̂ terms are still
+dropped (tested, no gain). Known limit: a stopped vehicle whose heading
+estimate spins (head out of distribution).
 
 **Envelope and risk.** Counterfactual k at window t: forecast μ_t plus a
 recorded error trajectory ε_k from the scene neighbours (2a), then moved
@@ -160,11 +158,11 @@ P_t(\text{violation}) = \frac{1}{K}\sum_k \mathbf 1[\tau_k \notin \mathcal S_t]
 | # | Invariant | Check | Now |
 |---|---|---|---|
 | I1 | Every score is calibrated leave-one-trial-out on nominal trials | conformal coverage per horizon step | 0.90 at 0.90 |
-| I2 | Null preservation: inside the nominal band, 2b does not move the envelope | P_evidence = P_nominal on nominal windows | 99.96% |
-| I3 | δ follows the error dynamics above, nothing tuned | derivation, as here | sliding window still tuned |
-| I4 | Onset and release use the same evidence | one source of truth for distrust | onset: Layer 1 score; release: LiDAR health |
+| I2 | Null preservation: inside the nominal band, 2b does not move the envelope | estimate outside the band on nominal windows | 0.00% |
+| I3 | δ follows the error dynamics above, nothing tuned | derivation, as here | filter in place; R0 and the health references set from nominal data |
+| I4 | Onset and release use the same evidence | one source of truth for distrust | the estimate is set by LiDAR health alone; Layer 1 decides when the envelope moves |
 | I5 | Every safe set passes the realized-nominal test | `--mode check-safe-set` | 0–0.1% |
-| I6 | δ̂ tracks AWSIM truth | `heading_tracking.png` | heading within 0.5–2.2° at departure |
+| I6 | δ̂ tracks AWSIM truth | `heading_tracking.png`, `correction_offline.png` | heading 1.0–2.6°, lateral 0.35–1.2 m left at departure |
 
 ## Layer 3 — response hook
 

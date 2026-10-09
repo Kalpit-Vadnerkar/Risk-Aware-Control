@@ -1,0 +1,24 @@
+ANOMALY IS NOT CONSEQUENCE
+
+(Plot: anomaly_vs_consequence.png - share of fault time in alarm)
+
+  → Layer 1 alone flags almost every IMU fault for almost its whole
+    duration (s1: 98%) - correctly: the anomaly is real
+  → Layer 2 stays quiet where the vehicle was never in danger (s1: 0-4%,
+    scale/goal_012: 0%) and warns on all 4 real departures, 2.0-3.4 s
+    before the vehicle left the road
+  → One exception, s3/goal_012 (65%): the vehicle is stopped at a tight
+    spot where the nominal envelope alone already reads 63% - the
+    evidence adds 2 points
+  → 30 traffic-light fault trials: no consequences (Autoware is
+    fail-safe on an unknown light), Layer 2 quiet
+
+(Plot: p_violation_scale007.png - one departure: true clearance to the
+ road edge, and P(violation) rising 2.0 s before the departure)
+
+The point is not the alarm: it is that P(violation) measures the
+consequence of the state error, in this scene, for this vehicle.
+
+(Plot: filmstrip_scale007.png - the same departure as six snapshots: the
+ red evidence envelope bends onto the true path while the forecast
+ follows the corrupted estimate)

@@ -1,0 +1,14 @@
+QUESTIONS FOR YOU
+
+1. Closed loop as the final result: is the four-configuration
+   comparison (Autoware / +L1 / +L2 / +L3) the right capstone, and is
+   pose correction an acceptable Layer 3 (vs speed/stop responses only)?
+
+2. Paper split: Paper 2 = Layers 1+2 + offline correction, Paper 3 =
+   closed loop - or fold the closed loop into Paper 2?
+
+3. Interface into Autoware: inject a corrected pose (most direct, most
+   invasive) or limit speed / request a stop (least invasive)?
+
+4. Scenarios: priority between a false-green traffic-light fault, tight
+   vs wide geometry for the same IMU fault, and more nominal driving.

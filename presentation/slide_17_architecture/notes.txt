@@ -1,0 +1,10 @@
+This is where the advisor's critique is resolved: 2a and 2b both act
+on Layer 1's calibrated envelope; nothing re-derives a second
+reachability set. 2b is "a posteriori" in the sense that it uses
+evidence only available at run time (the consistency gaps and LiDAR
+health), not physics pruning - physics pruning was tried and dropped,
+because it judges counterfactuals against the measured state, which is
+exactly what a fault corrupts.
+
+No physics trim, no hand-tuned gains: the next slides show what each
+module does to the envelope.

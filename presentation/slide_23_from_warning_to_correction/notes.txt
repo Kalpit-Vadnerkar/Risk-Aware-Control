@@ -1,0 +1,5 @@
+This is the answer to "the alarm is not getting the job done": the
+pipeline produces a quantity a controller can USE - a corrected pose -
+and P(violation) gets a better job than alarming: deciding between
+correcting and stopping, and confirming that a mitigation worked (P
+levelling off).

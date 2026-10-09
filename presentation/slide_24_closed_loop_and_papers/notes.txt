@@ -1,0 +1,8 @@
+The comparison is a safety-versus-availability story where each layer
+earns its place: Layer 1 alone is safe but useless (stops all the
+time), Layer 2 makes it selective, Layer 3 keeps the mission going.
+
+Scenario gaps to fill for Paper 2: a false-green traffic-light fault
+(the only TL fault that can cause a consequence - current TL faults are
+fail-safe), the same IMU fault in tight vs wide geometry, and more
+departure trials (we have 4, all IMU, 2 goals).

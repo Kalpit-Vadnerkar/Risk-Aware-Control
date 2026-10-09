@@ -1,0 +1,24 @@
+THE ARCHITECTURE NOW
+
+(Plot: architecture_diagram.png - live version:
+ https://claude.ai/artifact/PthVcao94m9MV3o8zdsEKx)
+
+Layer 1 - DETECT (trained and calibrated on nominal driving only)
+  → One ST-GAT with two kinds of heads:
+      behaviour heads (position, velocity, steering, acceleration,
+      traffic light) -> WHEN
+      consistency heads (estimated pose vs the vehicle's own yaw rate,
+      along-track and lateral speed) -> HOW MUCH, WHICH WAY
+  → Every residual is a conformal p-value; combined into one bounded
+    score; onset by a capped CUSUM with a recovery test
+
+Layer 2 - CONSEQUENCE
+  2a  scene-conditioned envelope: forecast + real recorded errors of the
+      150 most similar scenes (the calibrated tube, shaped a priori)
+  2b  evidence growth: the envelope is moved by the estimated pose error
+      (shaped a posteriori), so P grows while a fault goes unmitigated
+  2c  safe sets: road edge, other road users (stop line, speed: planned)
+
+Layer 3 - RESPONSE: correct the state, slow down, or stop (slide 24)
+
+Marked NEW 1-3 on the diagram: the three contributions.

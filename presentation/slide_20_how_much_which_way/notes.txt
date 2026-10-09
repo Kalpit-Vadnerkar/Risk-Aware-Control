@@ -1,0 +1,7 @@
+This is the evidence for "how much / which way". It is also the
+strongest answer to "is this just anomaly detection": anomaly detection
+gives a score; this gives a physical pose error in degrees and metres,
+with the right sign, validated against ground truth.
+
+The lateral error is harder than heading (LiDAR keeps correcting
+position): slide 22.

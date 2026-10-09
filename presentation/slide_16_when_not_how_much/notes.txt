@@ -1,0 +1,11 @@
+This is the key conceptual finding of the cycle - say it slowly.
+
+"When" = behavioural residuals of any channel. "How much / which way" =
+disagreement between two independent measurements of the same physical
+quantity (pose-derived yaw rate vs the vehicle's own yaw rate; pose
+speed vs wheel speed; LiDAR-to-map matching health).
+
+A bug found on the way and worth one sentence if asked: AWSIM reports
+the vehicle yaw rate with the opposite sign to ROS, which had made the
+first consistency channel twice the yaw rate. Verified (correlation
+-0.998) and fixed.

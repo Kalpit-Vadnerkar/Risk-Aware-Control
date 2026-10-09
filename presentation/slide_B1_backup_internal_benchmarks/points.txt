@@ -1,0 +1,16 @@
+BACKUP: INTERNAL BENCHMARKS (SANITY CHECKS, NOT HEADLINES)
+
+(Plot: operating_curves.png - threshold swept on each P(violation)
+ variant: warning time vs nominal false alarms, and departures caught
+ vs alarm time on harmless faults)
+
+  → Every variant is checked at a matched nominal false-alarm rate
+  → Found: at the "1% of nominal windows" threshold the nominal envelope
+    itself fires about 35 episodes per hour at tight spots - a property
+    of normal-driving risk, not of the evidence (P(evidence) =
+    P(nominal) on 99.96% of nominal windows)
+  → Alarming on P only while Layer 1 distrusts the state: 0 episodes in
+    0.96 h of nominal driving, 4/4 departures at 2.0-3.4 s (rule chosen
+    after seeing these 4 departures - to be confirmed on new data)
+  → Limits: 0.96 h of nominal data cannot resolve rates below about 1
+    per hour; 4 departures; the 3 s horizon caps the warning time
