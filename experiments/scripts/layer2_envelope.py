@@ -815,11 +815,31 @@ def _frame_panel(ax, tr, g, i, pool, drivable, map_data, args, title=True):
     ax.set_xticks([])
     ax.set_yticks([])
     if title:
-        ev = tr['ev']
-        ax.set_title(f"t = {tr['t'][i]:.1f} s   distrusted {ev['tau'][i]:.1f} s\n"
-                     f"Psi {np.degrees(ev['Psi'][i]):+.1f} deg (true {np.degrees(g['true_psi'][i]):+.1f})\n"
-                     f"P: nominal {out['nominal']:.2f} | evidence {out['evidence']:.2f}", fontsize=8.5)
+        _frame_title(ax, tr, g, i, out)
     return out
+
+
+def _frame_legend_handles():
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    return [Line2D([], [], color='k', lw=2, label="past path, as the vehicle's own estimate saw it"),
+            Line2D([], [], color='#ff7f0e', lw=2, ls='--', label='TRUE path (AWSIM ground truth), -3 s to +3 s'),
+            Line2D([], [], color='#1f77b4', lw=2, label='ST-GAT forecast (next 3 s)'),
+            Line2D([], [], color='#1f77b4', lw=1, ls=':', label='what the estimate actually did next'),
+            Line2D([], [], color='#8c8c8c', lw=1, label='2a nominal envelope (counterfactual futures, no evidence)'),
+            Line2D([], [], color='#2ca02c', lw=1.5, label='2a+2b evidence envelope: future stays on the road'),
+            Line2D([], [], color='#d62728', lw=1.5, label='2a+2b evidence envelope: future leaves the road'),
+            Line2D([], [], color='m', lw=1, label='other road users (constant-velocity forecast)'),
+            Patch(color='#bdbdbd', label='drivable area')]
+
+
+def _frame_title(ax, tr, g, i, out):
+    ev = tr['ev']
+    fs = min((w['start'] for w in tr['fault_windows']), default=None)
+    rel = f" (fault {tr['t'][i] - fs:+.1f} s)" if fs is not None else ''
+    ax.set_title(f"t = {tr['t'][i]:.1f} s{rel}\n"
+                 f"heading error: 2b {np.degrees(ev['Psi'][i]):+.1f}°, true {np.degrees(g['true_psi'][i]):+.1f}°\n"
+                 f"P(violation): nominal {out['nominal']:.2f} → evidence {out['evidence']:.2f}", fontsize=8.5)
 
 
 def _snapshot_times(tr, g):
@@ -842,14 +862,13 @@ def _snapshot_times(tr, g):
 
 def plot_filmstrip(tr, g, pool, drivable, map_data, args):
     idxs = _snapshot_times(tr, g)
-    fig, axes = plt.subplots(1, len(idxs), figsize=(4.2 * len(idxs), 5.2))
+    fig, axes = plt.subplots(1, len(idxs), figsize=(4.2 * len(idxs), 6.0))
     axes = np.atleast_1d(axes)
     for ax, i in zip(axes, idxs):
         _frame_panel(ax, tr, g, i, pool, drivable, map_data, args)
-    fig.suptitle(f"{tr['rel']} — envelope over time.  black: past (estimate) · blue: forecast (dotted: what the "
-                 f"estimate did) · orange dashed: TRUE path (AWSIM) · grey: 2a nominal envelope · "
-                 f"green/red: 2a+2b envelope, safe / violating", fontsize=9)
-    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.suptitle(f"{tr['rel']}: the envelope over time (56 m x 56 m around the vehicle)", fontsize=10)
+    fig.legend(handles=_frame_legend_handles(), loc='lower center', ncol=3, fontsize=8.5, frameon=False)
+    fig.tight_layout(rect=[0, 0.14, 1, 0.95])
     fig.savefig(os.path.join(args.output_dir, f"filmstrip_{tr['rel'].replace('/', '__')}.png"), dpi=110)
     plt.close(fig)
 
@@ -860,7 +879,9 @@ def make_gif(tr, g, pool, drivable, map_data, args):
     fs = min((w['start'] for w in tr['fault_windows']), default=t[0])
     end = (g['departure'] + 1.5) if g['departure'] is not None else fs + 12
     frames = [int(np.argmin(np.abs(t - x))) for x in np.arange(fs - 3, end, 0.3)]
-    fig, ax = plt.subplots(figsize=(6, 6.4))
+    fig = plt.figure(figsize=(6, 8.2))
+    ax = fig.add_axes([0.04, 0.27, 0.92, 0.64])
+    fig.legend(handles=_frame_legend_handles(), loc='lower center', ncol=1, fontsize=7.5, frameon=False)
 
     def draw(i):
         ax.clear()

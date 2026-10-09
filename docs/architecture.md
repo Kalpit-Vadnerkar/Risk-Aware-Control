@@ -1,6 +1,6 @@
 # Pipeline architecture
 
-Current design, 2026-10-07. Shareable version with diagram:
+Current design, 2026-10-08. Shareable version with diagram:
 https://claude.ai/code/artifact/1cc568ab-f9b5-4945-afe4-9cf1c9f55a65 — this file
 is the repo copy agents read. What is measured so far lives in
 `docs/findings.md`; what to collect next in `docs/experiment_plan.md`.
@@ -34,8 +34,9 @@ last 3 s (`st_gat/`, schema selected by `STGAT_GRAPH_FRAME`, see CLAUDE.md).
   redundant ego-state sources (ego_v4: vehicle-reported yaw rate and wheel
   speed, EKF gate Mahalanobis, LiDAR-to-map match probability).
 - Outputs: behavior heads (position, velocity, steering, acceleration,
-  traffic-light channels) + consistency heads (ego_v4: EKF − vehicle yaw rate,
-  EKF − wheel speed).
+  traffic-light channels) + consistency heads (ego_v6: EKF − vehicle yaw rate,
+  EKF − wheel speed; pose yaw rate − vehicle yaw rate; pose along-track and
+  lateral speed − vehicle speed, in the estimate's heading frame).
 - Scores: every head's residual is a conformal nonconformity score,
   calibrated per horizon step, leave-one-trial-out on nominal trials. With 30
   overlapping forecasts in flight, every instant has ~435 observed (lag, step)
@@ -52,13 +53,10 @@ group). Tightened by a lane-keeping prior — valid only while the state is
 trusted (planned; removes the nominal open-loop tail). No physics trim: it
 judges counterfactuals against the measured state, which a fault corrupts.
 
-**2b, evidence-driven uncertainty.** From the onset time t0, integrate the
-calibrated consistency gap e(s) (and its conformal band) into a pose-error
-distribution; rigidly rotate/shift each counterfactual:
-
-    dpsi(t) = integral_{t0}^{t} e(s) ds,   dy(t) = integral_{t0}^{t} v(s) sin(dpsi(s)) ds
-
-Mean = which way, spread = how much (calibrated band), start = when. An
+**2b, evidence-driven uncertainty.** The pose error δ = (ψ, x, y) is
+estimated from the consistency gaps (equations in the next section) and each
+counterfactual is rigidly rotated by ψ and shifted by (x, y). Mean = which
+way, spread = how much (calibrated band), start = when. An
 unmitigated fault drives P(violation) up continuously; slowing down halts the
 position growth, so mitigation shows as P levelling off. While distrusted the
 2a tightening is relaxed. No redundant source (e.g. traffic-light state):
@@ -80,6 +78,94 @@ Alarm thresholds: per variant, firing on 1% of nominal windows (matched
 false-alarm rate). Lead time: onset of the alarm episode still active at the
 real violation (gaps ≤ 1 s merged).
 
+## Formal model and consistency checks
+
+Every mechanism that moves the envelope has to follow from the equations
+below. A change that cannot be stated as one of them is a patch.
+
+**Pose error.** True pose (p, θ); the vehicle's own estimate (p̂, θ̂). The
+error, expressed in the estimate's heading frame R(θ̂):
+
+```math
+\psi = \hat\theta - \theta, \qquad
+\begin{bmatrix} x \\ y \end{bmatrix} = R(\hat\theta)^\top (\hat p - p)
+```
+
+**Measurements.** The estimate's own rates (differenced pose: yaw rate
+r̂, velocity (â, l̂) along and across its heading) and the vehicle's own
+report (yaw rate r_v, wheel speed v; lateral speed v_l ≈ 0). The pose
+estimate includes every LiDAR scan-match correction, so its rates do too.
+Consistency gaps (the ego_v6 heads' targets):
+
+```math
+g_\psi = \hat r - r_v, \qquad g_a = \hat a - v, \qquad g_l = \hat l - v_l
+```
+
+**Error dynamics** (exact kinematics, no tuning; the true velocity is
+(v, v_l) in the true heading frame, hence R(−ψ) in the estimate's frame):
+
+```math
+\dot\psi = g_\psi - b_\psi + n_\psi, \qquad
+\dot x = g_a + v(1-\cos\psi) + \hat r\, y, \qquad
+\dot y = g_l + v \sin\psi - \hat r\, x
+```
+
+b_ψ and n are the redundant sensor's bias and noise. Their effect on an
+integral over τ seconds is what the nominal drift bands b(τ) measure
+(heading 1.1° at 3 s, 1.8° at 10 s; lateral 0.17 m / 0.43 m). The
+r̂·x, r̂·y terms come from the rotating frame and are dropped in the code
+(second order while the errors are small).
+
+**Absolute reference.** LiDAR-to-map matching is the one source that
+observes δ directly: when it is healthy, δ ≈ 0 within the nominal band. Its
+health h(t) (EKF gate Mahalanobis distance, scan-match probability, both
+judged against nominal quantiles) sets how much it can be trusted.
+
+**One estimator for all three behaviours.** A filter on δ: predict with the
+dynamics above (process noise Q from the drift bands), update with the
+pseudo-measurement δ = 0 whose noise R(h) is small when the reference is
+healthy and infinite while Layer 1 distrusts it:
+
+```math
+\hat\delta_{k+1}^- = \hat\delta_k + f(\hat\delta_k, g_k, v_k)\,\Delta t, \quad
+P^-_{k+1} = F P_k F^\top + Q, \quad
+K = P^- (P^- + R(h_k))^{-1}, \quad
+\hat\delta_{k+1} = (I - K)\,\hat\delta_{k+1}^-
+```
+
+What the code does now, read as special cases of this filter:
+
+| Current mechanism | Filter reading | Gap |
+|---|---|---|
+| Heading integrated from onset t0 | R = ∞ from t0 (pure prediction) | consistent |
+| Position over a sliding 3 s window | a fixed-gain leaky update, gain ≈ 1/3 s | the window is tuned, not derived from R(h) |
+| Release after 2 s of healthy LiDAR | K = I once healthy | binary, not graded by h |
+| Spread ± integrated band | P from Q | P never shrinks except at release |
+
+The filter replaces the three by one rule. The assumption it rests on is
+untested: that LiDAR health is poor whenever the true error is large (true
+on the four departures? check before building).
+
+**Envelope and risk.** Counterfactual k at window t: forecast μ_t plus a
+recorded error trajectory ε_k from the scene neighbours (2a), then moved
+by a draw of δ (2b):
+
+```math
+\tau_k = R(\psi_k)\,(\mu_t + \varepsilon_k) + (x_k, y_k), \quad \delta_k \sim \mathcal N(\hat\delta_t, P_t), \qquad
+P_t(\text{violation}) = \frac{1}{K}\sum_k \mathbf 1[\tau_k \notin \mathcal S_t]
+```
+
+**Invariants (the flow check).** Every change is checked against these:
+
+| # | Invariant | Check | Now |
+|---|---|---|---|
+| I1 | Every score is calibrated leave-one-trial-out on nominal trials | conformal coverage per horizon step | 0.90 at 0.90 |
+| I2 | Null preservation: inside the nominal band, 2b does not move the envelope | P_evidence = P_nominal on nominal windows | 99.96% |
+| I3 | δ follows the error dynamics above, nothing tuned | derivation, as here | sliding window still tuned |
+| I4 | Onset and release use the same evidence | one source of truth for distrust | onset: Layer 1 score; release: LiDAR health |
+| I5 | Every safe set passes the realized-nominal test | `--mode check-safe-set` | 0–0.1% |
+| I6 | δ̂ tracks AWSIM truth | `heading_tracking.png` | heading within 0.5–2.2° at departure |
+
 ## Layer 3 — response hook
 
 Consumes P(violation) per type, its level and its growth rate; graded
@@ -96,4 +182,5 @@ Scope (signal definition only vs. closed-loop control) is an open decision.
 | Model gate / ablation table | `experiments/scripts/model_safety_benchmark.py` |
 | Layer 1 calibration | `conformal_horizon_calibration.py`, `conformal_mondrian_calibration.py`, `conformal_scene_conditioning.py`, `audit_minority_scenarios.py` |
 | Residual triangle | `experiments/scripts/residual_triangle_check.py` |
-| Layer 2 | `experiments/scripts/layer2_consequence_estimation.py`, safe sets in `experiments/lib/margin.py` |
+| Layer 2 (method) | `experiments/scripts/layer2_envelope.py`; helpers and safe-set check in `layer2_consequence_estimation.py`; safe sets in `experiments/lib/margin.py` |
+| Highlight figures | `experiments/scripts/plot_highlights.py` |

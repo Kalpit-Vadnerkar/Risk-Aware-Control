@@ -18,6 +18,8 @@
   --review: #6b4fa3;
   --planned: #7b858a;
   --open: #a8433a;
+  --novel: #c0267e;
+  --novel-tint: #fbe9f3;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
@@ -25,13 +27,13 @@
   :root:not([data-theme="light"]) {
     --bg: #141a1d; --panel: #1b2226; --fg: #e3e8ea; --muted: #9aa6ab; --line: #6c787d; --rule: #2b3439;
     --accent: #5fb3cf; --accent-tint: #1d3540; --built: #5cc189; --progress: #e0a13d; --review: #a98de0;
-    --planned: #8d979c; --open: #e07a6f; color-scheme: dark;
+    --planned: #8d979c; --open: #e07a6f; --novel: #f06bb6; --novel-tint: #3a1d2d; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #141a1d; --panel: #1b2226; --fg: #e3e8ea; --muted: #9aa6ab; --line: #6c787d; --rule: #2b3439;
   --accent: #5fb3cf; --accent-tint: #1d3540; --built: #5cc189; --progress: #e0a13d; --review: #a98de0;
-  --planned: #8d979c; --open: #e07a6f; color-scheme: dark;
+  --planned: #8d979c; --open: #e07a6f; --novel: #f06bb6; --novel-tint: #3a1d2d; color-scheme: dark;
 }
 body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5; }
 .wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 40px; display: grid; gap: 22px; }
@@ -61,6 +63,9 @@ svg .b-progress rect { stroke: var(--progress); } svg .b-progress text { fill: v
 svg .b-review rect { stroke: var(--review); } svg .b-review text { fill: var(--review); }
 svg .b-planned rect { stroke: var(--planned); stroke-dasharray: 3 2; } svg .b-planned text { fill: var(--planned); }
 svg .b-open rect { stroke: var(--open); } svg .b-open text { fill: var(--open); }
+svg .novel-ring { fill: none; stroke: var(--novel); stroke-width: 2.4; stroke-dasharray: 7 4; }
+svg .novel-tag rect { fill: var(--novel); }
+svg .novel-tag text { fill: #fff; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; }
 svg marker path { fill: var(--line); }
 svg #arrow-ev path { fill: var(--accent); }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; }
@@ -71,6 +76,11 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
 .pill { font-family: var(--mono); font-size: 0.75rem; border: 1.2px solid currentColor; border-radius: 999px; padding: 1px 8px; justify-self: start; }
 .pill.built { color: var(--built); } .pill.progress { color: var(--progress); } .pill.review { color: var(--review); }
 .pill.planned { color: var(--planned); border-style: dashed; } .pill.open { color: var(--open); }
+.pill.novel { color: #fff; background: var(--novel); border-color: var(--novel); }
+.novelty { margin-top: 18px; background: var(--novel-tint); border: 1px solid var(--novel); border-radius: 10px; padding: 14px 18px; }
+.novelty h2 { color: var(--novel); }
+.novelty ol { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; }
+.novelty b { color: var(--fg); }
 .log { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
 .log li { display: grid; grid-template-columns: 92px 1fr; gap: 12px; }
 .log time { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 2px; }
@@ -243,8 +253,22 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
         <text class="line" x="26" y="840">Graded response in proportion to P and its growth: slow down, widen gaps, hand over, stop. Mitigation shows up as P levelling off.</text>
         <g class="badge b-open"><rect x="904" y="802" width="72" height="22" rx="11"/><text x="940" y="817" text-anchor="middle">scope open</text></g>
       </g>
+
+      <!-- novelty: what this work adds -->
+      <rect class="novel-ring" x="665" y="265" width="310" height="120" rx="11"/><g class="novel-tag"><rect x="678" y="256" width="194" height="18" rx="9"/><text x="686" y="269">NEW 2 · how much, which way</text></g>
+      <rect class="novel-ring" x="25" y="515" width="310" height="132" rx="11"/><g class="novel-tag"><rect x="38" y="506" width="181" height="18" rx="9"/><text x="46" y="519">NEW 1 · scene-conditioned</text></g>
+      <rect class="novel-ring" x="345" y="515" width="310" height="132" rx="11"/><g class="novel-tag"><rect x="358" y="506" width="168" height="18" rx="9"/><text x="366" y="519">NEW 3 · evidence growth</text></g>
     </svg>
   </div>
+
+  <section class="novelty">
+    <h2>What's new in this architecture</h2>
+    <ol>
+      <li><b>Scene-conditioned counterfactual envelope (2a).</b> The futures are the forecast plus real recorded errors from the 150 most similar scenes in the predictor's own embedding, conformally calibrated, so the envelope is tight where the scene licenses it and wide where it doesn't.</li>
+      <li><b>Learned redundancy gives size and direction (Layer 1).</b> Independent measurements of the same ego quantities go into the predictor as inputs and as consistency heads. Their calibrated residuals say how far and which way the state estimate is off; behaviour residuals alone only say when.</li>
+      <li><b>Evidence-driven envelope growth (2b).</b> The envelope is moved by the integrated consistency evidence, so P(violation) is grounded in the map and objects and keeps growing while a fault persists unmitigated.</li>
+    </ol>
+  </section>
 
   <div class="cols">
     <section>
@@ -255,11 +279,13 @@ h2 { font-size: 0.8rem; font-family: var(--mono); font-weight: 500; letter-spaci
         <li><span class="pill review">under review</span><span>Works, but the design is being reconsidered: the alarm and onset logic, and how results are reported.</span></li>
         <li><span class="pill planned">planned</span><span>Specified in the design, not built yet.</span></li>
         <li><span class="pill open">open</span><span>Scope not decided.</span></li>
+        <li><span class="pill novel">NEW</span><span>A contribution of this work (dashed ring on the diagram).</span></li>
       </ul>
     </section>
     <section>
       <h2>Recent changes</h2>
       <ul class="log">
+        <li><time datetime="2026-10-08">2026-10-08</time><span>The three contributions are marked on the diagram. Formal pose-error model and invariants added to the design document: the LiDAR-correction mechanisms are read as special cases of one estimator.</span></li>
         <li><time datetime="2026-10-08">2026-10-08</time><span>Onset threshold calibrated to at most 6 distrust episodes per hour of nominal driving (4.2/h achieved, was 47/h); carried pose error released once LiDAR-map matching is healthy for 2 s. Evidence method: 4/4 real departures, 2.0–3.4 s warning; harmless IMU faults in alarm 0–18% of fault time.</span></li>
         <li><time datetime="2026-10-08">2026-10-08</time><span>Alarm logic: every channel becomes a conformal p-value, combined into one bounded score; capped CUSUM with a 2 s recovery test, so alarms end. 2b carries the pose error after distrust ends. Traffic-light channels now feed Layer 1.</span></li>
         <li><time datetime="2026-10-08">2026-10-08</time><span>Pose consistency made planar (ego_v6): lateral and along-track pose-velocity gaps, integrated over a sliding 3 s window; heading from onset. Checked against AWSIM ground truth.</span></li>
