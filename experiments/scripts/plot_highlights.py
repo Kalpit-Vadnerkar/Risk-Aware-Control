@@ -5,7 +5,7 @@ layer2_envelope.py --mode all saves (series_nominal.npz, series_faults.pkl).
                            P(violation) variant -> warning time vs nominal
                            false alarms per hour, and departures caught vs
                            alarm time on harmless faults
-  2. heading_tracking.png  2b's integrated heading error vs AWSIM truth
+  2. heading_tracking.png  2b's filtered heading error vs AWSIM truth
   3. anomaly_vs_consequence.png  Layer 1 (anomaly) vs Layer 2 (consequence)
                            alarm share per IMU trial
   4. p_violation_scale007.png    one departure, one panel: P over time
@@ -187,7 +187,7 @@ def fig_heading(faults):
         a.set_ylabel('heading error (deg)')
     for a in ax[1]:
         a.set_xlabel('s since trial start')
-    fig.suptitle('Which way and how much: integrated pose-consistency residual vs true heading error '
+    fig.suptitle('Which way and how much: 2b pose-error filter estimate vs true heading error '
                  '(orange = fault active, red = real departure)', fontsize=11)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, 'heading_tracking.png'), dpi=140)
