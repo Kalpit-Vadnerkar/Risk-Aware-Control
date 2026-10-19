@@ -51,7 +51,7 @@ Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-0
 - Layer 2 method = `experiments/scripts/layer2_envelope.py`: catches 4/4
   real IMU departures (2.0-3.4 s lead), harmless IMU faults in alarm 0-18%
   of fault time (`findings.md` §4). 2b uses the formal-model pose-error filter. Next: closed-loop comparison (Autoware / +L1 / +L2 / +L3 correction), see `presentation/STORY.md`.
-- Work happens on branch `layer2b-ego-frame` (not merged, not pushed).
+- Work happens on branch `layer2b-ego-frame` (pushed to origin 2026-10-19, not merged).
 
 ## Standing rules learned the hard way
 
