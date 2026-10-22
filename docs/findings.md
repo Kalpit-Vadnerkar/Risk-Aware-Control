@@ -167,6 +167,48 @@ Benchmark table (held-out CAL, every model):
     s1/007 0.18 -> 0.04, s1/012 0, scale/012 0, s3/012 0.18 -> 0.65 (the
     nominal envelope alone reads 0.63 there: stopped at a tight spot;
     legacy's lower value came from its drift moving the envelope away).
+- **Error dynamics checked at the derivative level** (2026-10-22,
+  `pose_error_derivative_check.py`, raw bags vs AWSIM truth, 8 IMU trials).
+  The formal model is exact: driven by AWSIM's true twist, predicted vs true
+  error rate differs by ~0.01 m/s. The divergence comes from the gap
+  INPUTS, two systematic biases:
+  - Lever arm: AWSIM's velocity report is the rigidbody (centre-of-mass)
+    velocity (`Vehicle.cs` `m_rigidbody.velocity`), the pose is base_link:
+    v_l,report = v_l,base_link + 1.18 m x r on every trial (residual 0.10 ->
+    0.003 m/s RMS). Uncorrected: ~1.8 m of phantom lateral error per 90 deg
+    of turning.
+  - Window lag: the pipeline gaps compare a 1 s (0.5 s yaw) backward pose
+    difference with the instantaneous report, i.e. ~half-window x
+    acceleration (0.4 m/s along-track while launching from a stop).
+  Open loop from the fault onset, no LiDAR updates, 30 s, max error vs truth:
+  current pipeline gaps up to 5.1 deg / 4.2 m along / 4.5 m lateral; per-step
+  gaps (one-sample pose increment minus the report averaged over that sample,
+  lever-corrected, increments telescope so jitter cancels) <= 0.8 deg, along
+  <= 0.6 m, lateral <= 0.6 m, except scale/goal_007 (3.3 m along, 1.4 m
+  lateral at 28 deg heading error).
+  Through the filter (`step_gap_filter_check.py`, same filter, LiDAR health
+  and R0; each input with its own nominal drift band; step gaps minus their
+  nominal mean), error left after correction, heading / lateral:
+
+  | Trial | Autoware | head residuals (current) | corrected step gaps |
+  |---|---|---|---|
+  | s3/007 at departure | 23.2° / 2.73 m | 1.0° / 0.96 m | 0.0° / 0.35 m |
+  | scale/007 at departure | 22.7° / 3.46 m | 1.3° / 1.19 m | 0.1° / 0.23 m |
+  | stuck/007 at departure | 94.8° / 5.80 m | 1.1° / 0.84 m | 0.8° / 0.43 m |
+  | stuck/012 at departure | 26.2° / 0.82 m | 2.5° / 0.35 m | 0.4° / 0.20 m |
+  | s3/012 max (stopped, heading spins) | 179.9° / 1.88 m | 10.7° / 5.79 m | 0.5° / 2.94 m |
+  | scale/012 max (harmless) | 24.5° / 1.95 m | 4.3° / 1.23 m | 0.4° / 0.25 m |
+  | s1/007 max (harmless) | 2.2° / 0.16 m | 2.7° / 0.44 m | 1.0° / 0.36 m |
+  | s1/012 max (harmless) | 2.2° / 0.08 m | 2.1° / 0.28 m | 1.6° / 0.14 m |
+
+  Nominal (17 cal trials) |estimate − true error| p99: head 0.53° / 0.11 m,
+  step 0.34° / 0.07 m, Autoware's own error 0.32° / 0.065 m. Nominal drift
+  band at 3 s: heading 1.09° → 0.11°, lateral 0.17 → 0.08 m. I2 against the
+  current band: 0.0% both; against step's own (10x tighter, 95%) band 6.4% —
+  the "envelope moves" gate needs re-deriving for the new input (e.g. a
+  nominal p99.9 of the estimate: 0.27° / 0.11 m). Small-fault caveat
+  unchanged: on s1/007 correcting still raises lateral error (0.16 → 0.36 m).
+  Not yet in `layer2_envelope.py` / the pipeline (alarms, lead times unrun).
 - **Offline correction** (open loop, estimator above): subtracting the
   estimate at the moment of departure leaves heading 1.0–2.6 deg (Autoware
   23–95 deg) and lateral 0.4–1.2 m (0.8–5.9 m). On harmless s1 it raises
