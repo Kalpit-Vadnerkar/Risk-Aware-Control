@@ -113,8 +113,10 @@ g_\psi = \hat r - r_v, \qquad g_a = \hat a - v, \qquad g_l = \hat l - v_l
 b_ψ and n are the redundant sensor's bias and noise. Their effect on an
 integral over τ seconds is what the nominal drift bands b(τ) measure
 (heading 1.1° at 3 s, 1.8° at 10 s; lateral 0.17 m / 0.43 m). The
-r̂·x, r̂·y terms come from the rotating frame and are dropped in the code
-(second order while the errors are small).
+r̂·x, r̂·y terms come from the rotating frame: dropped on the head-residual
+input; kept on the step-gap input (`--gap-source step`, r̂ = the estimate's
+own per-step yaw rate, midpoint step), where they cut the lateral error of
+a spinning heading estimate 4x (findings.md §4).
 
 **Absolute reference.** LiDAR-to-map matching is the one source that
 observes δ directly: when it is healthy, δ ≈ 0 within the nominal band. Its
@@ -140,8 +142,11 @@ distrust). It replaced three hand-made mechanisms: heading integrated from
 onset, a 3 s sliding window for position, and a binary release after 2 s of
 healthy LiDAR. The assumption it rests on held: wherever the true error is
 large, LiDAR health is never nominal. Input is the consistency heads'
-residual (the head's prediction acts as the bias b); the r̂ terms are still
-dropped (tested, no gain). Known limit: a stopped vehicle whose heading
+residual (the head's prediction acts as the bias b); the r̂ terms are
+dropped there. Alternative input `--gap-source step`: lever-arm corrected
+per-step gaps minus their nominal mean, with the r̂ terms (findings.md §4);
+the size and direction come from the gaps themselves, the heads stay in
+Layer 1 (WHEN). Known limit: a stopped vehicle whose heading
 estimate spins (head out of distribution).
 
 **Envelope and risk.** Counterfactual k at window t: forecast μ_t plus a

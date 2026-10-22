@@ -32,6 +32,11 @@ RECORDING_TOPICS = [
     '/localization/pose_with_covariance',
     '/localization/acceleration',           # EKF-fused acceleration (ST-GAT accel feature)
     '/awsim/ground_truth/localization/kinematic_state',
+    # LiDAR-to-map (NDT) pose before EKF fusion: EKF pose - NDT pose measures the
+    # 2b pose error directly instead of assuming delta = 0 when LiDAR looks healthy
+    '/localization/pose_estimator/pose_with_covariance',
+    '/localization/pose_estimator/transform_probability',
+    '/localization/pose_estimator/nearest_voxel_transformation_likelihood',
     '/tf',
     '/tf_static',                           # Static coordinate frames
 

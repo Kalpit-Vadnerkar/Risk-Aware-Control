@@ -220,6 +220,52 @@ Benchmark table (held-out CAL, every model):
   0.04 -> 0.06, s1/012 and scale/012 0 both. Traffic-light trials unchanged
   (<= 0.12). Lead time is set by Layer 1 onset and the geometry, not by the
   size estimate; the gain is accuracy (correction) and fewer false alarms.
+- **Step filter: rotating-frame terms and midpoint step** (2026-10-22).
+  Re-scored with RMS over the fault window (onset to departure, else fault
+  end) instead of one instant at departure, which hid e.g. s3/007 lateral
+  rising 0.35 -> ~1 m a second later. Diagnosis (offline, same gaps):
+  - r_hat = the estimate's own per-step yaw rate restores the r_hat*x,
+    r_hat*y terms ("no gain" before only because the gaps were biased):
+    s3/012 lateral RMS 1.48 -> 0.35 m, scale/007 at departure 0.23 -> 0.07 m;
+    nominal unchanged.
+  - Midpoint step: stuck/007 open-loop lateral 0.40 -> 0.20 m (Euler error
+    when the heading error grows ~13 deg/s); neutral elsewhere.
+  - Open loop from onset (no LiDAR update): heading 0.1–0.4 deg RMS on
+    every trial, lateral drifts ~1.4 m over a 190 s fault: the LiDAR update
+    is needed for long faults, and a slow lateral gap drift remains
+    (candidate: estimate it as a filter state).
+  - The update's assumption "LiDAR healthy => delta = 0" is wrong on small
+    faults (s1: 2 deg true while healthy); no update while Layer 1
+    distrusts fixes s1 heading (0.5 -> 0.1 deg) but raises lateral. Proper
+    fix needs the NDT pose (EKF - NDT measures delta): now in
+    `RECORDING_TOPICS` (`/localization/pose_estimator/pose_with_covariance`,
+    + transform_probability, NVTL); absent from all existing bags.
+  RMS over the fault window, error left (heading deg / lateral m),
+  `step_gap_filter_check.py` (step = r_hat + midpoint, now the step default):
+
+  | Trial | Autoware | head residuals | step gaps |
+  |---|---|---|---|
+  | s3/007 (departs) | 5.9 / 0.49 | 0.8 / 0.42 | 0.2 / 0.16 |
+  | scale/007 (departs) | 9.4 / 1.07 | 1.4 / 0.65 | 0.1 / 0.04 |
+  | stuck/007 (departs) | 29.1 / 1.67 | 0.7 / 0.20 | 0.4 / 0.07 |
+  | stuck/012 (departs) | 3.2 / 0.09 | 0.5 / 0.08 | 0.1 / 0.04 |
+  | s3/012 (harmless) | 82.3 / 0.91 | 4.2 / 1.99 | 0.3 / 0.35 |
+  | scale/012 (harmless) | 5.7 / 0.30 | 1.1 / 0.34 | 0.2 / 0.03 |
+  | s1/007 (harmless) | 1.3 / 0.06 | 1.1 / 0.19 | 0.5 / 0.15 |
+  | s1/012 (harmless) | 1.2 / 0.03 | 1.1 / 0.06 | 0.7 / 0.04 |
+
+  At departure (s3/007, scale/007, stuck/007, stuck/012): lateral 0.29 /
+  0.12 / 0.24 / 0.14 m (head 0.96 / 1.19 / 0.84 / 0.35). Lateral is still
+  worse than no correction on s1 (small faults, see the update assumption).
+  Full pipeline rerun with the step filter (`--gap-source step`, 38 fault
+  trials, outputs `layer2_envelope_step/`): nominal threshold 0.825, 4.2
+  distrust episodes/h, envelope moved 0.51% (gate 0.29 deg / 0.10 m), all
+  unchanged. Departures 4/4, evidence lead s3/007 2.2 s, scale/007 2.2,
+  stuck/007 2.8, stuck/012 3.4 (unchanged). Harmless, share of fault time in
+  alarm: s3/012 0.24 -> 0.00 (head 0.65; the lateral estimate now follows
+  truth through the spin), s1/007 0.06, s1/012 0.00, scale/012 0.00.
+  Traffic-light trials unchanged (<= 0.12). Timeseries panel 2 now shows
+  the step gaps (what 2b integrates) in step mode.
 - **Offline correction** (open loop, estimator above): subtracting the
   estimate at the moment of departure leaves heading 1.0–2.6 deg (Autoware
   23–95 deg) and lateral 0.4–1.2 m (0.8–5.9 m). On harmless s1 it raises

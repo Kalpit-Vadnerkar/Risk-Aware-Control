@@ -91,6 +91,19 @@ def step_gaps(B, ta, lever=L_CM):
     return g, true
 
 
+def step_yaw_rate(B, ta):
+    """The estimate's own yaw rate over the same steps as step_gaps (heading
+    increment / dt; 0 where the step is dropped): r_hat for the rotating-frame
+    terms of the error dynamics."""
+    est = B[EST_TOPIC]
+    eyaw = np.interp(ta, est[:, 0], np.unwrap(est[:, 3]))
+    dt = np.diff(ta)
+    r = np.zeros(len(ta))
+    ok = (dt > 1e-3) & (dt <= MAX_STEP_S)
+    r[1:][ok] = np.diff(eyaw)[ok] / dt[ok]
+    return r
+
+
 def nominal_window_times(run_dir):
     """Absolute window times of a trial, as the sequence extraction builds
     them (one per Layer 1 window)."""

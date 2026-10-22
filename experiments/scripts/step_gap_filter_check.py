@@ -56,10 +56,13 @@ def bands_from(series):
     return b
 
 
-def run_filter(t, g, v, w, cal, bands):
+def run_filter(t, g, v, w, cal, bands, rh=None):
+    """rh None: head path (r_hat terms dropped, Euler step); step path:
+    the estimate's per-step yaw rate and a midpoint step, as layer2_envelope."""
     c = dict(cal); c['bands'] = bands
-    d, sd = LE.pose_error_filter(t, g, v, w, c, r_hat=np.zeros(len(t)))
-    return d, sd
+    if rh is None:
+        return LE.pose_error_filter(t, g, v, w, c, r_hat=np.zeros(len(t)))
+    return LE.pose_error_filter(t, g, v, w, c, r_hat=rh, mid=True)
 
 
 def find_run(name):
@@ -85,8 +88,9 @@ def main():
         if len(ta) != len(n['t']):
             print(f'  {name}: {len(ta)} window times vs {len(n["t"])} windows, skipped')
             continue
-        g, true = PG.step_gaps(PG.read_bag(os.path.join(run, 'rosbag')), ta)
-        nom.append({'name': name, 't': ta - ta[0], 'g': g, 'true': true, 'n': n})
+        B = PG.read_bag(os.path.join(run, 'rosbag'))
+        g, true = PG.step_gaps(B, ta)
+        nom.append({'name': name, 't': ta - ta[0], 'g': g, 'true': true, 'n': n, 'rh': PG.step_yaw_rate(B, ta)})
         print(f'  nominal {name}: {len(ta)} windows', flush=True)
 
     # leave-one-trial-out nominal mean of the step gaps (moving only)
@@ -114,7 +118,7 @@ def main():
                 dh, _ = run_filter(n['t'], n['e'][:, ic], n['v'], w, cal, bands_head)
                 b = bands_head
             else:
-                dh, _ = run_filter(x['t'], x['g'] - bias_excl(i), n['v'], w, cal, bands_step)
+                dh, _ = run_filter(x['t'], x['g'] - bias_excl(i), n['v'], w, cal, bands_step, x['rh'])
                 b = bands_step
             e = np.stack([W(dh[:, 0] - x['true'][:, 0]), dh[:, 2] - x['true'][:, 2]], -1)
             err.append(np.abs(e))
@@ -137,65 +141,79 @@ def main():
     for f in d['faults']:
         run = os.path.join(LE.L2.DATA_DIR, f['trial'])
         ta = f['t'] + f['t0']
-        g, true = PG.step_gaps(PG.read_bag(os.path.join(run, 'rosbag')), ta)
+        B = PG.read_bag(os.path.join(run, 'rosbag'))
+        g, true = PG.step_gaps(B, ta)
         w = LE.reference_health(f['lq'], f['D'], cal)
         dh_h, _ = run_filter(f['t'], f['e'][:, ic], f['v'], w, cal, bands_head)
-        dh_s, _ = run_filter(f['t'], g - bias_all, f['v'], w, cal, bands_step)
+        dh_s, _ = run_filter(f['t'], g - bias_all, f['v'], w, cal, bands_step, PG.step_yaw_rate(B, ta))
         fs = min(x['start'] for x in f['fault_windows'])
         fe = f['departure'] if f['departure'] else max(x['end'] for x in f['fault_windows'])
         m = (f['t'] >= fs) & (f['t'] <= fe)
-        r = {'trial': f['trial'], 'departure': f['departure']}
+        r = {'trial': f['trial'], 'departure': f['departure'], 'fault_window': [float(fs), float(fe)]}
         i = int(np.argmin(np.abs(f['t'] - f['departure']))) if f['departure'] else None
         for nm, dh in (('autoware', np.zeros_like(true)), ('head', dh_h), ('step', dh_s)):
             ep = np.degrees(np.abs(W(true[:, 0] - dh[:, 0])))
             el = np.abs(true[:, 2] - dh[:, 2])
-            r[nm] = {'psi_max': float(ep[m].max()), 'lat_max': float(el[m].max()),
+            r[nm] = {'psi_rms': float(np.sqrt((ep[m] ** 2).mean())), 'lat_rms': float(np.sqrt((el[m] ** 2).mean())),
+                     'psi_max': float(ep[m].max()), 'lat_max': float(el[m].max()),
                      'psi_dep': float(ep[i]) if i is not None else None, 'lat_dep': float(el[i]) if i is not None else None}
         res['faults'].append(r)
-        f['_step'] = dh_s; f['_head'] = dh_h; f['_true'] = true
+        f['_step'] = dh_s; f['_head'] = dh_h; f['_true'] = true; f['_res'] = r
 
     with open(os.path.join(out_dir, 'step_gap_filter_check.json'), 'w') as fh:
         json.dump(res, fh, indent=1)
     print('\nNOMINAL (17 cal trials): |estimate - true pose error|')
     for k, v in res['nominal'].items():
         print(f'  {k:9s} ' + ', '.join(f'{a} {b:.3f}' for a, b in v.items()))
-    print('\nFAULTS: error left after correction (heading deg / lateral m); at departure, else max over fault')
-    print(f"{'trial':45s} {'autoware':>14s} {'head':>14s} {'step':>14s}")
+    print('\nFAULTS: error left after correction (heading deg / lateral m), RMS over the fault window '
+          '(onset to departure, else fault end); [at departure]')
+    print(f"{'trial':45s} {'autoware':>22s} {'head':>22s} {'step':>22s}")
     for r in res['faults']:
-        key = ('psi_dep', 'lat_dep') if r['departure'] else ('psi_max', 'lat_max')
-        tag = 'dep' if r['departure'] else 'max'
-        print(f"{r['trial'][:45]:45s} " + ' '.join(f"{r[k][key[0]]:6.1f}/{r[k][key[1]]:5.2f}  " for k in ('autoware', 'head', 'step')) + tag)
+        print(f"{r['trial'][:45]:45s} " + ' '.join(
+            f"{r[k]['psi_rms']:6.1f}/{r[k]['lat_rms']:5.2f}" + (f" [{r[k]['psi_dep']:4.1f}/{r[k]['lat_dep']:4.2f}]" if r['departure'] else ' ' * 12)
+            for k in ('autoware', 'head', 'step')))
     plot(d['faults'], out_dir)
 
 
 def plot(faults, out_dir):
+    """Error left after correction vs time, linear axes, fault window only
+    (onset - 5 s to departure + 2 s, else fault end + 5 s); RMS over the
+    fault window in each legend. Autoware's own error is the do-nothing line."""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(2, len(faults), figsize=(3.2 * len(faults), 6), sharex='col')
+    fig, ax = plt.subplots(2, len(faults), figsize=(3.3 * len(faults), 6.4), sharex='col')
+    style = (('autoware', "Autoware's error (no correction)", '#555'), ('head', 'head residuals (old)', '#9467bd'),
+             ('step', 'corrected step gaps (new)', '#2ca02c'))
     for c, f in enumerate(faults):
         fs = min(x['start'] for x in f['fault_windows'])
-        end = f['departure'] + 3 if f['departure'] else fs + 45
-        m = (f['t'] >= fs - 5) & (f['t'] <= end)
-        t = f['t'][m]
-        tr = f['_true'][m]
-        for r, (k, sc, u) in enumerate(((0, np.degrees(1), 'deg'), (2, 1, 'm'))):
+        fe = f['departure'] if f['departure'] else max(x['end'] for x in f['fault_windows'])
+        m = (f['t'] >= fs - 5) & (f['t'] <= fe + (2 if f['departure'] else 5))
+        t, tr = f['t'][m], f['_true'][m]
+        for r, (k, u) in enumerate(((0, 'deg'), (2, 'm'))):
             a = ax[r, c]
-            raw = np.abs(W(tr[:, 0])) * sc if k == 0 else np.abs(tr[:, k])
-            a.plot(t, raw, color='#555', lw=1.4, label="Autoware's error")
-            for nm, col in (('_head', '#9467bd'), ('_step', '#2ca02c')):
-                dh = f[nm][m]
-                left = np.abs(W(tr[:, 0] - dh[:, 0])) * sc if k == 0 else np.abs(tr[:, k] - dh[:, k])
-                a.plot(t, left, color=col, lw=1.4, label='after correction: ' + ('head residuals' if nm == '_head' else 'corrected step gaps'))
+            top = 0
+            for nm, lab, col in style:
+                dh = np.zeros_like(tr) if nm == 'autoware' else f['_' + nm][m]
+                left = np.degrees(np.abs(W(tr[:, 0] - dh[:, 0]))) if k == 0 else np.abs(tr[:, k] - dh[:, k])
+                rms = f['_res'][nm]['psi_rms' if k == 0 else 'lat_rms']
+                a.plot(t, left, color=col, lw=1.3 if nm != 'autoware' else 1.0, label=f'{lab.split(" (")[0]}: {rms:.2f}')
+                if nm != 'autoware':
+                    top = max(top, np.quantile(left, 0.99))
+            # scale to the corrections; Autoware's error runs off the top when it is far larger
+            a.set_ylim(0, max(top * 1.3, 0.5 if k == 0 else 0.1))
+            a.axvspan(fs, fe, color='#ff7f0e', alpha=0.07)
             if f['departure']:
-                a.axvline(f['departure'], color='#d62728', ls='--')
-            a.set_yscale('symlog', linthresh=1 if k == 0 else 0.2)
+                a.axvline(f['departure'], color='#d62728', ls='--', lw=1)
             a.grid(alpha=0.3)
-        ax[0, c].set_title(f['trial'].split('/t1')[0].replace('imu_fault_', ''), fontsize=9)
-    ax[0, 0].set_ylabel('|heading error| deg'); ax[1, 0].set_ylabel('|lateral error| m')
-    h, l = ax[0, 0].get_legend_handles_labels()
-    fig.legend(h, l, loc='lower center', ncol=3, frameon=False)
-    fig.tight_layout(rect=[0, 0.05, 1, 1])
+            a.legend(fontsize=6.5, loc='upper left', title=f'RMS in fault ({u})', title_fontsize=6.5)
+        name = f['trial'].split('/t1')[0].replace('imu_fault_', '')
+        ax[0, c].set_title(name + (' (departs)' if f['departure'] else ' (harmless)'), fontsize=9)
+        ax[1, c].set_xlabel('s since trial start')
+    ax[0, 0].set_ylabel('|heading error left| deg'); ax[1, 0].set_ylabel('|lateral error left| m')
+    fig.suptitle('Error left after 2b correction vs AWSIM truth (orange = fault active, red dashed = road departure); '
+                 'y-axis scaled to the corrections, Autoware\'s own error may run off the top', fontsize=9)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     p = os.path.join(out_dir, 'step_gap_filter_check.png')
     fig.savefig(p, dpi=110)
     print('saved', p)

@@ -281,7 +281,7 @@ def reference_health(lq, D, cal):
     return w_m * w_p
 
 
-def pose_error_filter(t, e_int, v, w, cal, r_hat=None):
+def pose_error_filter(t, e_int, v, w, cal, r_hat=None, mid=False):
     """The pose-error estimator of docs/architecture.md (Formal model):
     delta = (psi, x, y), estimate minus truth in the estimate's heading frame.
     Predict with the error dynamics driven by the consistency gaps (process
@@ -291,7 +291,10 @@ def pose_error_filter(t, e_int, v, w, cal, r_hat=None):
     release with one rule. r_hat: the estimate's own yaw rate, for the
     rotating-frame terms (needed when the estimate spins, e.g. a stopped
     vehicle under a stuck gyro); default g_psi, exact when the vehicle itself
-    does not turn. Returns delta and its std."""
+    does not turn. mid: evaluate the dynamics at the step's midpoint (gaps
+    that cover the interval (t[k-1], t[k]), i.e. per-step gaps); halves the
+    lateral error when the heading error grows fast (stuck gyro). Returns
+    delta and its std."""
     n = len(t)
     bands = cal['bands']
     q = np.array([(drift_band(bands, 3, 'Psi') / 1.96) ** 2 / 3,
@@ -308,6 +311,8 @@ def pose_error_filter(t, e_int, v, w, cal, r_hat=None):
         dt = DT if k == 0 else min(max(t[k] - t[k - 1], 0.0), 0.3)
         psi, x, y = d
         r = rh[k]
+        if mid:
+            psi, x, y = psi + 0.5 * gp[k] * dt, x + 0.5 * (ga[k] + r * y) * dt, y + 0.5 * (gl[k] - r * x) * dt
         d = d + np.array([gp[k], ga[k] + v[k] * (1 - math.cos(psi)) + r * y,
                           gl[k] + v[k] * math.sin(psi) - r * x]) * dt
         F = np.array([[1, 0, 0], [v[k] * math.sin(psi) * dt, 1, r * dt], [v[k] * math.cos(psi) * dt, -r * dt, 1]])
@@ -322,7 +327,8 @@ def pose_error_filter(t, e_int, v, w, cal, r_hat=None):
 
 ESTIMATOR = 'filter'      # 2b pose-error estimate: 'filter' (formal model) or 'legacy' (onset integral + window)
 GAP_SOURCE = 'head'       # filter input: 'head' (consistency heads' residuals) or 'step' (pose_gaps.py: per-step,
-                          # lever-arm corrected raw gaps minus their nominal mean)
+                          # lever-arm corrected raw gaps minus their nominal mean; filtered with the
+                          # rotating-frame terms (r_hat = the estimate's own yaw rate) and a midpoint step)
 STEP_GATE_Q = 0.999       # step: envelope moves when |delta_hat| exceeds this nominal quantile of the estimate
 
 
@@ -333,16 +339,17 @@ def step_cal(cal):
     return c
 
 
-def apply_estimator(ev, t, e, v, lq, cal, g=None):
+def apply_estimator(ev, t, e, v, lq, cal, g=None, rh=None):
     """Replace the legacy pose-error estimate in ev with the formal-model
     filter (docs/architecture.md). The envelope moves while Layer 1 distrusts
     the state or the estimate is outside the nominal band (I2).
-    g: de-biased per-step gaps (GAP_SOURCE 'step'); default the heads' residuals."""
+    g: de-biased per-step gaps (GAP_SOURCE 'step'); default the heads' residuals.
+    rh: the estimate's own per-step yaw rate (step: rotating-frame terms)."""
     if ESTIMATOR != 'filter' or lq is None or 'lq_ref' not in cal:
         return ev
     w = reference_health(lq, ev['D'], cal)
     if GAP_SOURCE == 'step' and g is not None:
-        d, sd = pose_error_filter(t, g, v, w, step_cal(cal), r_hat=np.zeros(len(t)))
+        d, sd = pose_error_filter(t, g, v, w, step_cal(cal), r_hat=rh, mid=True)
         bP, bY = cal.get('step_gate', (drift_band(cal['step_bands'], 3, 'Psi'), drift_band(cal['step_bands'], 3, 'Y')))
     else:
         ic = list(cal['int_ch'])
@@ -616,7 +623,8 @@ def build_pool(model, device, args):
         sub = evidence_state(t_all[m], u[m], flag[m], e[m], v_all[m], cal,
                              lq_all[m] if lq_all is not None else None)
         sub = apply_estimator(sub, t_all[m], e[m], v_all[m], lq_all[m] if lq_all is not None else None, cal,
-                              g=g_step[m] if g_step is not None else None)
+                              g=g_step[0][m] if g_step is not None else None,
+                              rh=g_step[1][m] if g_step is not None else None)
         if ev is None:
             ev = {k: np.zeros(len(trial)) for k in sub}
         for k in sub:
@@ -643,24 +651,30 @@ def calibrate_step_gaps(cal, trial, t_all, v_all, lq_all, u, flag, e, args):
     """GAP_SOURCE 'step': per-step gaps for every calibration window (raw
     bags, cached per trial), de-biased leave-one-trial-out; the step input's
     drift bands (Q) and the gate for moving the envelope (STEP_GATE_Q nominal
-    quantile of the filter's own estimate, LOO). Returns the de-biased gaps."""
+    quantile of the filter's own estimate, LOO). Returns the de-biased gaps
+    and the estimate's per-step yaw rate."""
     _, files = _trial_ids_for(cfg.CAL_DIR)
     G = np.zeros((len(trial), 3))
+    RH = np.zeros(len(trial))
     for tid, fname in enumerate(files):
         m = np.where(trial == tid)[0]
         name = fname[:-4]
         cache = os.path.join(args.output_dir, 'step_gaps', f'{name}.npz')
         if os.path.exists(cache) and not args.no_cache:
-            G[m] = np.load(cache)['g']
-            continue
+            z = np.load(cache)
+            if 'rh' in z:
+                G[m], RH[m] = z['g'], z['rh']
+                continue
         runs = glob.glob(os.path.join(L2.DATA_DIR, 'nom*', 'goal_*', name))
         assert len(runs) == 1, (name, runs)
         ta = PG.nominal_window_times(runs[0])
         assert len(ta) == len(m), (name, len(ta), len(m))
-        g, true = PG.step_gaps(PG.read_bag(os.path.join(runs[0], 'rosbag')), ta)
+        B = PG.read_bag(os.path.join(runs[0], 'rosbag'))
+        g, true = PG.step_gaps(B, ta)
+        rh = PG.step_yaw_rate(B, ta)
         os.makedirs(os.path.dirname(cache), exist_ok=True)
-        np.savez(cache, g=g, true=true, ta=ta)
-        G[m] = g
+        np.savez(cache, g=g, true=true, ta=ta, rh=rh)
+        G[m], RH[m] = g, rh
     moving = v_all > 1.0
     cal['step_bias'] = G[moving].mean(0)
     Gd = np.zeros_like(G)
@@ -690,7 +704,7 @@ def calibrate_step_gaps(cal, trial, t_all, v_all, lq_all, u, flag, e, args):
         m = np.where(trial == tid)[0]
         sub = evidence_state(t_all[m], u[m], flag[m], e[m], v_all[m], cal, lq_all[m])
         d, _ = pose_error_filter(t_all[m], Gd[m], v_all[m], reference_health(lq_all[m], sub['D'], cal), step_cal(cal),
-                                 r_hat=np.zeros(len(m)))
+                                 r_hat=RH[m], mid=True)
         mags.append(np.abs(d[:, [0, 2]]))
     mags = np.concatenate(mags)
     cal['step_gate'] = (float(np.quantile(mags[:, 0], STEP_GATE_Q)), float(np.quantile(mags[:, 1], STEP_GATE_Q)))
@@ -698,7 +712,7 @@ def calibrate_step_gaps(cal, trial, t_all, v_all, lq_all, u, flag, e, args):
           f"{cal['step_bias'][2]:+.3f} m/s; band at 3 s heading {np.degrees(drift_band(bands, 3, 'Psi')):.2f} deg, "
           f"lateral {drift_band(bands, 3, 'Y'):.2f} m; gate (q{STEP_GATE_Q}) {np.degrees(cal['step_gate'][0]):.2f} deg / "
           f"{cal['step_gate'][1]:.2f} m")
-    return Gd
+    return Gd, RH
 
 
 # ── nominal floor ───────────────────────────────────────────────────────────
@@ -753,17 +767,19 @@ def process_trial(run_dir, model, device, pool, builder, args):
     lq = window_locq(seqs)
     ev = evidence_state(t, u, (pc < ALPHA_FLAG).astype(float), e, v, pool['cal'], lq)
     bag = os.path.join(run_dir, 'rosbag')
-    g = None
+    g = rh = None
     if GAP_SOURCE == 'step':
-        g = PG.step_gaps(PG.read_bag(bag), t + tr['t0'])[0] - pool['cal']['step_bias']
-    ev = apply_estimator(ev, t, e, v, lq, pool['cal'], g=g)
+        B = PG.read_bag(bag)
+        g = PG.step_gaps(B, t + tr['t0'])[0] - pool['cal']['step_bias']
+        rh = PG.step_yaw_rate(B, t + tr['t0'])
+    ev = apply_estimator(ev, t, e, v, lq, pool['cal'], g=g, rh=rh)
     ev['u'] = u
     ev['pchan'] = P
     bag = os.path.join(run_dir, 'rosbag')
     gt, est = RTC.read_pose_yaw(bag, L2.GT_TOPIC), RTC.read_pose_yaw(bag, L2.EST_TOPIC)
     return {'rel': os.path.relpath(run_dir, L2.DATA_DIR), 'seqs': seqs, 't': t, 't0': tr['t0'],
             'fault_windows': tr['fault_windows'], 'inf': inf, 'e': e, 'Xch': Xch,
-            'ev': ev, 'v': v, 'gt': gt, 'est': est}
+            'ev': ev, 'v': v, 'gt': gt, 'est': est, 'gap': g}
 
 
 def ground_truth(tr, drivable):
@@ -897,16 +913,27 @@ def plot_timeseries(tr, g, t, idx, P, thr, args):
     a.set_title('Layer 1: WHEN (bounded score, capped CUSUM, recovery test)', fontsize=9, loc='left')
     a = ax[1]
     iy = cal['int_ch'][0]
-    if iy != 0:
+    if tr.get('gap') is not None:
+        # step: the corrected per-step gaps are what 2b integrates (the heads only feed Layer 1)
+        gs = tr['gap']
+        a.plot(T, np.degrees(gs[:, 0]), color='#9467bd', lw=1.0, label='heading gap: pose - report yaw rate (deg/s)')
+        a.plot(T, 10 * gs[:, 2], color='#2ca02c', lw=1.0, label='lateral gap: pose - report lateral velocity (x10 m/s)')
+        lim = max(2.0, 1.1 * float(np.nanquantile(np.abs(np.c_[np.degrees(gs[:, 0]), 10 * gs[:, 2]]), 0.999)))
+        a.set_ylim(-lim, lim)
+        a.set_ylabel('per-step gap')
+        a.legend(fontsize=7, loc='upper left')
+        a.set_title('Corrected per-step consistency gaps (2b input): HOW MUCH and WHICH WAY', fontsize=9, loc='left')
+    elif iy != 0:
         a.plot(T, np.degrees(tr['e'][:, 0]), color='#bcbd22', lw=0.8, label='EKF - vehicle yaw-rate residual (deg/s, WHEN only)')
-    a.plot(T, np.degrees(tr['e'][:, iy]), color='#9467bd', lw=1.2,
-           label=('pose' if iy else 'EKF') + ' - vehicle yaw-rate residual (deg/s, integrated by 2b)')
-    a.fill_between(T, -np.degrees(cal['q99'][iy]), np.degrees(cal['q99'][iy]), color='#9467bd', alpha=0.12,
-                   label='nominal 99% band')
-    a.set_ylim(-60, 60)
-    a.set_ylabel('consistency\nresidual')
-    a.legend(fontsize=7, loc='upper left')
-    a.set_title('Layer 1, consistency head: HOW MUCH and WHICH WAY', fontsize=9, loc='left')
+    if tr.get('gap') is None:
+        a.plot(T, np.degrees(tr['e'][:, iy]), color='#9467bd', lw=1.2,
+               label=('pose' if iy else 'EKF') + ' - vehicle yaw-rate residual (deg/s, integrated by 2b)')
+        a.fill_between(T, -np.degrees(cal['q99'][iy]), np.degrees(cal['q99'][iy]), color='#9467bd', alpha=0.12,
+                       label='nominal 99% band')
+        a.set_ylim(-60, 60)
+        a.set_ylabel('consistency\nresidual')
+        a.legend(fontsize=7, loc='upper left')
+        a.set_title('Layer 1, consistency head: HOW MUCH and WHICH WAY', fontsize=9, loc='left')
     a = ax[2]
     a.plot(T, np.degrees(ev['Psi']), color='#9467bd', lw=1.6, label='2b integrated heading error Psi')
     a.fill_between(T, np.degrees(ev['Psi'] - ev['sPsi']), np.degrees(ev['Psi'] + ev['sPsi']), color='#9467bd',
