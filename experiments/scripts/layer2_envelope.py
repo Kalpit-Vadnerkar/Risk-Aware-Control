@@ -55,6 +55,7 @@ Usage (ROS + venv):
 """
 
 import argparse
+import glob
 import json
 import pickle
 import math
@@ -77,6 +78,7 @@ from st_gat.model import TrajectoryDataset  # noqa: E402
 import layer2_consequence_estimation as L2  # noqa: E402  (shared, tested helpers)
 import residual_triangle_check as RTC  # noqa: E402
 from conformal_horizon_calibration import _trial_ids_for  # noqa: E402
+import pose_gaps as PG  # noqa: E402  (experiments/lib)
 
 DT = 0.1
 R_POS = cfg.POSITION_DISPLACEMENT_RANGE_M
@@ -319,17 +321,33 @@ def pose_error_filter(t, e_int, v, w, cal, r_hat=None):
 
 
 ESTIMATOR = 'filter'      # 2b pose-error estimate: 'filter' (formal model) or 'legacy' (onset integral + window)
+GAP_SOURCE = 'head'       # filter input: 'head' (consistency heads' residuals) or 'step' (pose_gaps.py: per-step,
+                          # lever-arm corrected raw gaps minus their nominal mean)
+STEP_GATE_Q = 0.999       # step: envelope moves when |delta_hat| exceeds this nominal quantile of the estimate
 
 
-def apply_estimator(ev, t, e, v, lq, cal):
+def step_cal(cal):
+    """cal with the step input's own drift bands (process noise Q)."""
+    c = dict(cal)
+    c['bands'] = cal['step_bands']
+    return c
+
+
+def apply_estimator(ev, t, e, v, lq, cal, g=None):
     """Replace the legacy pose-error estimate in ev with the formal-model
     filter (docs/architecture.md). The envelope moves while Layer 1 distrusts
-    the state or the estimate is outside the nominal drift band (I2)."""
+    the state or the estimate is outside the nominal band (I2).
+    g: de-biased per-step gaps (GAP_SOURCE 'step'); default the heads' residuals."""
     if ESTIMATOR != 'filter' or lq is None or 'lq_ref' not in cal:
         return ev
-    ic = list(cal['int_ch'])
-    d, sd = pose_error_filter(t, e[:, ic], v, reference_health(lq, ev['D'], cal), cal, r_hat=np.zeros(len(t)))
-    bP, bY = drift_band(cal['bands'], 3, 'Psi'), drift_band(cal['bands'], 3, 'Y')
+    w = reference_health(lq, ev['D'], cal)
+    if GAP_SOURCE == 'step' and g is not None:
+        d, sd = pose_error_filter(t, g, v, w, step_cal(cal), r_hat=np.zeros(len(t)))
+        bP, bY = cal.get('step_gate', (drift_band(cal['step_bands'], 3, 'Psi'), drift_band(cal['step_bands'], 3, 'Y')))
+    else:
+        ic = list(cal['int_ch'])
+        d, sd = pose_error_filter(t, e[:, ic], v, w, cal, r_hat=np.zeros(len(t)))
+        bP, bY = drift_band(cal['bands'], 3, 'Psi'), drift_band(cal['bands'], 3, 'Y')
     moved = (ev['D'] > 0) | (np.abs(d[:, 0]) > bP) | (np.abs(d[:, 2]) > bY)
     ev = dict(ev)
     ev['Psi'], ev['X'], ev['Y'] = d[:, 0], d[:, 1], d[:, 2]
@@ -591,12 +609,14 @@ def build_pool(model, device, args):
     pool['se_rate'] = cal['q90'][list(int_ch[:2])] / 1.645
     pe = np.array([L2.pose_error(s) for s in seqs[::5]])
     pool['pose_sigma'] = pe.std(0)
+    g_step = calibrate_step_gaps(cal, trial, t_all, v_all, lq_all, u, flag, e, args) if GAP_SOURCE == 'step' else None
     ev = None
     for tid in np.unique(trial):
         m = np.where(trial == tid)[0]
         sub = evidence_state(t_all[m], u[m], flag[m], e[m], v_all[m], cal,
                              lq_all[m] if lq_all is not None else None)
-        sub = apply_estimator(sub, t_all[m], e[m], v_all[m], lq_all[m] if lq_all is not None else None, cal)
+        sub = apply_estimator(sub, t_all[m], e[m], v_all[m], lq_all[m] if lq_all is not None else None, cal,
+                              g=g_step[m] if g_step is not None else None)
         if ev is None:
             ev = {k: np.zeros(len(trial)) for k in sub}
         for k in sub:
@@ -617,6 +637,68 @@ def build_pool(model, device, args):
           f"{np.degrees(drift_band(bands, 10, 'Psi')):.1f} deg, lateral {drift_band(bands, 3, 'Y'):.2f} / "
           f"{drift_band(bands, 10, 'Y'):.2f} m")
     return pool
+
+
+def calibrate_step_gaps(cal, trial, t_all, v_all, lq_all, u, flag, e, args):
+    """GAP_SOURCE 'step': per-step gaps for every calibration window (raw
+    bags, cached per trial), de-biased leave-one-trial-out; the step input's
+    drift bands (Q) and the gate for moving the envelope (STEP_GATE_Q nominal
+    quantile of the filter's own estimate, LOO). Returns the de-biased gaps."""
+    _, files = _trial_ids_for(cfg.CAL_DIR)
+    G = np.zeros((len(trial), 3))
+    for tid, fname in enumerate(files):
+        m = np.where(trial == tid)[0]
+        name = fname[:-4]
+        cache = os.path.join(args.output_dir, 'step_gaps', f'{name}.npz')
+        if os.path.exists(cache) and not args.no_cache:
+            G[m] = np.load(cache)['g']
+            continue
+        runs = glob.glob(os.path.join(L2.DATA_DIR, 'nom*', 'goal_*', name))
+        assert len(runs) == 1, (name, runs)
+        ta = PG.nominal_window_times(runs[0])
+        assert len(ta) == len(m), (name, len(ta), len(m))
+        g, true = PG.step_gaps(PG.read_bag(os.path.join(runs[0], 'rosbag')), ta)
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        np.savez(cache, g=g, true=true, ta=ta)
+        G[m] = g
+    moving = v_all > 1.0
+    cal['step_bias'] = G[moving].mean(0)
+    Gd = np.zeros_like(G)
+    for tid in np.unique(trial):
+        m = trial == tid
+        Gd[m] = G[m] - G[moving & ~m].mean(0)
+    # drift bands of the plain integral (starts every 10 s, up to 60 s): 95% |.| per tau
+    grid = np.arange(1, 601) * DT
+    acc = {k: [[] for _ in grid] for k in ('Psi', 'X', 'Y')}
+    for tid in np.unique(trial):
+        m = np.where(trial == tid)[0]
+        for s0 in range(0, len(m), 100):
+            mm = m[s0:s0 + 600]
+            dt = np.r_[0, np.clip(np.diff(t_all[mm]), 0, 0.3)]
+            I = np.cumsum(Gd[mm] * dt[:, None], 0)
+            for i in range(len(mm)):
+                for c, k in enumerate(('Psi', 'X', 'Y')):
+                    acc[k][i].append(abs(I[i, c]))
+    bands = {'tau': grid}
+    for k in acc:
+        b = np.array([np.quantile(a, 0.95) if len(a) else np.nan for a in acc[k]])
+        bands[k] = np.maximum.accumulate(np.nan_to_num(b, nan=np.nanmax(b)))
+    cal['step_bands'] = bands
+    # gate: nominal quantile of the filter's estimate (Layer 1 distrust as in deployment)
+    mags = []
+    for tid in np.unique(trial):
+        m = np.where(trial == tid)[0]
+        sub = evidence_state(t_all[m], u[m], flag[m], e[m], v_all[m], cal, lq_all[m])
+        d, _ = pose_error_filter(t_all[m], Gd[m], v_all[m], reference_health(lq_all[m], sub['D'], cal), step_cal(cal),
+                                 r_hat=np.zeros(len(m)))
+        mags.append(np.abs(d[:, [0, 2]]))
+    mags = np.concatenate(mags)
+    cal['step_gate'] = (float(np.quantile(mags[:, 0], STEP_GATE_Q)), float(np.quantile(mags[:, 1], STEP_GATE_Q)))
+    print(f"  step gaps: nominal mean {np.degrees(cal['step_bias'][0]):+.3f} deg/s, {cal['step_bias'][1]:+.3f} / "
+          f"{cal['step_bias'][2]:+.3f} m/s; band at 3 s heading {np.degrees(drift_band(bands, 3, 'Psi')):.2f} deg, "
+          f"lateral {drift_band(bands, 3, 'Y'):.2f} m; gate (q{STEP_GATE_Q}) {np.degrees(cal['step_gate'][0]):.2f} deg / "
+          f"{cal['step_gate'][1]:.2f} m")
+    return Gd
 
 
 # ── nominal floor ───────────────────────────────────────────────────────────
@@ -670,7 +752,11 @@ def process_trial(run_dir, model, device, pool, builder, args):
     v = window_speed(seqs)
     lq = window_locq(seqs)
     ev = evidence_state(t, u, (pc < ALPHA_FLAG).astype(float), e, v, pool['cal'], lq)
-    ev = apply_estimator(ev, t, e, v, lq, pool['cal'])
+    bag = os.path.join(run_dir, 'rosbag')
+    g = None
+    if GAP_SOURCE == 'step':
+        g = PG.step_gaps(PG.read_bag(bag), t + tr['t0'])[0] - pool['cal']['step_bias']
+    ev = apply_estimator(ev, t, e, v, lq, pool['cal'], g=g)
     ev['u'] = u
     ev['pchan'] = P
     bag = os.path.join(run_dir, 'rosbag')
@@ -991,9 +1077,11 @@ def main():
     ap.add_argument('--seed', type=int, default=20261007)
     ap.add_argument('--output-dir', default=OUT_DIR)
     ap.add_argument('--estimator', choices=['filter', 'legacy'], default='filter')
+    ap.add_argument('--gap-source', choices=['head', 'step'], default='head',
+                    help="2b filter input: consistency heads' residuals, or corrected per-step gaps (pose_gaps.py)")
     args = ap.parse_args()
-    global ESTIMATOR
-    ESTIMATOR = args.estimator
+    global ESTIMATOR, GAP_SOURCE
+    ESTIMATOR, GAP_SOURCE = args.estimator, args.gap_source
     os.makedirs(args.output_dir, exist_ok=True)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = L2._load_model(args.model, device)

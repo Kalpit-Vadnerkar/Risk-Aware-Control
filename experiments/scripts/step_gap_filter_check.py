@@ -31,69 +31,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 import layer2_envelope as LE  # noqa: E402
-import pose_error_derivative_check as PD  # noqa: E402
-from inspect_fault_predictions import compute_window_times  # noqa: E402
-from st_gat.pipeline.bag_reader import read_bag as read_frames  # noqa: E402
-from st_gat.pipeline.sequence_builder import SequenceBuilder  # noqa: E402
+import pose_gaps as PG  # noqa: E402  (experiments/lib)
 cfg = LE.cfg
 W = lambda a: (a + np.pi) % (2 * np.pi) - np.pi  # noqa: E731
-
-
-def read_bag_rx(bag_dir):
-    """Est pose, AWSIM truth and the vehicle report on the bag's receive
-    clock (the clock of the Layer 1 window times)."""
-    import rosbag2_py
-    from rclpy.serialization import deserialize_message
-    from rosidl_runtime_py.utilities import get_message
-    r = rosbag2_py.SequentialReader()
-    r.open(rosbag2_py.StorageOptions(uri=bag_dir, storage_id=''), rosbag2_py.ConverterOptions('cdr', 'cdr'))
-    types = {t.name: t.type for t in r.get_all_topics_and_types()}
-    topics = [PD.GT_TOPIC, PD.EST_TOPIC, PD.VEL_TOPIC]
-    r.set_filter(rosbag2_py.StorageFilter(topics=topics))
-    mt = {k: get_message(types[k]) for k in topics}
-    out = {k: [] for k in topics}
-    while r.has_next():
-        k, data, ts = r.read_next()
-        m = deserialize_message(data, mt[k])
-        if k == PD.VEL_TOPIC:
-            out[k].append((ts * 1e-9, m.longitudinal_velocity, m.lateral_velocity, -m.heading_rate))
-        else:
-            p, q = m.pose.pose.position, m.pose.pose.orientation
-            yaw = np.arctan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y ** 2 + q.z ** 2))
-            out[k].append((ts * 1e-9, p.x, p.y, yaw))
-    return {k: np.array(v) for k, v in out.items()}
-
-
-def step_gaps_at(B, ta):
-    """Per-step gaps at absolute window times ta, plus the true pose error."""
-    est, vel, gt = B[PD.EST_TOPIC], B[PD.VEL_TOPIC], B[PD.GT_TOPIC]
-    ey = np.unwrap(est[:, 3])
-    exy = np.stack([np.interp(ta, est[:, 0], est[:, c]) for c in (1, 2)], -1)
-    eyaw = np.interp(ta, est[:, 0], ey)
-    # report averaged over each interval: cumulative trapezoid, then differences
-    rep = vel[:, 1:].copy()
-    rep[:, 1] -= PD.L_CM * rep[:, 2]
-    cum = np.concatenate([np.zeros((1, 3)), np.cumsum(0.5 * (rep[1:] + rep[:-1]) * np.diff(vel[:, 0])[:, None], 0)])
-    C = np.stack([np.interp(ta, vel[:, 0], cum[:, c]) for c in range(3)], -1)
-    g = np.zeros((len(ta), 3))
-    dt = np.diff(ta)
-    ok = dt > 1e-3
-    hm = 0.5 * (eyaw[1:] + eyaw[:-1])
-    d = np.diff(exy, axis=0)
-    dC = np.diff(C, axis=0)
-    g1 = np.stack([np.diff(eyaw) - dC[:, 2],
-                   d[:, 0] * np.cos(hm) + d[:, 1] * np.sin(hm) - dC[:, 0],
-                   -d[:, 0] * np.sin(hm) + d[:, 1] * np.cos(hm) - dC[:, 1]], -1)
-    g[1:][ok] = g1[ok] / dt[ok, None]
-    # windows across a frame gap (> 0.3 s): no increment (the filter clips dt too)
-    g[1:][dt > 0.3] = 0.0
-    # true error
-    gy = np.interp(ta, gt[:, 0], np.unwrap(gt[:, 3]))
-    gxy = np.stack([np.interp(ta, gt[:, 0], gt[:, c]) for c in (1, 2)], -1)
-    dd = exy - gxy
-    tx = dd[:, 0] * np.cos(eyaw) + dd[:, 1] * np.sin(eyaw)
-    tl = -dd[:, 0] * np.sin(eyaw) + dd[:, 1] * np.cos(eyaw)
-    return g, np.stack([W(eyaw - gy), tx, tl], -1)
 
 
 def bands_from(series):
@@ -141,12 +81,11 @@ def main():
     nom = []
     for name, n in zip(names, d['nominal']):
         run = find_run(name)
-        frames = read_frames(os.path.join(run, 'rosbag'), goal_id=os.path.basename(os.path.dirname(run)), verbose=False)
-        ta = np.array(compute_window_times(frames, SequenceBuilder._MAX_FRAME_GAP_SEC))
+        ta = PG.nominal_window_times(run)
         if len(ta) != len(n['t']):
             print(f'  {name}: {len(ta)} window times vs {len(n["t"])} windows, skipped')
             continue
-        g, true = step_gaps_at(read_bag_rx(os.path.join(run, 'rosbag')), ta)
+        g, true = PG.step_gaps(PG.read_bag(os.path.join(run, 'rosbag')), ta)
         nom.append({'name': name, 't': ta - ta[0], 'g': g, 'true': true, 'n': n})
         print(f'  nominal {name}: {len(ta)} windows', flush=True)
 
@@ -198,7 +137,7 @@ def main():
     for f in d['faults']:
         run = os.path.join(LE.L2.DATA_DIR, f['trial'])
         ta = f['t'] + f['t0']
-        g, true = step_gaps_at(read_bag_rx(os.path.join(run, 'rosbag')), ta)
+        g, true = PG.step_gaps(PG.read_bag(os.path.join(run, 'rosbag')), ta)
         w = LE.reference_health(f['lq'], f['D'], cal)
         dh_h, _ = run_filter(f['t'], f['e'][:, ic], f['v'], w, cal, bands_head)
         dh_s, _ = run_filter(f['t'], g - bias_all, f['v'], w, cal, bands_step)

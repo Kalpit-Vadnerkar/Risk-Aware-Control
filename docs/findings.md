@@ -208,7 +208,18 @@ Benchmark table (held-out CAL, every model):
   the "envelope moves" gate needs re-deriving for the new input (e.g. a
   nominal p99.9 of the estimate: 0.27° / 0.11 m). Small-fault caveat
   unchanged: on s1/007 correcting still raises lateral error (0.16 → 0.36 m).
-  Not yet in `layer2_envelope.py` / the pipeline (alarms, lead times unrun).
+  Full pipeline (`layer2_envelope.py --gap-source step` vs `head`, ego_v6,
+  all 38 fault trials, 2026-10-22; outputs `layer2_envelope_{head,step}/`):
+  nominal thresholds identical (1% FAR: 0.825), distrust 4.2 episodes/h
+  both, envelope moved on 0.30% (head) / 0.51% (step, gate = nominal
+  p99.9 of the estimate: 0.29 deg / 0.11 m) of nominal windows. Departures
+  4/4 both; evidence lead s3/007 2.0 -> 2.2 s, scale/007 2.0 -> 2.2,
+  stuck/007 3.0 -> 2.8, stuck/012 3.4 -> 3.4. Harmless IMU faults, share of
+  fault time in alarm: s3/012 0.65 -> 0.24 (nominal envelope alone 0.63:
+  the corrected envelope sits on the true pose, away from the edge), s1/007
+  0.04 -> 0.06, s1/012 and scale/012 0 both. Traffic-light trials unchanged
+  (<= 0.12). Lead time is set by Layer 1 onset and the geometry, not by the
+  size estimate; the gain is accuracy (correction) and fewer false alarms.
 - **Offline correction** (open loop, estimator above): subtracting the
   estimate at the moment of departure leaves heading 1.0–2.6 deg (Autoware
   23–95 deg) and lateral 0.4–1.2 m (0.8–5.9 m). On harmless s1 it raises

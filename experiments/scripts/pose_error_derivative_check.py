@@ -25,6 +25,7 @@ import glob
 import json
 import math
 import os
+import sys
 
 import numpy as np
 
@@ -35,11 +36,8 @@ GT_TOPIC = '/awsim/ground_truth/localization/kinematic_state'
 EST_TOPIC = '/localization/kinematic_state'
 VEL_TOPIC = '/vehicle/status/velocity_status'
 DT = 0.1
-# AWSIM's velocity report is the rigidbody (centre-of-mass) velocity
-# (Vehicle.cs: LocalVelocity = m_rigidbody.velocity), the pose is base_link
-# (rear axle): v_l,report = v_l,base_link + L_CM * r. Fitted on every trial
-# (residual 0.10 -> 0.003 m/s RMS).
-L_CM = 1.18
+sys.path.insert(0, os.path.join(ROOT, 'experiments', 'lib'))
+from pose_gaps import L_CM  # noqa: E402  (centre-of-mass lever arm, see pose_gaps.py)
 
 
 def read_bag(bag_dir):
