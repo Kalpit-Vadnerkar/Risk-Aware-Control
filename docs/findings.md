@@ -266,6 +266,13 @@ Benchmark table (held-out CAL, every model):
   truth through the spin), s1/007 0.06, s1/012 0.00, scale/012 0.00.
   Traffic-light trials unchanged (<= 0.12). Timeseries panel 2 now shows
   the step gaps (what 2b integrates) in step mode.
+  Step is the default since 2026-10-23: `layer2_envelope/` holds this run
+  (canonical figures; `layer2_envelope_head/` is the baseline), and the
+  highlights (heading_tracking, correction_offline, operating_curves,
+  p_violation_scale007, envelope_stages/explainer, filmstrip) are
+  regenerated from it. Corrected at departure: heading 0.0 / 0.0 / 1.4 /
+  0.6 deg, lateral 0.11 / 0.27 / 0.28 / 0.15 m (scale/007, s3/007,
+  stuck/007, stuck/012).
 - **Offline correction** (open loop, estimator above): subtracting the
   estimate at the moment of departure leaves heading 1.0–2.6 deg (Autoware
   23–95 deg) and lateral 0.4–1.2 m (0.8–5.9 m). On harmless s1 it raises

@@ -141,13 +141,15 @@ the EKF gate distance and scan-match probability, independent of Layer 1
 distrust). It replaced three hand-made mechanisms: heading integrated from
 onset, a 3 s sliding window for position, and a binary release after 2 s of
 healthy LiDAR. The assumption it rests on held: wherever the true error is
-large, LiDAR health is never nominal. Input is the consistency heads'
-residual (the head's prediction acts as the bias b); the r̂ terms are
-dropped there. Alternative input `--gap-source step`: lever-arm corrected
-per-step gaps minus their nominal mean, with the r̂ terms (findings.md §4);
-the size and direction come from the gaps themselves, the heads stay in
-Layer 1 (WHEN). Known limit: a stopped vehicle whose heading
-estimate spins (head out of distribution).
+large, LiDAR health is never nominal. Input (default since 2026-10-23,
+`--gap-source step`): lever-arm corrected per-step gaps minus their nominal
+mean, with the r̂ terms and a midpoint step (findings.md §4); the size and
+direction come from the gaps themselves, the heads stay in Layer 1 (WHEN).
+Baseline `--gap-source head`: the consistency heads' residual (the head's
+prediction acts as the bias b), r̂ terms dropped; out of distribution when a
+stopped vehicle's heading estimate spins. Still from the heads in step mode:
+the drift rate each counterfactual keeps over the 3 s horizon
+(`evidence_bundle` rate_yaw / rate_spd).
 
 **Envelope and risk.** Counterfactual k at window t: forecast μ_t plus a
 recorded error trajectory ε_k from the scene neighbours (2a), then moved

@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from st_gat.pipeline import config as cfg  # noqa: E402
 
-SRC = os.path.join(cfg.ANALYSIS_ROOT, os.environ.get('L2_RESULTS', 'layer2_envelope_filter'))
+SRC = os.path.join(cfg.ANALYSIS_ROOT, os.environ.get('L2_RESULTS', 'layer2_envelope'))
 OUT = os.path.join(cfg.ANALYSIS_ROOT, 'highlights')
 GAP = 1.0            # alarm episodes closer than this merge (as in layer2_envelope)
 STOP_S = 1.7         # stop from 5 m/s at 3 m/s^2
@@ -173,7 +173,7 @@ def fig_heading(faults):
         t = f['t'][m]
         for w in f['fault_windows']:
             a.axvspan(w['start'], w['end'], color='#ff7f0e', alpha=0.12, lw=0)
-        a.plot(t, np.degrees(f['true_psi'][m]), color='k', lw=1.4, label='true (AWSIM)')
+        a.plot(t, np.degrees(np.unwrap(f['true_psi'][m])), color='k', lw=1.4, label='true (AWSIM)')
         a.plot(t, np.degrees(f['Psi'][m]), color='#9467bd', lw=1.8, label='2b estimate')
         if f['departure']:
             a.axvline(f['departure'], color='#d62728', ls='--', lw=1.2)

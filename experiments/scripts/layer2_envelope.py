@@ -326,9 +326,10 @@ def pose_error_filter(t, e_int, v, w, cal, r_hat=None, mid=False):
 
 
 ESTIMATOR = 'filter'      # 2b pose-error estimate: 'filter' (formal model) or 'legacy' (onset integral + window)
-GAP_SOURCE = 'head'       # filter input: 'head' (consistency heads' residuals) or 'step' (pose_gaps.py: per-step,
+GAP_SOURCE = 'step'       # filter input: 'step' (default; pose_gaps.py: per-step,
                           # lever-arm corrected raw gaps minus their nominal mean; filtered with the
                           # rotating-frame terms (r_hat = the estimate's own yaw rate) and a midpoint step)
+                          # or 'head' (the consistency heads' residuals; baseline, layer2_envelope_head/)
 STEP_GATE_Q = 0.999       # step: envelope moves when |delta_hat| exceeds this nominal quantile of the estimate
 
 
@@ -1104,8 +1105,8 @@ def main():
     ap.add_argument('--seed', type=int, default=20261007)
     ap.add_argument('--output-dir', default=OUT_DIR)
     ap.add_argument('--estimator', choices=['filter', 'legacy'], default='filter')
-    ap.add_argument('--gap-source', choices=['head', 'step'], default='head',
-                    help="2b filter input: consistency heads' residuals, or corrected per-step gaps (pose_gaps.py)")
+    ap.add_argument('--gap-source', choices=['head', 'step'], default='step',
+                    help="2b filter input: corrected per-step gaps (pose_gaps.py, default) or the consistency heads' residuals")
     args = ap.parse_args()
     global ESTIMATOR, GAP_SOURCE
     ESTIMATOR, GAP_SOURCE = args.estimator, args.gap_source

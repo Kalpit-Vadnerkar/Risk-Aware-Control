@@ -1,0 +1,414 @@
+[INFO] [1792699336.488516519] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_007/t1_20260722_134547/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699344.455167493] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_007/t1_20260722_134547/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699345.760264579] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_010/t1_20260722_135747/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699354.232603187] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_010/t1_20260722_135747/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699355.669607230] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_013/t1_20260722_140535/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699360.513715020] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_013/t1_20260722_140535/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699361.336971652] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_017/t1_20260722_141556/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699365.583139024] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_017/t1_20260722_141556/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699366.313108685] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_020/t1_20260722_142441/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699372.377331229] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_020/t1_20260722_142441/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699373.412392575] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_012/t1_20260722_163948/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699389.108172057] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_012/t1_20260722_163948/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699391.717840870] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_026/t1_20260722_165216/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699404.310369547] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_026/t1_20260722_165216/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699406.359022978] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_007/t2_20260722_144735/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699414.467126625] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_007/t2_20260722_144735/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699415.812484210] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_010/t2_20260722_150148/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699424.072321072] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_010/t2_20260722_150148/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699425.450301625] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_012/t2_20260722_164614/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699439.134998283] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_012/t2_20260722_164614/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699441.373168133] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_026/t2_20260722_165737/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699458.065331108] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_026/t2_20260722_165737/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699460.804868062] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_007/t3_20261003_174506/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699469.499087939] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_007/t3_20261003_174506/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699470.958106571] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_012/t3_20261003_175000/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699486.756391335] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_012/t3_20261003_175000/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699489.345333466] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_026/t3_20261003_175633/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699502.220428781] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_026/t3_20261003_175633/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699504.399851002] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_007/t4_20261003_180157/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699514.515891272] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_007/t4_20261003_180157/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699516.187390868] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_012/t4_20261003_180727/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699528.922405162] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_012/t4_20261003_180727/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699531.019906422] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_026/t4_20261003_194144/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699545.882865079] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/nom_v11/goal_026/t4_20261003_194144/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699642.286003505] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_007/t1_20260728_204000/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699651.169574836] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_007/t1_20260728_204000/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699658.247938763] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_007/t1_20260728_204000/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699659.813299562] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_007/t1_20260728_204000/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699660.670100435] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_007/t1_20260728_204000/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699672.919932397] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_012/t1_20260728_204347/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699689.340163564] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_012/t1_20260728_204347/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699699.745498477] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_012/t1_20260728_204347/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699702.578448348] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_012/t1_20260728_204347/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699704.100113795] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s1/goal_012/t1_20260728_204347/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699725.081134496] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_007/t1_20260728_195042/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699735.219582911] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_007/t1_20260728_195042/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699743.451765574] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_007/t1_20260728_195042/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699745.180615107] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_007/t1_20260728_195042/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699746.138971773] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_007/t1_20260728_195042/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699759.706542779] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_012/t1_20260728_195502/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699774.529636698] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_012/t1_20260728_195502/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699783.740761972] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_012/t1_20260728_195502/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699786.182509157] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_012/t1_20260728_195502/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699787.529121650] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_s3/goal_012/t1_20260728_195502/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699816.960646228] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_007/t1_20260728_200905/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699825.889706873] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_007/t1_20260728_200905/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699829.685507998] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_007/t1_20260728_200905/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699831.176906731] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_007/t1_20260728_200905/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699832.001588703] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_007/t1_20260728_200905/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699857.385137046] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_012/t1_20260728_201253/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699867.477098020] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_012/t1_20260728_201253/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699872.515596565] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_012/t1_20260728_201253/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699874.225454434] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_012/t1_20260728_201253/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699875.169556558] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_scale/goal_012/t1_20260728_201253/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699888.032842408] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_007/t1_20260728_202434/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699896.654443553] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_007/t1_20260728_202434/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699900.302279717] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_007/t1_20260728_202434/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699901.793470587] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_007/t1_20260728_202434/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699902.606207188] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_007/t1_20260728_202434/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699913.918627870] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_012/t1_20260728_202808/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699925.285855523] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_012/t1_20260728_202808/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699930.692012438] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_012/t1_20260728_202808/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699932.602467491] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_012/t1_20260728_202808/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699933.656497767] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/imu_fault_stuck/goal_012/t1_20260728_202808/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699949.192993814] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t1_20261003_165909/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699957.616868095] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t1_20261003_165909/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699967.366236927] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t1_20261003_165909/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699968.810412141] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t1_20261003_165909/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699969.620944319] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t1_20261003_165909/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699980.307990757] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t2_20261003_182802/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699990.539173643] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t2_20261003_182802/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699997.859467463] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t2_20261003_182802/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792699999.615337101] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t2_20261003_182802/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700000.562683924] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_007/t2_20261003_182802/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700013.711126623] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t1_20261003_170244/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700027.862224430] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t1_20261003_170244/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700038.455577028] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t1_20261003_170244/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700040.912246276] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t1_20261003_170244/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700042.253345899] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t1_20261003_170244/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700061.622408911] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t2_20261003_173247/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700076.745575992] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t2_20261003_173247/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700090.636122269] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t2_20261003_173247/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700093.210756643] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t2_20261003_173247/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700094.653989867] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_012/t2_20261003_173247/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700118.368092590] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t1_20261003_182218/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700132.359251548] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t1_20261003_182218/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700142.254844606] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t1_20261003_182218/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700144.650972923] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t1_20261003_182218/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700145.945307937] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t1_20261003_182218/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700166.240861836] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t2_20261003_183217/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700182.349849271] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t2_20261003_183217/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700196.091076139] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t2_20261003_183217/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700198.884205345] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t2_20261003_183217/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700200.364438967] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_030/goal_026/t2_20261003_183217/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700224.947282198] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t1_20261003_184040/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700236.001021515] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t1_20261003_184040/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700243.618759612] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t1_20261003_184040/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700245.476306829] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t1_20261003_184040/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700246.512017283] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t1_20261003_184040/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700264.306186019] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t2_20261003_195324/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700272.349764083] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t2_20261003_195324/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700278.958995719] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t2_20261003_195324/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700280.342282716] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t2_20261003_195324/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700281.097581412] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_007/t2_20261003_195324/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700291.985164499] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t1_20261003_184523/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700307.590908111] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t1_20261003_184523/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700321.911273321] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t1_20261003_184523/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700324.660181350] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t1_20261003_184523/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700326.138933752] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t1_20261003_184523/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700346.332914693] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t2_20261003_195650/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700359.942053822] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t2_20261003_195650/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700370.394172918] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t2_20261003_195650/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700372.786000339] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t2_20261003_195650/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700374.078755710] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_012/t2_20261003_195650/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700391.226718057] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t1_20261003_194811/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700403.917752681] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t1_20261003_194811/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700413.503456459] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t1_20261003_194811/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700415.719751702] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t1_20261003_194811/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700416.903391475] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t1_20261003_194811/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700434.904909809] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t2_20261003_202653/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700449.509519528] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t2_20261003_202653/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700462.986242525] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t2_20261003_202653/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700465.495608273] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t2_20261003_202653/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700466.873712150] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_050/goal_026/t2_20261003_202653/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700488.208691837] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t1_20261003_190926/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700497.866794945] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t1_20261003_190926/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700505.022044379] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t1_20261003_190926/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700506.688649387] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t1_20261003_190926/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700507.602506510] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t1_20261003_190926/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700521.646776201] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t2_20261003_192455/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700531.614879482] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t2_20261003_192455/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700538.805213503] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t2_20261003_192455/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700540.521145435] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t2_20261003_192455/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700541.450965806] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_007/t2_20261003_192455/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700555.122696909] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t1_20261003_191331/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700569.687579556] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t1_20261003_191331/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700583.574043890] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t1_20261003_191331/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700586.094641015] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t1_20261003_191331/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700587.442007184] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t1_20261003_191331/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700607.533865130] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t2_20261003_201103/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700622.684243736] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t2_20261003_201103/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700633.678383838] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t2_20261003_201103/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700636.306099793] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t2_20261003_201103/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700637.745679770] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_012/t2_20261003_201103/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700658.997682583] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t1_20261003_191924/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700672.471598472] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t1_20261003_191924/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700685.349028360] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t1_20261003_191924/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700687.664453262] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t1_20261003_191924/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700688.921398855] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t1_20261003_191924/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700708.682571488] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t2_20261003_203450/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700723.504508336] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t2_20261003_203450/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700733.818828951] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t2_20261003_203450/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700736.375128551] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t2_20261003_203450/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700737.756877920] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_fixed_070/goal_026/t2_20261003_203450/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700758.786484717] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_007/t1_20260728_215204/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700769.615392129] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_007/t1_20260728_215204/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700777.113144617] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_007/t1_20260728_215204/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700778.911346047] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_007/t1_20260728_215204/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700779.918637380] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_007/t1_20260728_215204/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700794.238526520] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_012/t1_20260728_215748/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700807.161976803] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_012/t1_20260728_215748/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700820.677885761] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_012/t1_20260728_215748/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700822.893082131] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_012/t1_20260728_215748/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700824.139520369] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_012/t1_20260728_215748/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700842.026549793] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_026/t1_20260728_220313/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700858.110987967] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_026/t1_20260728_220313/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700868.731499993] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_026/t1_20260728_220313/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700871.488748355] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_026/t1_20260728_220313/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700873.014356062] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_ramp/goal_026/t1_20260728_220313/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700891.160144408] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_007/t1_20260728_205829/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700899.796265342] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_007/t1_20260728_205829/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700906.653236311] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_007/t1_20260728_205829/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700908.137509628] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_007/t1_20260728_205829/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700908.964289106] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_007/t1_20260728_205829/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700920.200858280] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_012/t1_20260728_210210/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700931.349906763] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_012/t1_20260728_210210/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700944.159330437] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_012/t1_20260728_210210/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700946.114947162] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_012/t1_20260728_210210/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700947.196296304] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_012/t1_20260728_210210/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700962.186685860] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_026/t1_20260728_210652/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700975.478828221] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_026/t1_20260728_210652/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700985.366940395] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_026/t1_20260728_210652/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700987.664360163] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_026/t1_20260728_210652/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792700988.933385868] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s2/goal_026/t1_20260728_210652/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701006.074174378] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_007/t1_20260728_211338/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701016.201710710] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_007/t1_20260728_211338/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701023.494278138] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_007/t1_20260728_211338/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701025.272777626] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_007/t1_20260728_211338/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701026.233210305] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_007/t1_20260728_211338/rosbag/rosbag_0.db3' for READ_ONLY.
+Loaded model: /home/kvadner/Desktop/Dissertation/Risk-Aware-Control/st_gat/models/h30_30_ego6/st_gat_rise.pth (541,034 params)
+[dataset] Loaded 34575 sequences from 17 files
+  step gaps: nominal mean +0.002 deg/s, +0.007 / -0.013 m/s; band at 3 s heading 0.13 deg, lateral 0.08 m; gate (q0.999) 0.29 deg / 0.10 m
+Calibration: 34575 windows (0.96 h), 17 trials; integrating channels (2, 3, 4)
+  bounded score u: kappa 4.53, h 15.00 (target <= 6.0/h), cap 30.00, recovery n_off 1 in 2 s
+  nominal (LOO): distrusted 0.30%, envelope active 0.51%, distrust episodes 4 = 4.2 per hour
+  nominal 95% drift band at 3 s / 10 s: heading 1.1 / 1.8 deg, lateral 0.17 / 0.43 m
+  nominal 1000/6915
+  nominal 2000/6915
+  nominal 3000/6915
+  nominal 4000/6915
+  nominal 5000/6915
+  nominal 6000/6915
+
+=== Nominal P(violation within 3 s), leave-one-trial-out (6915 windows) ===
+  nominal     mean 0.0346  p95 0.245  p99 0.825  threshold@1% 0.825
+  evidence    mean 0.0346  p95 0.245  p99 0.825  threshold@1% 0.825
+  deadreckon  mean 0.0553  p95 0.340  p99 0.874  threshold@1% 0.874
+  evidence_dP mean 0.0001  p95 0.000  p99 0.000  threshold@1% 0.050
+  layer1 flag on nominal windows: 0.32%
+
+[imu_fault_s1/goal_007/t1_20260728_204000]
+  [seq_builder] 1613 sequences, 171 graph builds, 2 windows rejected for a >0.2s frame gap
+  nominal: 0.03666666666666667  evidence: 0.06  deadreckon: 0.04666666666666667  evidence_dP: 0.10666666666666667  layer1: 0.98
+
+[imu_fault_s1/goal_012/t1_20260728_204347]
+  nominal: 0.0  evidence: 0.0  deadreckon: 0.0  evidence_dP: 0.0  layer1: 0.9775561097256857
+
+[imu_fault_s3/goal_007/t1_20260728_195042]
+  [seq_builder] 1844 sequences, 88 graph builds, 17 windows rejected for a >0.2s frame gap
+  nominal: 1.0050952434539795  evidence: 2.2069637775421143  deadreckon: 1.6162126064300537  evidence_dP: 3.2156364917755127  layer1: 10.022116899490356
+
+[imu_fault_s3/goal_012/t1_20260728_195502]
+  nominal: 0.6311688311688312  evidence: 0.0  deadreckon: 0.5922077922077922  evidence_dP: 0.03636363636363636  layer1: 0.9896103896103896
+
+[imu_fault_scale/goal_007/t1_20260728_200905]
+  nominal: 1.5889103412628174  evidence: 2.198215961456299  deadreckon: 2.399923086166382  evidence_dP: None  layer1: 6.201417446136475
+
+[imu_fault_scale/goal_012/t1_20260728_201253]
+  nominal: 0.0  evidence: 0.0  deadreckon: 0.0  evidence_dP: 0.020134228187919462  layer1: 0.2080536912751678
+
+[imu_fault_stuck/goal_007/t1_20260728_202434]
+  [seq_builder] 1543 sequences, 49 graph builds, 3 windows rejected for a >0.2s frame gap
+  nominal: None  evidence: 2.7988438606262207  deadreckon: 3.00823712348938  evidence_dP: 3.4007740020751953  layer1: 4.210295915603638
+
+[imu_fault_stuck/goal_012/t1_20260728_202808]
+  nominal: None  evidence: 3.3712003231048584  deadreckon: 3.3712003231048584  evidence_dP: 1.7505970001220703  layer1: 3.570276975631714
+
+[tl_fault_fixed_030/goal_007/t1_20261003_165909]
+  [seq_builder] 1500 sequences, 172 graph builds, 11 windows rejected for a >0.2s frame gap
+  nominal: 0.029411764705882353  evidence: 0.029411764705882353  deadreckon: 0.029411764705882353  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_030/goal_007/t2_20261003_182802]
+  nominal: 0.0036900369003690036  evidence: 0.0036900369003690036  deadreckon: 0.0  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_030/goal_012/t1_20261003_170244]
+  nominal: 0.0  evidence: 0.0  deadreckon: 0.01532567049808429  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_030/goal_012/t2_20261003_173247]
+  [seq_builder] 2841 sequences, 219 graph builds, 13 windows rejected for a >0.2s frame gap
+  nominal: 0.024883359253499222  evidence: 0.024883359253499222  deadreckon: 0.05287713841368585  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_030/goal_026/t1_20261003_182218]
+  [seq_builder] 2542 sequences, 213 graph builds, 10 windows rejected for a >0.2s frame gap
+  nominal: 0.01026694045174538  evidence: 0.01026694045174538  deadreckon: 0.008213552361396304  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_030/goal_026/t2_20261003_183217]
+  nominal: 0.01834862385321101  evidence: 0.01834862385321101  deadreckon: 0.013761467889908258  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_050/goal_007/t1_20261003_184040]
+  [seq_builder] 2011 sequences, 172 graph builds, 3 windows rejected for a >0.2s frame gap
+  nominal: 0.007653061224489796  evidence: 0.007653061224489796  deadreckon: 0.007653061224489796  evidence_dP: 0.0  layer1: 0.07397959183673469
+
+[tl_fault_fixed_050/goal_007/t2_20261003_195324]
+  nominal: 0.06273062730627306  evidence: 0.06273062730627306  deadreckon: 0.04797047970479705  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_050/goal_012/t1_20261003_184523]
+  nominal: 0.007530120481927711  evidence: 0.007530120481927711  deadreckon: 0.025602409638554216  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_050/goal_012/t2_20261003_195650]
+  nominal: 0.0  evidence: 0.0  deadreckon: 0.044036697247706424  evidence_dP: 0.012844036697247707  layer1: 0.04954128440366973
+
+[tl_fault_fixed_050/goal_026/t1_20261003_194811]
+  nominal: 0.017278617710583154  evidence: 0.017278617710583154  deadreckon: 0.017278617710583154  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_050/goal_026/t2_20261003_202653]
+  [seq_builder] 2723 sequences, 213 graph builds, 8 windows rejected for a >0.2s frame gap
+  nominal: 0.013245033112582781  evidence: 0.013245033112582781  deadreckon: 0.011589403973509934  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_070/goal_007/t1_20261003_190926]
+  [seq_builder] 1764 sequences, 171 graph builds, 3 windows rejected for a >0.2s frame gap
+  nominal: 0.058823529411764705  evidence: 0.058823529411764705  deadreckon: 0.04044117647058824  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_070/goal_007/t2_20261003_192455]
+  nominal: 0.05185185185185185  evidence: 0.05185185185185185  deadreckon: 0.025925925925925925  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_070/goal_012/t1_20261003_191331]
+  nominal: 0.003629764065335753  evidence: 0.003629764065335753  deadreckon: 0.018148820326678767  evidence_dP: 0.0054446460980036296  layer1: 0.018148820326678767
+
+[tl_fault_fixed_070/goal_012/t2_20261003_201103]
+  [seq_builder] 2852 sequences, 219 graph builds, 8 windows rejected for a >0.2s frame gap
+  nominal: 0.004615384615384616  evidence: 0.004615384615384616  deadreckon: 0.016923076923076923  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_070/goal_026/t1_20261003_191924]
+  nominal: 0.018633540372670808  evidence: 0.018633540372670808  deadreckon: 0.018633540372670808  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_fixed_070/goal_026/t2_20261003_203450]
+  [seq_builder] 2720 sequences, 213 graph builds, 7 windows rejected for a >0.2s frame gap
+  nominal: 0.013029315960912053  evidence: 0.013029315960912053  deadreckon: 0.013029315960912053  evidence_dP: 0.0  layer1: 0.043973941368078175
+
+[tl_fault_ramp/goal_007/t1_20260728_215204]
+  [seq_builder] 1951 sequences, 171 graph builds, 18 windows rejected for a >0.2s frame gap
+  nominal: 0.0196078431372549  evidence: 0.0196078431372549  deadreckon: 0.007352941176470588  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_ramp/goal_012/t1_20260728_215748]
+  nominal: 0.0  evidence: 0.0  deadreckon: 0.025145067698259187  evidence_dP: 0.007736943907156673  layer1: 0.04061895551257253
+
+[tl_fault_ramp/goal_026/t1_20260728_220313]
+  nominal: 0.0  evidence: 0.0  deadreckon: 0.0  evidence_dP: 0.0  layer1: 0.026200873362445413
+
+[tl_fault_s2/goal_007/t1_20260728_205829]
+  [seq_builder] 1571 sequences, 172 graph builds, 2 windows rejected for a >0.2s frame gap
+  nominal: 0.007352941176470588  evidence: 0.007352941176470588  deadreckon: 0.022058823529411766  evidence_dP: 0.0  layer1: 0.09191176470588236
+
+[tl_fault_s2/goal_012/t1_20260728_210210]
+  nominal: 0.021212121212121213  evidence: 0.024242424242424242  deadreckon: 0.012121212121212121  evidence_dP: 0.02727272727272727  layer1: 0.11818181818181818
+
+[tl_fault_s2/goal_026/t1_20260728_210652]
+  nominal: 0.0  evidence: 0.0  deadreckon: 0.002188183807439825  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_s3/goal_007/t1_20260728_211338]
+  [seq_builder] 1824 sequences, 172 graph builds, 9 windows rejected for a >0.2s frame gap
+[INFO] [1792701039.211231803] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_012/t1_20260728_211902/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701052.667117685] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_012/t1_20260728_211902/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701066.313319275] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_012/t1_20260728_211902/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701068.641153783] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_012/t1_20260728_211902/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701069.879341133] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_012/t1_20260728_211902/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701090.144887062] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_026/t1_20260728_212548/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701106.762789072] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_026/t1_20260728_212548/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701116.981610811] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_026/t1_20260728_212548/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701119.745620986] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_026/t1_20260728_212548/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701121.281178259] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s3/goal_026/t1_20260728_212548/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701144.272762781] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_007/t1_20260728_213355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701154.126951334] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_007/t1_20260728_213355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701161.363108953] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_007/t1_20260728_213355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701163.055288761] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_007/t1_20260728_213355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701163.984376070] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_007/t1_20260728_213355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701178.285341388] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_012/t1_20260728_213807/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701192.455325884] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_012/t1_20260728_213807/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701206.255074911] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_012/t1_20260728_213807/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701208.669297643] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_012/t1_20260728_213807/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701210.000699839] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_012/t1_20260728_213807/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701230.937908425] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_026/t1_20260728_214355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701247.150743846] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_026/t1_20260728_214355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701257.949155876] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_026/t1_20260728_214355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701260.772112480] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_026/t1_20260728_214355/rosbag/rosbag_0.db3' for READ_ONLY.
+[INFO] [1792701262.297272726] [rosbag2_storage]: Opened database '/home/kvadner/Desktop/Dissertation/Risk-Aware-Control/experiments/data/tl_fault_s4/goal_026/t1_20260728_214355/rosbag/rosbag_0.db3' for READ_ONLY.
+  nominal: 0.12177121771217712  evidence: 0.12177121771217712  deadreckon: 0.1033210332103321  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_s3/goal_012/t1_20260728_211902]
+  nominal: 0.0055248618784530384  evidence: 0.0055248618784530384  deadreckon: 0.0055248618784530384  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_s3/goal_026/t1_20260728_212548]
+  nominal: 0.010680907877169559  evidence: 0.010680907877169559  deadreckon: 0.010680907877169559  evidence_dP: 0.0  layer1: 0.0
+
+[tl_fault_s4/goal_007/t1_20260728_213355]
+  [seq_builder] 1786 sequences, 171 graph builds, 13 windows rejected for a >0.2s frame gap
+  nominal: 0.09328358208955224  evidence: 0.09701492537313433  deadreckon: 0.07835820895522388  evidence_dP: 0.011194029850746268  layer1: 0.05970149253731343
+
+[tl_fault_s4/goal_012/t1_20260728_213807]
+  nominal: 0.022304832713754646  evidence: 0.022304832713754646  deadreckon: 0.03903345724907063  evidence_dP: 0.01486988847583643  layer1: 0.03903345724907063
+
+[tl_fault_s4/goal_026/t1_20260728_214355]
+  nominal: 0.004322766570605188  evidence: 0.004322766570605188  deadreckon: 0.004322766570605188  evidence_dP: 0.0  layer1: 0.01440922190201729
+
+trial                                           GT dep            layer1           nominal          evidence       evidence_dP        deadreckon
+imu_fault_s1/goal_007/t1_20260728_204000             -         0.98/0.00         0.04/0.00         0.06/0.00         0.11/0.00         0.05/0.00
+imu_fault_s1/goal_012/t1_20260728_204347             -         0.98/0.00         0.00/0.02         0.00/0.02         0.00/0.00         0.00/0.01
+imu_fault_s3/goal_007/t1_20260728_195042          88.5    10.0s (f+28.7)     1.0s (f+37.7)     2.2s (f+36.5)     3.2s (f+35.5)     1.6s (f+37.1)
+imu_fault_s3/goal_012/t1_20260728_195502             -         0.99/0.00         0.63/0.03         0.00/0.03         0.04/0.00         0.59/0.02
+imu_fault_scale/goal_007/t1_20260728_200905       54.5      6.2s (f+3.3)      1.6s (f+7.9)      2.2s (f+7.3)              MISS      2.4s (f+7.1)
+imu_fault_scale/goal_012/t1_20260728_201253          -         0.21/0.00         0.00/0.00         0.00/0.00         0.02/0.00         0.00/0.00
+imu_fault_stuck/goal_007/t1_20260728_202434       60.0      4.2s (f+3.2)              MISS      2.8s (f+4.6)      3.4s (f+4.0)      3.0s (f+4.4)
+imu_fault_stuck/goal_012/t1_20260728_202808      103.3     3.6s (f+22.8)              MISS     3.4s (f+23.0)     1.8s (f+24.7)     3.4s (f+23.0)
+tl_fault_fixed_030/goal_007/t1_20261003_16590        -         0.00/0.00         0.03/0.00         0.03/0.00         0.00/0.00         0.03/0.00
+tl_fault_fixed_030/goal_007/t2_20261003_18280        -         0.00/0.00         0.00/0.00         0.00/0.00         0.00/0.00         0.00/0.00
+tl_fault_fixed_030/goal_012/t1_20261003_17024        -         0.00/0.00         0.00/0.03         0.00/0.03         0.00/0.00         0.02/0.00
+tl_fault_fixed_030/goal_012/t2_20261003_17324        -         0.00/0.00         0.02/0.02         0.02/0.02         0.00/0.00         0.05/0.00
+tl_fault_fixed_030/goal_026/t1_20261003_18221        -         0.00/0.00         0.01/0.00         0.01/0.00         0.00/0.00         0.01/0.00
+tl_fault_fixed_030/goal_026/t2_20261003_18321        -         0.00/0.00         0.02/0.00         0.02/0.00         0.00/0.00         0.01/0.00
+tl_fault_fixed_050/goal_007/t1_20261003_18404        -         0.07/0.00         0.01/0.00         0.01/0.00         0.00/0.00         0.01/0.00
+tl_fault_fixed_050/goal_007/t2_20261003_19532        -         0.00/0.00         0.06/0.00         0.06/0.00         0.00/0.00         0.05/0.00
+tl_fault_fixed_050/goal_012/t1_20261003_18452        -         0.00/0.00         0.01/0.00         0.01/0.00         0.00/0.00         0.03/0.00
+tl_fault_fixed_050/goal_012/t2_20261003_19565        -         0.05/0.00         0.00/0.00         0.00/0.00         0.01/0.00         0.04/0.00
+tl_fault_fixed_050/goal_026/t1_20261003_19481        -         0.00/0.00         0.02/0.00         0.02/0.00         0.00/0.00         0.02/0.00
+tl_fault_fixed_050/goal_026/t2_20261003_20265        -         0.00/0.00         0.01/0.00         0.01/0.00         0.00/0.00         0.01/0.00
+tl_fault_fixed_070/goal_007/t1_20261003_19092        -         0.00/0.00         0.06/0.00         0.06/0.00         0.00/0.00         0.04/0.00
+tl_fault_fixed_070/goal_007/t2_20261003_19245        -         0.00/0.00         0.05/0.00         0.05/0.00         0.00/0.00         0.03/0.00
+tl_fault_fixed_070/goal_012/t1_20261003_19133        -         0.02/0.00         0.00/0.00         0.00/0.00         0.01/0.00         0.02/0.00
+tl_fault_fixed_070/goal_012/t2_20261003_20110        -         0.00/0.00         0.00/0.03         0.00/0.03         0.00/0.00         0.02/0.00
+tl_fault_fixed_070/goal_026/t1_20261003_19192        -         0.00/0.00         0.02/0.00         0.02/0.00         0.00/0.00         0.02/0.00
+tl_fault_fixed_070/goal_026/t2_20261003_20345        -         0.04/0.00         0.01/0.00         0.01/0.00         0.00/0.00         0.01/0.00
+tl_fault_ramp/goal_007/t1_20260728_215204            -         0.00/0.00         0.02/0.00         0.02/0.00         0.00/0.00         0.01/0.00
+tl_fault_ramp/goal_012/t1_20260728_215748            -         0.04/0.00         0.00/0.00         0.00/0.00         0.01/0.00         0.03/0.00
+tl_fault_ramp/goal_026/t1_20260728_220313            -         0.03/0.00         0.00/0.00         0.00/0.00         0.00/0.00         0.00/0.00
+tl_fault_s2/goal_007/t1_20260728_205829              -         0.09/0.00         0.01/0.00         0.01/0.00         0.00/0.00         0.02/0.00
+tl_fault_s2/goal_012/t1_20260728_210210              -         0.12/0.00         0.02/0.00         0.02/0.00         0.03/0.00         0.01/0.00
+tl_fault_s2/goal_026/t1_20260728_210652              -         0.00/0.00         0.00/0.00         0.00/0.00         0.00/0.00         0.00/0.00
+tl_fault_s3/goal_007/t1_20260728_211338              -         0.00/0.00         0.12/0.00         0.12/0.00         0.00/0.00         0.10/0.00
+tl_fault_s3/goal_012/t1_20260728_211902              -         0.00/0.00         0.01/0.00         0.01/0.00         0.00/0.00         0.01/0.00
+tl_fault_s3/goal_026/t1_20260728_212548              -         0.00/0.00         0.01/0.00         0.01/0.00         0.00/0.00         0.01/0.00
+tl_fault_s4/goal_007/t1_20260728_213355              -         0.06/0.00         0.09/0.00         0.10/0.00         0.01/0.00         0.08/0.00
+tl_fault_s4/goal_012/t1_20260728_213807              -         0.04/0.00         0.02/0.00         0.02/0.00         0.01/0.00         0.04/0.00
+tl_fault_s4/goal_026/t1_20260728_214355              -         0.01/0.00         0.00/0.00         0.00/0.00         0.00/0.00         0.00/0.00
+(departure trials: lead time before the real departure (alarm start, s after fault onset); others: in-fault / pre-fault alarm rate)

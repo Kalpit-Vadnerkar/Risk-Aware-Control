@@ -2,7 +2,8 @@
 subtracting the 2b pose-error estimate (formal-model filter), against AWSIM
 ground truth. Open loop: the vehicle did not use the correction.
 Writes <ANALYSIS_ROOT>/highlights/correction_offline.png.
-Needs pose_traces.pkl (extract_pose_error_traces.py)."""
+Reads the pipeline's own estimate: series_faults.pkl of layer2_envelope.py
+(L2_RESULTS, default layer2_envelope/, i.e. --gap-source step)."""
 import os
 import pickle
 import sys
@@ -19,18 +20,13 @@ W = lambda a: (a + np.pi) % (2 * np.pi) - np.pi  # noqa: E731
 
 
 def main():
-    src = os.path.join(cfg.ANALYSIS_ROOT, 'layer2_envelope', 'pose_traces.pkl')
-    d = pickle.load(open(src, 'rb'))
-    cal = d['cal']
-    lq = np.concatenate([n['lq'] for n in d['nominal']])
-    cal['lq_ref'] = (np.quantile(lq[:, 0], .5), np.quantile(lq[:, 0], .99), np.quantile(lq[:, 1], .01), np.quantile(lq[:, 1], .5))
-    ic = list(cal['int_ch'])
+    src = os.path.join(cfg.ANALYSIS_ROOT, os.environ.get('L2_RESULTS', 'layer2_envelope'), 'series_faults.pkl')
+    faults = pickle.load(open(src, 'rb'))
     order = ['scale/goal_007', 's3/goal_007', 'stuck/goal_007', 'stuck/goal_012', 's1/goal_007', 'scale/goal_012']
-    sel = [next(f for f in d['faults'] if f['trial'].startswith('imu_fault_' + o)) for o in order]
+    sel = [next(f for f in faults if f['trial'].startswith('imu_fault_' + o)) for o in order]
     fig, ax = plt.subplots(2, len(sel), figsize=(3.6 * len(sel), 6.4), sharex='col')
     for c, f in enumerate(sel):
-        w = LE.reference_health(f['lq'], f['D'], cal)
-        de = LE.pose_error_filter(f['t'], f['e'][:, ic], f['v'], w, cal, r_hat=np.zeros(len(f['t'])))[0]
+        de = np.stack([f['Psi'], np.zeros_like(f['Psi']), f['Y']], -1)
         fs = min(x['start'] for x in f['fault_windows'])
         end = f['departure'] + 3 if f['departure'] else fs + 40
         m = (f['t'] >= fs - 5) & (f['t'] <= end)
@@ -45,7 +41,8 @@ def main():
             if f['departure']:
                 a.axvline(f['departure'], color='#d62728', ls='--', lw=1.2)
                 i = np.argmin(abs(t - f['departure']))
-                a.text(0.03, 0.92, f"at departure: {raw[i]:.1f}{unit} → {cor[i]:.1f}{unit}", transform=a.transAxes,
+                a.text(0.03, 0.92, (f"at departure: {raw[i]:.1f}{unit} → {cor[i]:.1f}{unit}" if unit == '°' else
+                        f"at departure: {raw[i]:.2f}{unit} → {cor[i]:.2f}{unit}"), transform=a.transAxes,
                        fontsize=9.5, va='top', bbox=dict(fc='white', ec='none', alpha=0.8))
             a.set_xlim(t[0], t[-1])
         name = f['trial'].split('/')
