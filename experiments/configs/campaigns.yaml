@@ -8,7 +8,7 @@
 #   them from there, never from the name.
 # - goals: "all" = every goal in captured_goals.json.
 # - trials: target per goal. The runner counts trials already on disk and only
-#   runs the rest (a trial counts once it has a result.json).
+#   runs the rest (a trial counts once its result.json says valid).
 # - record: recording profiles from experiments/lib/config.py RECORDING_PROFILES.
 #   "base" always; "lidar_raw" adds the three per-sensor raw clouds (~4.5 GB
 #   per trial more) — for LiDAR-fault campaigns, injected on pointcloud_raw_ex.

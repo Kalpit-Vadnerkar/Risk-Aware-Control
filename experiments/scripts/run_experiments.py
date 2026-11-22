@@ -9,8 +9,11 @@ disk and runs only what is missing, at most --max-trials per invocation
 so restart Autoware between invocations). Re-running the same command
 continues where the last one stopped.
 
-A trial is valid when it recorded a bag, the vehicle actually drove, and (for
-a fault campaign) the fault armed. An invalid trial is moved to
+A trial is valid when it recorded a bag, the vehicle started the route (and,
+in a nominal campaign, reached the goal), and (for a fault campaign) the
+fault armed. Before each trial the runner watches the MRM state for 20 s
+while parked and stops if this Autoware launch is flapping (see
+HEALTH_WINDOW_S). An invalid trial is moved to
 data/<campaign>/_invalid/ so its slot is retried; by default the invocation
 stops there too, since an invalid trial usually means Autoware needs a
 restart.
@@ -43,6 +46,18 @@ from config import (  # noqa: E402
 
 DEFAULT_MAX_TRIALS = 12
 INVALID_DIR = '_invalid'
+# Hard cap on one trial. The longest routes (goal_012, goal_026, ~1.15 km)
+# take ~310 s in nominal driving; a fault that slows the vehicle needs more.
+TRIAL_TIMEOUT_S = 900.0
+# Statuses where the vehicle never started the route: never a fault effect.
+NOT_STARTED = ('setup_failed', 'recording_failed', 'engage_failed')
+# Session health check before each trial: some Autoware launches come up
+# with the MRM state flapping NORMAL -> MRM_OPERATING for ~0.1 s every
+# 2-4 s, parked or driving (nominal 2026-11-22: 2 of 7 launches, 33-108
+# triggers per trial). Driving is unaffected, but every MRM-based measure
+# is meaningless, so that launch is not used.
+HEALTH_WINDOW_S = 20.0
+HEALTH_MAX_TRIGGERS = 1
 
 
 # ── Bookkeeping (no ROS needed) ──────────────────────────────────────────────
@@ -71,6 +86,20 @@ def leftover_dirs(campaign: str, goal_id: str) -> list:
         return []
     done = set(valid_trials(campaign, goal_id))
     return [os.path.join(goal_dir, e) for e in sorted(os.listdir(goal_dir)) if e not in done]
+
+
+def next_trial_num(campaign: str, goal_id: str) -> int:
+    """1 + the highest t<N> used for this goal, valid or in _invalid/, so a
+    re-run slot never reuses a number."""
+    names = []
+    goal_dir = os.path.join(DATA_DIR, campaign, goal_id)
+    if os.path.isdir(goal_dir):
+        names += os.listdir(goal_dir)
+    inv_dir = os.path.join(DATA_DIR, campaign, INVALID_DIR)
+    if os.path.isdir(inv_dir):
+        names += [e[len(goal_id) + 1:] for e in os.listdir(inv_dir) if e.startswith(goal_id + '_')]
+    nums = [int(n[1:].split('_')[0]) for n in names if n.startswith('t') and n[1:].split('_')[0].isdigit()]
+    return max(nums, default=0) + 1
 
 
 def build_plan(campaigns, goals_filter=None, trials_override=None):
@@ -325,7 +354,7 @@ class TrialRunner:
                 print(f'\nStuck: no movement for {time.time() - last_moving:.0f}s')
                 return {'status': 'stuck', 'goal_reached': False, 'driving_time': elapsed,
                         'mrm_trigger_count': R.get_mrm_trigger_count(), 'final_velocity': v}
-            if elapsed > 3 * timeout:
+            if elapsed > TRIAL_TIMEOUT_S:
                 print(f'\nSafety timeout ({elapsed:.0f}s)')
                 return {'status': 'timeout', 'goal_reached': False, 'driving_time': elapsed,
                         'mrm_trigger_count': R.get_mrm_trigger_count()}
@@ -343,12 +372,17 @@ class TrialRunner:
             if not self.start_recording():
                 self.result['status'] = 'recording_failed'
                 return
+            R.reset_mrm_trigger_count()
             if not self.set_goal_and_engage() or not self.wait_for_driving():
                 self.result['status'] = 'engage_failed'
                 return
             if self.config.stabilization_delay > 0:
                 time.sleep(self.config.stabilization_delay)
+            # Before the vehicle has moved, no fault can be the cause; 1 is
+            # the usual post-engage transient, more means a flapping launch.
+            pre = R.get_mrm_trigger_count()
             self.result = self.monitor()
+            self.result['pre_drive_mrm_triggers'] = pre
         except KeyboardInterrupt:
             print('\nInterrupted')
             self.result['status'] = 'interrupted'
@@ -384,6 +418,11 @@ class TrialRunner:
         print(f'  goal reached {r.goal_reached}, {r.driving_time:.0f}s, mean v {r.mean_velocity:.1f} m/s, '
               f'MRM triggers {m.fail_operational.mrm_trigger_count}')
         issues = []
+        status = self.result.get('status')
+        if status in NOT_STARTED:
+            issues.append(f'{status}: the vehicle never started the route')
+        elif not c.campaign.fault and status != 'goal_reached':
+            issues.append(f'{status}: a nominal trial must reach the goal')
         if (fv.tl_fault_configured or fv.imu_fault_configured) and not fv.valid:
             issues += fv.issues or ['fault never armed']
         dist_m = r.distance_km * 1000
@@ -432,6 +471,14 @@ def reset_vehicle(max_retries=2) -> bool:
             print(f'WARNING: reset timed out (attempt {attempt + 1}/{max_retries})')
         time.sleep(5)
     return False
+
+
+def mrm_flapping(window=HEALTH_WINDOW_S) -> int:
+    """MRM triggers seen while parked for `window` seconds; more than
+    HEALTH_MAX_TRIGGERS means this Autoware launch is in the flapping state."""
+    R.reset_mrm_trigger_count()
+    time.sleep(window)
+    return R.get_mrm_trigger_count()
 
 
 def reset_with_retry():
@@ -520,10 +567,18 @@ def main():
                 print('\nInitial vehicle reset...')
                 reset_with_retry()
                 time.sleep(3)
-                for i, (_, gid, k) in enumerate(items):
+                for i, (_, gid, _) in enumerate(items):
                     # Restrict the injector's zone matching to this trial's goal
                     R.set_fault_injector_goal(gid)
-                    config = TrialConfig(campaign=campaign, goal=goals[gid], trial_num=k, arm=args.arm)
+                    config = TrialConfig(campaign=campaign, goal=goals[gid], trial_num=next_trial_num(cname, gid), arm=args.arm)
+                    n_mrm = mrm_flapping()
+                    if n_mrm > HEALTH_MAX_TRIGGERS:
+                        print('\n' + '!' * 70 + f'\n! {n_mrm} MRM triggers in {HEALTH_WINDOW_S:.0f}s '
+                              f'while parked: this Autoware launch is in the MRM-flapping state.'
+                              f'\n! No trial recorded. Restart Autoware, then re-run the same command.'
+                              + '\n' + '!' * 70)
+                        stopped = True
+                        break
                     t0 = time.time()
                     runner = TrialRunner(config)
                     runner.run()

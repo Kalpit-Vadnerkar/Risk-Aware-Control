@@ -202,6 +202,13 @@ Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-0
   2026-11-21): a trial with no complete bag, a vehicle that never drove,
   or a fault that never armed is moved to `<campaign>/_invalid/` and its
   slot is re-run; a fault trial ending in MRM or stuck is a valid outcome.
+  Since 2026-11-22 also: `engage_failed` is invalid everywhere (it was
+  passing as valid), a nominal trial must reach the goal, the hard cap is
+  `TRIAL_TIMEOUT_S` = 900 s (was 300 s; goal_012/026 take ~310 s nominal),
+  and a 20 s parked MRM watch before each trial stops the run on a
+  flapping Autoware launch (README §5). In the nominal set, 18 trials
+  (goal_011-022 t2, goal_021-026 t3) come from two flapping launches:
+  their driving is normal, but don't use their MRM counts.
   `./collect.sh --status` lists leftover directories without a result
   (crashed mid-trial): delete those by hand.
 - **Every live-session failure across the 2026-10-03/04 TL severity sweep

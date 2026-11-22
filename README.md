@@ -188,6 +188,8 @@ After a stuck trial (vehicle stopped for 200s timeout), the behavior_path_planne
 
 After approximately 18–36 experiments (one or two full campaigns), the behavior_path_planner accumulates internal state that prevents trajectory generation on subsequent route sets. **Restart Autoware between runs**: `collect.sh` stops after `--max-trials` (default 12) and tells you to restart.
 
+Some launches come up with the MRM state flapping (NORMAL → MRM_OPERATING for ~0.1 s every 2–4 s, parked or driving; 2 of 7 nominal launches on 2026-11-22, 33–108 triggers per trial instead of 0–3). Driving is unaffected but every MRM measure is meaningless, so before each trial the runner watches the MRM state for 20 s while parked and stops with "restart Autoware" if it sees more than one trigger. `result.json` also records `pre_drive_mrm_triggers` (engage phase, before any fault can arm; >1 means a flapping launch).
+
 ### 6. Trajectory topic renamed upstream (found 2026-07-21, RTX A6000 machine)
 
 This Autoware Universe checkout no longer publishes the final planned trajectory on
@@ -298,7 +300,10 @@ progress. All runs at the map speed limit (11.11 m/s), Arm A unless stated.
 Trial layout: `experiments/data/<campaign>/<goal>/t<N>_<timestamp>/`
 (`metadata.json` with the full campaign parameters and git commit,
 `result.json`, `metrics.json`, `fault_log.jsonl`, `recorder.log`, `rosbag/`
-in MCAP). Invalid trials are moved to `<campaign>/_invalid/`.
+in MCAP). Invalid trials are moved to `<campaign>/_invalid/`: no bag, the
+vehicle never started the route (`engage_failed`), a nominal trial that did
+not reach the goal, or a fault that never armed. A re-run slot gets the next
+unused `t<N>`.
 
 After each batch (CLAUDE.md, "Before trusting newly-collected data"):
 
