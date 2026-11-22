@@ -5,13 +5,9 @@ Design decisions documented here:
 
 TRAINING DATA
 ─────────────
-  Train  (80%): baseline_all + nom_v11
-  Cal    (20%): held-out split from nom_v11 (single max-velocity operating condition —
-                per-speed calibration dropped 2026-07-21, all experiments run at max
-                velocity now)
-  Test      : obs_recovery, obs_noescape  — NEVER in training.
-                Avoidance maneuvers must produce anomalous residuals;
-                training on them would teach the model that lane changes are nominal.
+  Train / cal: the nominal campaign (experiments/configs/campaigns.yaml),
+                split by whole goal per experiments/configs/goal_split_manifest.json
+                (goal_split.py). Fault campaigns are never trained on.
 
 LOCALIZATION SOURCE
 ───────────────────
@@ -202,6 +198,10 @@ def _campaign_names():
 
 
 NOMINAL_DATASETS, FAULT_DATASETS = _campaign_names()
+
+# The recollection (2026-11-21): extracted caches built from bags before it
+# hash differently and are rejected, never mixed in.
+DATA_GENERATION = '2026-11-21'
 
 # Train/calibration split (per dataset, stratified by goal)
 CAL_FRACTION = 0.20
@@ -461,11 +461,11 @@ def compute_schema_hash() -> str:
         'STRIDE':               STRIDE,
         'OBJECT_FEATURE_DIM':   OBJECT_FEATURE_DIM,
         'MAX_TRACKED_OBJECTS':  MAX_TRACKED_OBJECTS,
+        'GRAPH_FRAME':          GRAPH_FRAME,
+        'GRAPH_NODE_SCALE_M':   GRAPH_NODE_SCALE_M,
+        'ROUTE_SOURCE':         'last_route_msg',   # see extract_route_from_bag
+        'DATA_GENERATION':      DATA_GENERATION,
     }
-    if GRAPH_FRAME != 'bbox_v1':   # only added off-default, so existing bbox_v1 caches keep their hash
-        payload['GRAPH_FRAME'] = GRAPH_FRAME
-        payload['GRAPH_NODE_SCALE_M'] = GRAPH_NODE_SCALE_M
-        payload['ROUTE_SOURCE'] = 'last_route_msg'   # 2026-10-05 stale-first-route fix, see extract_route_from_bag
     if ROUTE_AHEAD:
         payload['ROUTE_AHEAD_POINTS'] = ROUTE_AHEAD_POINTS
         payload['ROUTE_AHEAD_SPACING_M'] = ROUTE_AHEAD_SPACING_M

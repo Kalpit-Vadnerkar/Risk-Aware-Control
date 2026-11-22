@@ -20,12 +20,12 @@ that reason, not [0, 1].
 Produces two figures in --output-dir (default
 experiments/analysis/sprt_signal_behavior/):
 
-1. nominal_floor.png -- every nom_v11 trial's p_fault_motion / p_fault_tl /
+1. nominal_floor.png -- every nominal trial's p_fault_motion / p_fault_tl /
    p_fault_combined trace overlaid against wall-clock time since trial
    start. Answers: does the signal stay near the floor for real nominal
    driving, or does it drift/false-alarm over a long nominal trial?
 2. fault_reaction_grid.png -- one panel per fault campaign (all 8:
-   imu_fault_s1/s3/scale/stuck, tl_fault_s2/s3/s4/ramp), x-axis = seconds
+   every fault campaign in campaigns.yaml), x-axis = seconds
    relative to fault onset (t_rel_fault, so every trial's onset aligns at
    t=0 regardless of when the fault actually armed in that trial) --
    p_fault_motion (blue) and p_fault_tl (orange) plotted per trial, against
@@ -61,6 +61,8 @@ import matplotlib.pyplot as plt
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
+from trials import fault_campaigns  # noqa: E402
 
 
 def mark_event_time(ax, t, color='black', linestyle=':', linewidth=1.5, zorder=1, label=None):
@@ -76,10 +78,7 @@ def mark_event_time(ax, t, color='black', linestyle=':', linewidth=1.5, zorder=1
 DEFAULT_TRACES_DIR = os.path.join(REPO_DIR, 'st_gat', 'results', 'h30_30', 'traces')
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'sprt_signal_behavior')
 
-FAULT_CAMPAIGNS = [
-    'imu_fault_s1', 'imu_fault_s3', 'imu_fault_scale', 'imu_fault_stuck',
-    'tl_fault_s2', 'tl_fault_s3', 'tl_fault_s4', 'tl_fault_ramp',
-]
+FAULT_CAMPAIGNS = fault_campaigns()
 
 _SIGNAL_COLS = ['p_fault_motion', 'p_fault_tl', 'p_fault_combined']
 _YLIM = (0.45, 1.0)
@@ -109,7 +108,7 @@ def plot_nominal_floor(nominal_trials, out_path):
         ax.set_ylabel(title, fontsize=9)
         ax.set_ylim(*_YLIM)
         ax.tick_params(labelsize=8)
-    axes[0].set_title(f'nom_v11: all {len(nominal_trials)} trials overlaid -- what "quiet" looks like', fontsize=11)
+    axes[0].set_title(f'nominal: all {len(nominal_trials)} trials overlaid -- what "quiet" looks like', fontsize=11)
     axes[0].legend(loc='upper right', fontsize=8)
     axes[-1].set_xlabel('seconds since trial start', fontsize=9)
     fig.tight_layout()
@@ -206,9 +205,9 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    nominal_trials = _load_campaign(args.traces_dir, 'nom_v11')
+    nominal_trials = _load_campaign(args.traces_dir, 'nominal')
     if not nominal_trials:
-        print('No nom_v11 traces found -- nothing to plot.', file=sys.stderr)
+        print('No nominal traces found -- nothing to plot.', file=sys.stderr)
         sys.exit(1)
 
     campaigns_data = {c: _load_campaign(args.traces_dir, c) for c in FAULT_CAMPAIGNS}

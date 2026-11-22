@@ -21,7 +21,6 @@ rate error becomes divergence. Raw bag topics only; no model, no Layer 1.
   python3 experiments/scripts/pose_error_derivative_check.py
 """
 import argparse
-import glob
 import json
 import math
 import os
@@ -311,17 +310,17 @@ def plot(trial_dir, out_dir, t, on, dur, delta, truth, rates, terms_y, ol, n0, n
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--campaigns', nargs='*', default=['imu_fault_s1', 'imu_fault_s3', 'imu_fault_scale', 'imu_fault_stuck'])
+    ap.add_argument('--campaigns', nargs='*', default=None, help='default: every IMU campaign')
     ap.add_argument('--horizon', type=float, default=10.0, help='open-loop integration length from onset (s)')
     ap.add_argument('--output-dir', default=os.path.join(ROOT, 'experiments', 'analysis', 'pose_error_derivative'))
     args = ap.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
+    from trials import campaigns, trial_dirs
     out = []
-    for c in args.campaigns:
-        for d in sorted(glob.glob(os.path.join(DATA, c, 'goal_*', 't*'))):
-            if os.path.isdir(os.path.join(d, 'rosbag')):
-                print(d, flush=True)
-                out.append(analyse(d, args.output_dir, args.horizon))
+    for c in args.campaigns or campaigns('imu'):
+        for d in trial_dirs(c):
+            print(d, flush=True)
+            out.append(analyse(d, args.output_dir, args.horizon))
     with open(os.path.join(args.output_dir, 'summary.json'), 'w') as f:
         json.dump(out, f, indent=1)
     fmt = lambda v, s=(np.degrees(1), 1, 1): '/'.join(f'{a * b:.2f}' for a, b in zip(v, s)) if v else '-'

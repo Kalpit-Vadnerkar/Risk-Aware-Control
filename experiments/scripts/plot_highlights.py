@@ -234,7 +234,7 @@ def fig_anomaly_vs_consequence(floor):
 
 
 def fig_p_scale(faults, floor):
-    f = next(x for x in faults if x['trial'].startswith('imu_fault_scale/goal_007'))
+    f = next(x for x in faults if x['trial'].startswith('imu_scale/goal_007'))
     fs = min(w['start'] for w in f['fault_windows'])
     dep = f['departure']
     m = (f['t'] >= fs - 15) & (f['t'] <= dep + 8)

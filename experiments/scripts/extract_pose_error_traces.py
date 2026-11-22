@@ -42,8 +42,8 @@ def main():
     from st_gat.pipeline.sequence_builder import SequenceBuilder
     builder = SequenceBuilder(MapProcessor(cfg.MAP_FILE).map_data, route=[])
     faults = []
-    camps = sorted(c for c in os.listdir(L2.DATA_DIR) if c.startswith('imu'))
-    for run_dir in L2._fault_trials(camps):
+    from trials import campaigns
+    for run_dir in L2._fault_trials(campaigns('imu')):
         print(run_dir, flush=True)
         tr = LE.process_trial(run_dir, model, device, pool, builder, args)
         if tr is None:

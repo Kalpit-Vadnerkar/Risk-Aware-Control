@@ -1,6 +1,5 @@
 {
-  "baseline_all": {},
-  "nom_v11": {
+  "nominal": {
     "goal_001": "train",
     "goal_002": "train",
     "goal_003": "train",

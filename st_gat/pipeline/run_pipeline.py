@@ -1,31 +1,20 @@
 """
 run_pipeline.py — entry point for the ST-GAT data processing pipeline.
 
-What it does:
-  1. Scans all NOMINAL_DATASETS under DATA_ROOT
-  2. For each successful run, reads the rosbag → synchronized frames
-  3. Builds sliding-window sequences (past 30 + future 30 at 10 Hz)
-  4. Saves .pkl files to EXTRACTED_DIR/<dataset>/<run_name>.pkl
-  5. Reconciles TRAIN_DIR/CAL_DIR to exactly match the explicit,
-     git-tracked train/cal split assignment in
-     experiments/configs/goal_split_manifest.json (2026-10-03 — see
-     st_gat/pipeline/goal_split.py's docstring; a goal with no assignment
-     yet fails loudly rather than silently defaulting — run
-     `experiments/scripts/manage_goal_split.py generate --dataset X` first)
+  1. For every valid trial of the nominal dataset(s) (experiments/data/<campaign>/<goal>/t<N>_<ts>/),
+     reads the rosbag → synchronized 10 Hz frames
+  2. Builds sliding-window sequences (past + future)
+  3. Saves EXTRACTED_DIR/<dataset>/t<N>_<ts>.pkl (cached; re-runs skip done trials)
+  4. Makes TRAIN_DIR / CAL_DIR exactly match
+     experiments/configs/goal_split_manifest.json (goal_split.py); a goal with
+     no assignment fails loudly — run
+     `experiments/scripts/manage_goal_split.py generate --dataset nominal` first
 
-Usage (with Autoware workspace sourced):
-  source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
-  python3 -m st_gat.pipeline.run_pipeline [--datasets baseline_all nom_v11] [--verbose]
+Usage (Autoware workspace sourced):
+  python3 -m st_gat.pipeline.run_pipeline [--datasets nominal] [--verbose]
 
-Output pkl format:
-  Each file is a list of sequence dicts:
-    [{'past': [...], 'future': [...], 'graph': G, 'graph_bounds': [...]}, ...]
-
-Notes:
-  - Test datasets (obs_recovery, obs_noescape) are NEVER processed here.
-  - Map loading is cached per Python process (~10s first time).
-  - Each run's rosbag is read once; SequenceBuilder.from_bag() re-loads the map
-    but reuses the same MapProcessor if you call it repeatedly — see below.
+Output pkl: a list of sequence dicts {'past': [...], 'future': [...], 'graph': G, ...}.
+Fault campaigns are never processed here (training is nominal-only).
 """
 
 import argparse
@@ -40,12 +29,6 @@ from . import goal_split as gs
 from .bag_reader import read_bag
 from .sequence_builder import SequenceBuilder
 
-# Re-exported under their old private names (2026-10-03: moved into
-# goal_split.py, shared with experiments/scripts/manage_goal_split.py, to
-# avoid that module and this one importing each other) — every call site
-# below is unchanged.
-_find_run_dirs    = gs.find_run_dirs
-_goal_from_run_dir = gs.goal_from_run_dir
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -81,7 +64,7 @@ def process_dataset(
     out_dir = os.path.join(cfg.EXTRACTED_DIR, dataset)
     os.makedirs(out_dir, exist_ok=True)
 
-    run_dirs = _find_run_dirs(dataset)
+    run_dirs = gs.find_run_dirs(dataset)
     print(f"\n[pipeline] Dataset: {dataset}  ({len(run_dirs)} runs found)")
 
     processed = 0
@@ -97,17 +80,18 @@ def process_dataset(
                 print(f"  [pipeline] skipping (cached): {run_name}")
             continue
 
-        # Only process successful runs
+        # Only valid trials that reached the goal
         result = _load_result(run_dir)
-        if result.get('status') != 'goal_reached':
+        if result.get('status') != 'goal_reached' or not result.get('valid'):
             if verbose:
-                print(f"  [pipeline] skipping (status={result.get('status')}): {run_name}")
+                print(f"  [pipeline] skipping (status={result.get('status')}, "
+                      f"valid={result.get('valid')}): {run_name}")
             continue
 
         print(f"  [pipeline] processing: {run_name}")
 
         try:
-            goal_id = _goal_from_run_dir(run_dir)
+            goal_id = gs.goal_from_run_dir(run_dir)
             frames = read_bag(bag_dir, goal_id=goal_id, verbose=verbose)
             if len(frames) < cfg.INPUT_SEQ_LEN + cfg.OUTPUT_SEQ_LEN:
                 print(f"    WARNING: only {len(frames)} frames, skipping")
@@ -186,36 +170,25 @@ def assemble_splits(datasets: List[str], verbose: bool = False):
         sys.exit(1)
 
     def _src_for(run_name: str):
-        for dataset in cfg.NOMINAL_DATASETS:
+        for dataset in datasets:
             src = os.path.join(cfg.EXTRACTED_DIR, dataset, f"{run_name}.pkl")
             if os.path.exists(src):
                 return src
         return None
 
-    # Every run_name extracted under the datasets THIS call is processing —
-    # scopes stale-symlink removal to those datasets only, so e.g.
-    # `--datasets nom_v11` can't delete baseline_all's legitimate symlinks
-    # just because they're outside nom_v11's expected set.
-    in_scope_names = set()
-    for dataset in datasets:
-        ds_dir = os.path.join(cfg.EXTRACTED_DIR, dataset)
-        if os.path.isdir(ds_dir):
-            in_scope_names.update(os.path.splitext(f)[0] for f in os.listdir(ds_dir) if f.endswith('.pkl'))
-
+    # Exact: anything not in the manifest's split for these datasets (a run
+    # of another dataset, a since-deleted trial) is removed.
     def _reconcile(expected_names, dest_dir: str, tag: str):
         current = gs.current_symlink_targets(dest_dir)
         added = removed = 0
         for run_name in expected_names - current:
-            src = _src_for(run_name)
-            if src is None:
-                continue  # shouldn't happen — expected_split only returns extracted goals
-            os.symlink(src, os.path.join(dest_dir, f"{run_name}.pkl"))
+            os.symlink(_src_for(run_name), os.path.join(dest_dir, f"{run_name}.pkl"))
             added += 1
-        for run_name in (current & in_scope_names) - expected_names:
+        for run_name in current - expected_names:
             os.remove(os.path.join(dest_dir, f"{run_name}.pkl"))
             removed += 1
         print(f"  [pipeline] {tag}: {len(expected_names)} pkl files "
-              f"(+{added} added, -{removed} stale removed)")
+              f"(+{added} added, -{removed} removed)")
 
     _reconcile(expected_train, cfg.TRAIN_DIR, "train set")
     _reconcile(expected_cal,   cfg.CAL_DIR,   "cal set")
@@ -228,11 +201,7 @@ def main():
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
 
-    # Guard against accidentally training on fault-campaign data (nominal-only
-    # training is required — see config.py's docstring / advisor_meeting_jun2026.md
-    # §5). cfg.TEST_DATASETS was replaced by cfg.FAULT_DATASETS 2026-08-01 —
-    # the old obs_recovery/obs_noescape/obs_stuck campaigns it named are
-    # deprioritized and aren't present under experiments/data/ on this machine.
+    # Training is nominal-only
     bad = set(args.datasets) & set(cfg.FAULT_DATASETS)
     if bad:
         print(f"ERROR: fault-campaign datasets cannot be used for training: {bad}")

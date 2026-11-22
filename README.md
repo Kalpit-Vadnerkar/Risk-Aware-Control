@@ -300,14 +300,29 @@ Trial layout: `experiments/data/<campaign>/<goal>/t<N>_<timestamp>/`
 `result.json`, `metrics.json`, `fault_log.jsonl`, `recorder.log`, `rosbag/`
 in MCAP). Invalid trials are moved to `<campaign>/_invalid/`.
 
+After each batch (CLAUDE.md, "Before trusting newly-collected data"):
+
+```bash
+python3 experiments/scripts/analyse_experiments.py --campaign nominal          # JSON only
+python3 experiments/scripts/analyze_mrm_diagnostics.py --batch experiments/data/nominal
+python3 experiments/scripts/plot_routes.py --data-dir experiments/data/nominal # -> experiments/analysis/route_maps/nominal/
+```
+
+Model data (nominal only; ROS + venv sourced, `STGAT_GRAPH_FRAME` set):
+
+```bash
+python3 -m st_gat.pipeline.run_pipeline                 # extract new trials, rebuild train / cal split
+python3 experiments/scripts/manage_goal_split.py verify
+```
+
 ---
 
 ## Recorded Topics
 
 `experiments/lib/config.py` `RECORDING_PROFILES`; reasons per topic in
-`docs/data_inventory.md`. `base` (~1.5 GB per trial, mostly the merged LiDAR
+`docs/data_inventory.md`. `base` (~1.7 GB per trial, mostly the merged LiDAR
 cloud) on every campaign; `lidar_raw` adds the three per-sensor raw clouds
-for LiDAR-fault campaigns.
+(~4.5 GB more) on `nominal` and future LiDAR-fault campaigns.
 
 ---
 

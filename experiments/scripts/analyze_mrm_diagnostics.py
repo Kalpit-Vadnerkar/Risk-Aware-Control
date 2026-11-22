@@ -13,7 +13,7 @@ Usage:
   # Whole-campaign scan: catches trials with bad diagnostics/zero movement even
   # when MRM never fired (the MRM-window analysis above finds nothing in that case
   # since it only looks at diagnostics near MRM triggers).
-  python3 analyze_mrm_diagnostics.py --batch ../data/nom_v11
+  python3 analyze_mrm_diagnostics.py --batch ../data/nominal
 
 Example:
   python3 analyze_mrm_diagnostics.py ../data/goal_001/rosbag/
@@ -31,7 +31,7 @@ from datetime import datetime
 # ROS2 imports
 import rclpy
 from rclpy.serialization import deserialize_message
-from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
+from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions, StorageFilter
 
 # Message types (requires sourcing Autoware)
 from autoware_adapi_v1_msgs.msg import MrmState
@@ -39,7 +39,6 @@ from diagnostic_msgs.msg import DiagnosticArray
 from nav_msgs.msg import Odometry
 
 GT_TOPIC = '/awsim/ground_truth/localization/kinematic_state'
-FALLBACK_TOPIC = '/localization/kinematic_state'
 
 
 def _diag_level(level) -> int:
@@ -62,8 +61,8 @@ def whole_trial_summary(bag_path: str, top_n: int = 5) -> dict:
     )
     reader = SequentialReader()
     reader.open(storage_options, converter_options)
-    topics = {info.name: info.type for info in reader.get_all_topics_and_types()}
-    gt_topic = GT_TOPIC if GT_TOPIC in topics else FALLBACK_TOPIC
+    reader.set_filter(StorageFilter(topics=['/diagnostics', GT_TOPIC]))
+    gt_topic = GT_TOPIC
 
     diag_counts = defaultdict(int)
     diag_level = {}
@@ -136,7 +135,8 @@ def run_batch(data_dir: str):
         top1 = s['top_diagnostics'][0] if s['top_diagnostics'] else None
         top1_str = f"{top1['name']} x{top1['count']}" if top1 else '(none)'
         flag_str = f"  <== {','.join(flags)}" if flags else ''
-        print(f"  {os.path.basename(exp_dir):45s} status={status:15s} "
+        name = os.path.relpath(exp_dir, data_dir)
+        print(f"  {name:32s} status={status:15s} "
               f"dist={s['total_distance_m']:7.1f}m  top_diag={top1_str}{flag_str}")
 
 
@@ -187,7 +187,7 @@ def analyze_rosbag(bag_path):
 
     # Get topic info
     topic_types = {info.name: info.type for info in reader.get_all_topics_and_types()}
-    print(f"Topics in bag: {list(topic_types.keys())}")
+    reader.set_filter(StorageFilter(topics=[t for t in topic_types if not t.startswith('/sensing/')]))
 
     # Read messages
     msg_count = 0
@@ -424,7 +424,7 @@ def main():
         data_dir = os.path.join(script_dir, '..', 'data')
         candidates = sorted(glob.glob(os.path.join(data_dir, '*', 'goal_*', 't*', 'rosbag')))
         if candidates:
-            bag_path = candidates[-1]
+            bag_path = max(candidates, key=os.path.getmtime)
         else:
             print("ERROR: No rosbag found in data directory")
             print("Usage: python3 analyze_mrm_diagnostics.py <rosbag_path>")

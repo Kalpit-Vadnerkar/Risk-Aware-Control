@@ -118,15 +118,13 @@ sys.path.insert(0, SCRIPT_DIR)
 sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
 
 from metrics import MetricsCollector  # noqa: E402
+from trials import fault_campaigns  # noqa: E402
 from compare_fault_vs_nominal import read_gt_and_tl, ekf_gt_divergence, load_fault_log  # noqa: E402
 
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 DEFAULT_OUTPUT = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fatal_moments', 'candidates.csv')
 
-FAULT_DATASETS = [
-    'imu_fault_s1', 'imu_fault_s3', 'imu_fault_scale', 'imu_fault_stuck',
-    'tl_fault_s2', 'tl_fault_s3', 'tl_fault_s4', 'tl_fault_ramp',
-]
+FAULT_DATASETS = fault_campaigns()
 
 _FAULT_ONSET_EVENTS = {'tl_fault_start', 'imu_fault_activated'}
 _ONSET_PAD_S = 2.0  # small slack for clock/event-ordering jitter around t=0

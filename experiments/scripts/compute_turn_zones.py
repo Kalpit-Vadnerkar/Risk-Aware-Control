@@ -109,7 +109,7 @@ from fault_injector import (  # noqa: E402
 
 DEFAULT_MAP_FILE = os.path.join(WORKSPACE_DIR, 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm')
 DEFAULT_GOALS_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'captured_goals.json')
-DEFAULT_NOMINAL_CAMPAIGN = 'nom_v11'
+DEFAULT_NOMINAL_CAMPAIGN = 'nominal'
 DEFAULT_GOALS = ['goal_007', 'goal_012', 'goal_026']
 DEFAULT_OUTPUT = os.path.join(REPO_DIR, 'experiments', 'configs', 'turn_zones.json')
 

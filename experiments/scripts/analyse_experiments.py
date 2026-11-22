@@ -12,14 +12,13 @@ one or more campaign directories and produces:
 
 Usage:
   # Analyse a single campaign
-  python3 analyse_experiments.py --campaign baseline_all
-  python3 analyse_experiments.py --campaign static_obstacle
+  python3 analyse_experiments.py --campaign nominal
 
   # Analyse and compare baseline vs scenario
-  python3 analyse_experiments.py --campaign baseline_all --campaign static_obstacle
+  python3 analyse_experiments.py --campaign nominal --campaign imu_scale
 
   # Save output to a file
-  python3 analyse_experiments.py --campaign static_obstacle --out report.txt
+  python3 analyse_experiments.py --campaign imu_scale --out report.txt
 
   # Full auto: analyse all campaigns in the data directory
   python3 analyse_experiments.py --all

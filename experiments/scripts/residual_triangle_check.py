@@ -61,9 +61,9 @@ T_OUT = cfg.OUTPUT_SEQ_LEN
 HEAD_LAG = 4          # heading residual over 0.4s
 NOMINAL_Q = 0.90
 DEFAULT_TRIALS = [
-    'imu_fault_s3/goal_007', 'imu_fault_scale/goal_007', 'imu_fault_stuck/goal_007', 'imu_fault_stuck/goal_012',
-    'imu_fault_s1/goal_007', 'imu_fault_s3/goal_012', 'imu_fault_scale/goal_012', 'imu_fault_s1/goal_012',
-    'tl_fault_fixed_070/goal_007/t1', 'tl_fault_s4/goal_012', 'tl_fault_s2/goal_026',
+    'imu_bias_008/goal_007', 'imu_scale/goal_007', 'imu_stuck/goal_007', 'imu_stuck/goal_012',
+    'imu_bias_003/goal_007', 'imu_bias_008/goal_012', 'imu_scale/goal_012', 'imu_bias_003/goal_012',
+    'tl_conf_070/goal_007/t1', 'tl_blackout/goal_012', 'tl_oscillate/goal_026',
 ]
 wrap = lambda a: (a + np.pi) % (2 * np.pi) - np.pi  # noqa: E731
 
@@ -190,18 +190,18 @@ def main():
 
     # ── fault trials ──
     from inspect_fault_predictions import process_trial
-    from fault_log import campaign_fault_kind
+    from trials import campaign_kind, fault_campaigns
     from st_gat.pipeline.State_Estimator.MapProcessor import MapProcessor
     from st_gat.pipeline.sequence_builder import SequenceBuilder
     builder = SequenceBuilder(MapProcessor(cfg.MAP_FILE).map_data, route=[])
     drivable = L2.margin_lib.DrivableArea(L2.margin_lib.load_map(cfg.MAP_FILE))
     results = []
-    for run_dir in L2._fault_trials(sorted(os.listdir(L2.DATA_DIR))):
+    for run_dir in L2._fault_trials(fault_campaigns()):
         rel = os.path.relpath(run_dir, L2.DATA_DIR)
         if not any(rel.startswith(x) for x in args.trials):
             continue
         camp = rel.split('/')[0]
-        tr = process_trial(run_dir, camp, builder, campaign_fault_kind(os.path.join(L2.DATA_DIR, camp)))
+        tr = process_trial(run_dir, camp, builder, campaign_kind(camp))
         if tr is None:
             continue
         seqs, t = tr['sequences'], tr['t_rel']

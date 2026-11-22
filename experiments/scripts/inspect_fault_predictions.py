@@ -58,7 +58,7 @@ from st_gat.pipeline.State_Estimator.MapProcessor import MapProcessor  # noqa: E
 from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from compare_fault_vs_nominal import load_fault_log, extract_fault_windows, in_any_window  # noqa: E402
-from fault_log import campaign_fault_kind  # noqa: E402
+from trials import campaign_kind, fault_campaigns  # noqa: E402
 import scenario_zones  # noqa: E402
 from conformal_mondrian_calibration import assign_groups  # noqa: E402
 from conformal_horizon_calibration import _SERIES, _extract_series, conformal_quantile  # noqa: E402
@@ -75,8 +75,6 @@ VANILLA_REPORT = os.path.join(cfg.ANALYSIS_ROOT,
 MONDRIAN_REPORT = os.path.join(cfg.ANALYSIS_ROOT,
                                 'conformal_mondrian_calibration', 'conformal_mondrian_report.json')
 
-IMU_CAMPAIGNS = ['imu_fault_s1', 'imu_fault_s3', 'imu_fault_scale', 'imu_fault_stuck']
-TL_CAMPAIGNS  = ['tl_fault_s2', 'tl_fault_s3', 'tl_fault_s4', 'tl_fault_ramp']
 
 
 def compute_window_times(frames, max_frame_gap_sec):
@@ -167,7 +165,7 @@ def process_trial(run_dir, campaign, shared_builder, kind):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--model', default=cfg.MODEL_CONFIG['model_path'])
-    ap.add_argument('--campaigns', nargs='+', default=IMU_CAMPAIGNS + TL_CAMPAIGNS)
+    ap.add_argument('--campaigns', nargs='+', default=fault_campaigns())
     ap.add_argument('--output-dir', default=OUTPUT_DIR)
     ap.add_argument('--max-trace-plots', type=int, default=6,
                      help='save a per-trial residual-vs-time trace plot for at most this many trials')
@@ -205,7 +203,7 @@ def main():
         if not os.path.isdir(campaign_dir):
             print(f"[skip] {campaign}: not found on disk")
             continue
-        kind = campaign_fault_kind(campaign_dir)
+        kind = campaign_kind(campaign)
         goal_dirs = sorted(d for d in glob.glob(os.path.join(campaign_dir, 'goal_*')) if os.path.isdir(d))
         for goal_dir in goal_dirs:
             run_dirs = sorted(d for d in glob.glob(os.path.join(goal_dir, 't*')) if os.path.isdir(d))

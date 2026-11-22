@@ -63,45 +63,26 @@ def _load_map_processor():
 
 def extract_route_from_bag(bag_dir: str) -> List[int]:
     """
-    Read the bag's LaneletRoute and return its lanelet IDs.
-    Falls back to [] if the topic is absent (graph nodes will have path_node=0).
+    The bag's planned route as lanelet IDs ([] if never published; graph
+    nodes then have path_node=0).
 
-    WHICH message (fixed 2026-10-05 for the ego schemas): in 38/45 nominal
-    bags and ~half the fault bags the FIRST route message (t~0s) is a stale
-    route left over from the PREVIOUS goal; the real route arrives ~1.2s
-    later, and every later message carries the identical lanelet sequence
-    (goal-arrival re-sends). The first-message rule therefore put the ego
-    200-400m from "its route" for whole trials -- corrupting path_node flags
-    and the TrafficLightExpectationChecker (traffic_light_discrepancy).
-    Ego schemas use the LAST message. bbox_v1 keeps the first-message rule
-    on purpose, frozen so the canonical bbox_v1 model's training data and
-    inference stay consistent with each other.
+    The LAST route message: the first one can be a stale route left over
+    from the previous goal (the real route arrives ~1.2 s later, and later
+    messages repeat it), which put the ego 200-400 m from "its route" for
+    whole trials (found 2026-10-05).
     """
-    from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
+    from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions, StorageFilter
     from rclpy.serialization import deserialize_message
+    from autoware_planning_msgs.msg import LaneletRoute
 
-    try:
-        from autoware_planning_msgs.msg import LaneletRoute
-    except ImportError:
-        return []
-
-    storage_options   = StorageOptions(uri=bag_dir, storage_id='')
-    converter_options = ConverterOptions(
-        input_serialization_format='cdr',
-        output_serialization_format='cdr',
-    )
+    topic = '/planning/mission_planning/route'
     reader = SequentialReader()
-    reader.open(storage_options, converter_options)
-
+    reader.open(StorageOptions(uri=bag_dir, storage_id=''), ConverterOptions('cdr', 'cdr'))
+    reader.set_filter(StorageFilter(topics=[topic]))
     last = []
     while reader.has_next():
-        topic, data, _ = reader.read_next()
-        if topic == '/planning/mission_planning/route':
-            msg = deserialize_message(data, LaneletRoute)
-            ids = [seg.preferred_primitive.id for seg in msg.segments]
-            if not cfg.EGO_FRAME:
-                return ids
-            last = ids
+        _, data, _ = reader.read_next()
+        last = [seg.preferred_primitive.id for seg in deserialize_message(data, LaneletRoute).segments]
     return last
 
 

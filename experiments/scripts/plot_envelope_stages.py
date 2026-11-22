@@ -11,7 +11,7 @@
       the distribution they represent (density, 50/90% contours)
 
   STGAT_GRAPH_FRAME=ego_v6 python3 experiments/scripts/plot_envelope_stages.py \
-      --trial imu_fault_scale/goal_007
+      --trial imu_scale/goal_007
 """
 import argparse
 import os
@@ -196,7 +196,7 @@ def explainer(tr, g, pool, drivable, map_data, args, out_dir, at):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--trial', default='imu_fault_scale/goal_007')
+    ap.add_argument('--trial', default='imu_scale/goal_007')
     ap.add_argument('--explain-at', type=float, default=-2.0, help='seconds relative to departure (or fault onset)')
     a = ap.parse_args()
     out_dir = os.path.join(cfg.ANALYSIS_ROOT, 'highlights')

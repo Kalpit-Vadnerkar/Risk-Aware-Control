@@ -21,7 +21,6 @@ Scores (truth = estimate - AWSIM truth in the estimate's heading frame):
 Needs pose_traces.pkl (extract_pose_error_traces.py).
   STGAT_GRAPH_FRAME=ego_v6 python3 experiments/scripts/step_gap_filter_check.py
 """
-import glob
 import json
 import os
 import pickle
@@ -66,8 +65,8 @@ def run_filter(t, g, v, w, cal, bands, rh=None):
 
 
 def find_run(name):
-    m = glob.glob(os.path.join(LE.L2.DATA_DIR, 'nom*', 'goal_*', name))
-    return m[0] if m else None
+    from trials import find_nominal_run
+    return find_nominal_run(name)
 
 
 def main():
@@ -207,7 +206,7 @@ def plot(faults, out_dir):
                 a.axvline(f['departure'], color='#d62728', ls='--', lw=1)
             a.grid(alpha=0.3)
             a.legend(fontsize=6.5, loc='upper left', title=f'RMS in fault ({u})', title_fontsize=6.5)
-        name = f['trial'].split('/t1')[0].replace('imu_fault_', '')
+        name = f['trial'].split('/t1')[0]
         ax[0, c].set_title(name + (' (departs)' if f['departure'] else ' (harmless)'), fontsize=9)
         ax[1, c].set_xlabel('s since trial start')
     ax[0, 0].set_ylabel('|heading error left| deg'); ax[1, 0].set_ylabel('|lateral error left| m')

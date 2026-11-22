@@ -26,9 +26,9 @@ Usage (must source ROS/Autoware, then the repo venv):
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
   source .venv/bin/activate
-  python3 experiments/scripts/compute_lead_time.py --campaign imu_fault_ramp_armB
-  python3 experiments/scripts/compute_lead_time.py --campaign imu_fault_ramp_armB \
-      --campaign imu_fault_scale_armB --campaign imu_fault_stuck_armB
+  python3 experiments/scripts/compute_lead_time.py --campaign imu_scale_armB
+  python3 experiments/scripts/compute_lead_time.py --campaign imu_scale_armB \
+      --campaign imu_stuck_armB --campaign imu_bias_008_armB
 """
 
 import argparse

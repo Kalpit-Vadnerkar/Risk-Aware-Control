@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 
 # Requires Autoware workspace sourced
 from rclpy.serialization import deserialize_message
-from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
+from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions, StorageFilter
 
 from autoware_control_msgs.msg import Control
 from autoware_perception_msgs.msg import TrackedObjects, TrafficLightGroupArray
@@ -264,26 +264,15 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
 
     reader = SequentialReader()
     reader.open(storage_options, converter_options)
-
-    topic_type_map = {info.name: info.type for info in reader.get_all_topics_and_types()}
-
-    # Bags collected before the fault_injector topic-wiring fix (2026-07-22,
-    # see README.md item 8) never recorded traffic_signals_faulted at all —
-    # without this fallback, 'traffic_lights' would never appear in `cache`,
-    # `missing` below would never clear, and EVERY frame in those bags (i.e.
-    # all of nom_v11, the actual training set) would be silently dropped.
-    _tl_topic_unfaulted = '/perception/traffic_light_recognition/traffic_signals'
-    _tl_topic = (cfg.TOPICS['traffic_lights']
-                 if cfg.TOPICS['traffic_lights'] in topic_type_map
-                 else _tl_topic_unfaulted)
-    msg_types = dict(_MSG_TYPES)
-    topic_key = dict(_TOPIC_KEY)
-    if _tl_topic != cfg.TOPICS['traffic_lights']:
-        msg_types[_tl_topic] = TrafficLightGroupArray
-        topic_key[_tl_topic] = 'traffic_lights'
-        if verbose:
-            print(f"  [bag_reader] {cfg.TOPICS['traffic_lights']} not in this bag — "
-                  f"falling back to {_tl_topic} (pre-fix bag; never actually faulted)")
+    # Only the topics read below: nominal bags also carry ~4 GB of raw LiDAR
+    present = {info.name for info in reader.get_all_topics_and_types()}
+    wanted = list(_MSG_TYPES) + [_MRM_TOPIC] + ([_DIAG_TOPIC] if cfg.MULTI_SOURCE else [])
+    absent = [t for t in _MSG_TYPES if t not in present]
+    if absent:
+        raise ValueError(f'{bag_dir}: required topics not recorded: {absent}')
+    reader.set_filter(StorageFilter(topics=[t for t in wanted if t in present]))
+    msg_types = _MSG_TYPES
+    topic_key = _TOPIC_KEY
 
     # Latest extracted payload per topic key
     cache: Dict[str, object]  = {}
@@ -348,7 +337,7 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
             cache[key]    = _extract_control(msg)
         elif topic == cfg.TOPICS['objects']:
             cache[key]    = _extract_objects(msg)
-        elif topic == _tl_topic:
+        elif topic == cfg.TOPICS['traffic_lights']:
             current_gid = None
             if group_zones and last_ego_xy is not None:
                 current_gid = _nearest_group_id(

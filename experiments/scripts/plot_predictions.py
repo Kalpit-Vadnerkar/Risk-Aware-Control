@@ -26,8 +26,8 @@ Usage (must source ROS/Autoware, then the repo venv):
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
   source .venv/bin/activate
-  python3 experiments/scripts/plot_predictions.py --dataset nom_v11 --goal goal_012 --trial 1
-  python3 experiments/scripts/plot_predictions.py --dataset imu_fault_stuck --goal goal_007 --trial 1 --n-examples 6
+  python3 experiments/scripts/plot_predictions.py --dataset nominal --goal goal_012 --trial 1
+  python3 experiments/scripts/plot_predictions.py --dataset imu_stuck --goal goal_007 --trial 1 --n-examples 6
 """
 
 import argparse
@@ -217,7 +217,7 @@ def plot_example(model, device, map_data, seq: dict, goal_xy, out_path: str, mar
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--dataset', default='nom_v11')
+    ap.add_argument('--dataset', default='nominal')
     ap.add_argument('--goal', required=True, help='e.g. goal_012')
     ap.add_argument('--trial', type=int, default=1)
     ap.add_argument('--n-examples', type=int, default=4, help='windows to plot, spread evenly across the trial')

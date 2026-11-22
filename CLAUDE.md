@@ -131,8 +131,7 @@ Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-0
   actually changed the targeted signal, ranks which ST-GAT features respond
   most) and the matching `verify_imu_zone_arming.py`/`verify_tl_zone_arming.py`
   (independently re-checks zone-arming/group-id targeting from
-  `fault_log.jsonl` alone, no ROS needed; both skip pre-zone-based-arming
-  data automatically). A trial with `mrm_trigger_count: 0` is not
+  `fault_log.jsonl` alone, no ROS needed). A trial with `mrm_trigger_count: 0` is not
   automatically clean — that only reflects Autoware's own MRM state
   machine, not whether the vehicle actually moved.
 - **A units/scaling bug class has bitten this project more than once** —
@@ -240,7 +239,10 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
   panels — shared by the plot_*.py scripts, reuse it rather than
   copy-pasting a helper), `margin.py` (Layer-2 safety-margin primitives,
   currently the paused static-lane-margin design), `scenario_zones.py`
-  (zone-based sample weighting for training).
+  (zone-based sample weighting for training), `trials.py` (finding trials
+  and campaign kinds for analysis: `trial_dirs`, `fault_campaigns`,
+  `campaign_kind`, `zone_kind`, `find_nominal_run` — use it instead of
+  globbing `experiments/data/` or parsing campaign names).
 - `experiments/analysis/` — output artifacts from analysis scripts. Not raw
   experiment data.
 - `experiments/data/<campaign>/<goal_id>/t<N>_<timestamp>/` — one dir per
@@ -263,12 +265,16 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
   replaces a recomputed-every-run shuffle that had no record of a goal's
   prior assignment and could silently drift — see
   `st_gat/pipeline/goal_split.py`'s docstring). Never edit this file by
-  hand — use `experiments/scripts/manage_goal_split.py` (`seed` /
-  `generate --dataset X` / `set --dataset X --goal Y --split {train,cal}` /
+  hand — use `experiments/scripts/manage_goal_split.py` (`generate
+  --dataset X` / `set --dataset X --goal Y --split {train,cal}` /
   `verify`). `run_pipeline.py`'s `assemble_splits()` reads this and
   reconciles `TRAIN_DIR`/`CAL_DIR` to match it exactly (adds missing
   symlinks, removes stale ones) — it now fails loudly instead of silently
-  defaulting if an extracted goal has no manifest entry yet.
+  defaulting if an extracted goal has no manifest entry yet. The `nominal`
+  split keeps the fault-campaign goals (007, 012, 026) in calibration, so
+  the model never trains on the routes it is tested on. Extracted caches
+  (`st_gat/data/`) carry `DATA_GENERATION` in their schema hash; the ones
+  built from the pre-2026-11-21 data are in `../OLD_DATA/_derived/`.
 - `st_gat/` — the model. `st_gat/pipeline/` (extraction: `bag_reader.py`,
   `sequence_builder.py`, `run_pipeline.py`), `st_gat/model/` (architecture,
   loss, trainer), `st_gat/train.py` (`--warmup-only` = the plain point

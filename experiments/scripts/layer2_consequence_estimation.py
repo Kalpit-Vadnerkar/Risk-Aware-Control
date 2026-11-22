@@ -74,7 +74,6 @@ Usage (ROS + repo venv sourced -- needs lanelet2 and rosbag2_py):
 """
 
 import argparse
-import glob
 import json
 import math
 import os
@@ -747,19 +746,15 @@ def read_bag_xy(bag_dir, topic):
 
 
 def _fault_trials(campaigns):
-    out = []
-    for c in campaigns:
-        for run_dir in sorted(glob.glob(os.path.join(DATA_DIR, c, 'goal_*', 't*'))):
-            if os.path.isdir(os.path.join(run_dir, 'rosbag')):
-                out.append(run_dir)
-    return out
+    from trials import trial_dirs
+    return [d for c in campaigns for d in trial_dirs(c)]
 
 
 def process_fault_trial(run_dir, model, device, pool, map_data, drivable, shared_builder, args):
     from inspect_fault_predictions import process_trial
-    from fault_log import campaign_fault_kind
+    from trials import campaign_kind
     campaign = run_dir.split(os.sep)[-3]
-    kind = campaign_fault_kind(os.path.join(DATA_DIR, campaign))
+    kind = campaign_kind(campaign)
     tr = process_trial(run_dir, campaign, shared_builder, kind)
     if tr is None:
         return None
@@ -1063,7 +1058,7 @@ def main():
                     help='compute P(violation) over the kinematically feasible subset only (old default)')
     ap.add_argument('--alarm-gap-s', type=float, default=1.0,
                     help='alarm runs separated by <= this merge into one episode (lead-time persistence rule)')
-    ap.add_argument('--campaigns', nargs='+', default=None, help='default: every fault campaign on disk')
+    ap.add_argument('--campaigns', nargs='+', default=None, help='default: every fault campaign in campaigns.yaml')
     ap.add_argument('--trials', nargs='*', default=None, help='restrict to trials whose campaign/goal/run starts with these')
     ap.add_argument('--featured', nargs='*', default=[], help='also plot these trials even without a GT departure')
     ap.add_argument('--no-cache', action='store_true')
@@ -1072,8 +1067,8 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
     if args.campaigns is None:
-        args.campaigns = sorted(c for c in os.listdir(DATA_DIR)
-                                if os.path.isdir(os.path.join(DATA_DIR, c)) and not c.startswith('nom'))
+        from trials import fault_campaigns
+        args.campaigns = fault_campaigns()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = _load_model(args.model, device)

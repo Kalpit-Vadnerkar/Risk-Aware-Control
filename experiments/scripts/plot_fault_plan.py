@@ -8,13 +8,10 @@ collected trial; this shows the plan those trials are checked against.
 
 One campaign runs one fault type (collect.sh), so the plan plot for a
 campaign only draws the zone kind that fault actually gates on:
-  - tl_fault_s2/s3/s4/ramp   -> TL zone points (r=_DEFAULT_TL_ZONE_RADIUS_M)
-  - imu_fault_scale/stuck    -> IMU turn zones (r=_DEFAULT_IMU_TURN_ZONE_RADIUS_M)
-  - imu_fault_s1/s3          -> IMU bias lead-in zones (r=_DEFAULT_IMU_LEADIN_ZONE_RADIUS_M)
-  - imu_fault_ramp           -> no zone gating (imu_bias_ramp accumulates
-    continuously from runway-clear regardless of geometry) — the route from
-    the runway-clear point onward is highlighted to show it explicitly
-    includes straight segments, not just turns.
+  - tl_*                     -> TL zone points (r=_DEFAULT_TL_ZONE_RADIUS_M)
+  - imu_scale / imu_stuck    -> IMU turn zones (r=_DEFAULT_IMU_TURN_ZONE_RADIUS_M)
+  - imu_bias_*               -> IMU bias lead-in zones (r=_DEFAULT_IMU_LEADIN_ZONE_RADIUS_M)
+(campaign_plan, from campaigns.yaml).
 
 Every plot also marks the RUNWAY-CLEAR point: the earliest position ANY
 fault (TL or IMU) is allowed to arm at all, computed the same way
@@ -26,20 +23,17 @@ through it, which is worth being able to see, not just assume away.
 Fault END (de-injection) markers added 2026-07-28, alongside the existing
 start/injection markers — see docs/archive/fault_scenario_table.md's "fault start" /
 "fault end" columns for the underlying design this mirrors:
-  - `imu_fault_scale`/`imu_fault_stuck` (zone_kind='turn') end on turn-zone
+  - `imu_scale`/`imu_stuck` (zone_kind='turn') end on turn-zone
     EXIT (`fault_injector.py`'s `_wait_for_zone_transit_end`) — a real route
     position, computed here the same way as the entry marker: the first
     point walking forward, after having entered, where the route leaves the
     zone radius again. Drawn as a distinct marker so a plan plot alone shows
     both ends of the on-window.
-  - All fixed-timer fault types (`tl_fault_*`, `imu_fault_s1`/`s3`) end after
+  - All fixed-timer fault types (`tl_*`, `imu_bias_*`) end after
     a real elapsed-time cap, not a route position — where that lands on the
     route depends on the trial's actual driven speed, which this
     geometry-only plan plot does not have. Rather than draw a marker at a
-    guessed position, these get a text note instead (see CAMPAIGN_FAULT_END).
-  - `imu_fault_ramp` has no discrete "end" at all (continuous one-shot ramp,
-    see docs/archive/fault_scenario_table.md's "Not currently in scope") — no end
-    marker or note drawn for it.
+    guessed position, these get a text note instead.
 
 Background is the planned ROUTE's own lanelet geometry (same source
 compute_turn_zones.py computes zones from), not a driven GT trajectory —
@@ -60,8 +54,8 @@ Usage (must source ROS/Autoware, then the repo venv):
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
   source .venv/bin/activate
-  python3 experiments/scripts/plot_fault_plan.py --campaign tl_fault_s2
-  python3 experiments/scripts/plot_fault_plan.py --campaign imu_fault_scale --goals goal_012
+  python3 experiments/scripts/plot_fault_plan.py --campaign tl_oscillate
+  python3 experiments/scripts/plot_fault_plan.py --campaign imu_scale --goals goal_012
 """
 
 import argparse
@@ -89,6 +83,8 @@ from compute_turn_zones import (  # noqa: E402
     find_first_bag, read_route_ids, build_route_polyline, resample_by_arc_length,
     first_entry_point_on_route, RESAMPLE_STEP_M, DEFAULT_GOALS_FILE,
 )
+from config import load_campaigns  # noqa: E402
+from trials import fault_campaigns  # noqa: E402
 from fault_injector import (  # noqa: E402
     _load_tl_group_zones, _DEFAULT_ZONE_GOALS, _DEFAULT_TL_ZONE_RADIUS_M,
     _DEFAULT_IMU_TURN_ZONE_RADIUS_M, _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M,
@@ -98,7 +94,7 @@ DEFAULT_MAP_FILE = os.path.join(os.path.dirname(REPO_DIR), 'Map',
                                  'nishishinjuku_autoware_map', 'lanelet2_map.osm')
 DEFAULT_TURN_ZONES_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'turn_zones.json')
 DEFAULT_TL_ZONES_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'tl_zones.json')
-DEFAULT_NOMINAL_CAMPAIGN = 'nom_v11'
+DEFAULT_NOMINAL_CAMPAIGN = 'nominal'
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_plan')
 FLAT_RUNWAY_FALLBACK_M = 150.0    # matches fault_injector.py's --fault-min-runway-m default
 
@@ -108,34 +104,25 @@ FLAT_RUNWAY_FALLBACK_M = 150.0    # matches fault_injector.py's --fault-min-runw
 # only place that defined them; plot_fault_impact.py used to import them
 # from here transitively rather than from a real shared module.
 
-# campaign name -> (zone kind, fault mechanism blurb for the title)
-CAMPAIGN_ZONE_KIND = {
-    'tl_fault_s2':     ('tl', 'tl_oscillate'),
-    'tl_fault_s3':     ('tl', 'tl_unknown'),
-    'tl_fault_s4':     ('tl', 'tl_blackout'),
-    'tl_fault_ramp':   ('tl', 'tl_confidence_ramp'),
-    'imu_fault_scale': ('turn', 'imu_scale_factor'),
-    'imu_fault_stuck':  ('turn', 'imu_stuck_at'),
-    'imu_fault_s1':    ('leadin', 'imu_bias (0.03 rad/s)'),
-    'imu_fault_s3':    ('leadin', 'imu_bias (0.08 rad/s)'),
-    'imu_fault_ramp':  ('none', 'imu_bias_ramp'),
-}
-
-# campaign name -> ('zone_exit', None) | ('fixed_timer', seconds) | ('continuous', None)
-# Matches docs/archive/fault_scenario_table.md's "Fault end" column exactly — the
-# on_seconds/fault-duration values here are collect.sh's actual --imu-params/
-# --tl-params/--fault-duration values, not independently guessed.
-CAMPAIGN_FAULT_END = {
-    'tl_fault_s2':     ('fixed_timer', 15),
-    'tl_fault_s3':     ('fixed_timer', 15),
-    'tl_fault_s4':     ('fixed_timer', 15),
-    'tl_fault_ramp':   ('fixed_timer', 15),
-    'imu_fault_scale': ('zone_exit', None),
-    'imu_fault_stuck': ('zone_exit', None),
-    'imu_fault_s1':    ('fixed_timer', 20),
-    'imu_fault_s3':    ('fixed_timer', 15),
-    'imu_fault_ramp':  ('continuous', None),
-}
+def campaign_plan(name):
+    """(zone kind 'tl' | 'turn' | 'leadin', title label, fault end) from
+    campaigns.yaml. Fault end: ('zone_exit', None) for scale / stuck (off at
+    turn-zone exit), ('fixed_timer', s) otherwise (TL: the per-zone duration
+    cap; bias: on_seconds)."""
+    from trials import zone_kind
+    fault = load_campaigns()[name].fault
+    kind = {'tl': 'tl', 'imu_turn': 'turn', 'imu_leadin': 'leadin'}[zone_kind(name)]
+    mode = fault.get('tl_fault') or fault.get('imu_fault')
+    params = fault.get('tl_params') or fault.get('imu_params') or {}
+    shown = {k: v for k, v in params.items() if k not in ('on_seconds', 'off_seconds', 'accel_bias_ms2')}
+    label = mode + (' (' + ', '.join(f'{k}={v}' for k, v in shown.items()) + ')' if shown else '')
+    if kind == 'turn':
+        end = ('zone_exit', None)
+    elif kind == 'leadin':
+        end = ('fixed_timer', params['on_seconds'])
+    else:
+        end = ('fixed_timer', fault['duration_s'])
+    return kind, label, end
 
 
 def min_dist_to_points(x, y, points):
@@ -343,8 +330,8 @@ def plot_goal(map_data, campaign, zone_kind, fault_label, fault_end, goal, goal_
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--campaign', required=True, choices=sorted(CAMPAIGN_ZONE_KIND))
-    ap.add_argument('--goals', default=None, help='comma-separated; default = turn_zones.json goals')
+    ap.add_argument('--campaign', required=True, choices=fault_campaigns())
+    ap.add_argument('--goals', default=None, help="comma-separated; default = the campaign's goals")
     ap.add_argument('--turn-zones-file', default=DEFAULT_TURN_ZONES_FILE)
     ap.add_argument('--tl-zones-file', default=DEFAULT_TL_ZONES_FILE)
     ap.add_argument('--goals-file', default=DEFAULT_GOALS_FILE)
@@ -354,12 +341,11 @@ def main():
     ap.add_argument('--margin', type=float, default=40.0)
     args = ap.parse_args()
 
-    zone_kind, fault_label = CAMPAIGN_ZONE_KIND[args.campaign]
-    fault_end = CAMPAIGN_FAULT_END[args.campaign]
+    zone_kind, fault_label, fault_end = campaign_plan(args.campaign)
 
     zones_data = json.load(open(args.turn_zones_file))
     tl_zones_data = json.load(open(args.tl_zones_file))
-    goals = args.goals.split(',') if args.goals else list(zones_data['goals'].keys())
+    goals = args.goals.split(',') if args.goals else load_campaigns()[args.campaign].goals
     goals_by_id = {g['id']: g for g in json.load(open(args.goals_file))['goals']}
 
     os.makedirs(args.output_dir, exist_ok=True)

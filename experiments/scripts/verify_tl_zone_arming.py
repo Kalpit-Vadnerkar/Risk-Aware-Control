@@ -27,23 +27,16 @@ position snapshot), so this can't cross-check against the vehicle's actual
 GT position the way the IMU script does; it checks the group_id against the
 zone file only.
 
-IMPORTANT (bug found and fixed 2026-07-27 — see verify_imu_zone_arming.py's
-module docstring for the full explanation): each trial's fault_log.jsonl is
-a snapshot of fault_injector.py's single cumulative campaign-wide log, so
-trial N's copy also contains every earlier trial's events (any goal —
-goals are interleaved round-robin, not run one at a time). Filtered here by
-trial_start_wall_time (from the trial's own metadata.json), same fix as
-verify_imu_zone_arming.py, so an earlier trial's real activation isn't
-double-counted against a later trial or checked against the wrong goal.
+Each trial's fault_log.jsonl holds only that trial's events (the runner
+cuts the injector's campaign log to the trial's time window).
 
 Usage:
-  python3 experiments/scripts/verify_tl_zone_arming.py --campaign tl_fault_s2
-  python3 experiments/scripts/verify_tl_zone_arming.py --campaign tl_fault_s2 \
-      --campaign tl_fault_s3 --campaign tl_fault_s4 --campaign tl_fault_ramp
+  python3 experiments/scripts/verify_tl_zone_arming.py --campaign tl_oscillate
+  python3 experiments/scripts/verify_tl_zone_arming.py --campaign tl_oscillate \
+      --campaign tl_unknown --campaign tl_blackout --campaign tl_conf_050
 """
 
 import argparse
-import datetime
 import glob
 import json
 import os
@@ -52,17 +45,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 TL_ZONES_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'tl_zones.json')
-
-
-def trial_start_wall_time(trial_dir):
-    """Epoch seconds this trial started, from its own metadata.json — see
-    verify_imu_zone_arming.py's copy of this same function for why."""
-    meta_path = os.path.join(trial_dir, 'metadata.json')
-    try:
-        ts = json.load(open(meta_path))['timestamp']
-        return datetime.datetime.fromisoformat(ts).timestamp()
-    except Exception:
-        return 0.0
 
 
 def verify_trial(trial_dir, zones_by_goal):
@@ -79,7 +61,6 @@ def verify_trial(trial_dir, zones_by_goal):
 
     reachable_ids = {z['group_id'] for z in zones.get('tl_zones', []) if z.get('reachable', True)}
     unreachable_ids = {z['group_id'] for z in zones.get('tl_zones', []) if not z.get('reachable', True)}
-    start_t = trial_start_wall_time(trial_dir)
 
     checked = 0
     issues = []
@@ -90,8 +71,6 @@ def verify_trial(trial_dir, zones_by_goal):
             continue
         if e.get('event') != 'tl_fault_start':
             continue
-        if e.get('wall_time', 0.0) < start_t:
-            continue  # belongs to an earlier trial (any goal) — see module docstring
         checked += 1
         gid = e.get('group_id')
         if gid is None:
@@ -119,7 +98,7 @@ def main():
     total_checked = 0
     total_issues = 0
     for campaign in args.campaign:
-        trial_dirs = sorted(glob.glob(os.path.join(DATA_DIR, campaign, '*', 't*')))
+        trial_dirs = sorted(glob.glob(os.path.join(DATA_DIR, campaign, 'goal_*', 't*')))
         print(f'\n=== {campaign} ({len(trial_dirs)} trials) ===')
         for trial_dir in trial_dirs:
             result = verify_trial(trial_dir, zones_by_goal)

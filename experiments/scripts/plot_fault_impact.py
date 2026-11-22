@@ -34,16 +34,14 @@ geometry comes from the goal's nominal-campaign route reconstruction (same
 source plot_fault_plan.py uses), not the trial's own bag — routes are
 deterministic per goal, and reusing the nominal reconstruction keeps this
 consistent with the rest of the pipeline instead of re-deriving it per
-trial. Campaigns not in plot_fault_plan.py's CAMPAIGN_ZONE_KIND (e.g. a
-future campaign not yet wired into the plan plot) simply get no zone
-overlay — this degrades gracefully, not an error.
+trial. Nominal trials get no zone overlay.
 
 Usage (must source ROS/Autoware, then the repo venv):
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
   source .venv/bin/activate
-  python3 experiments/scripts/plot_fault_impact.py --campaign imu_fault_scale --goal goal_012
-  python3 experiments/scripts/plot_fault_impact.py --campaign tl_fault_s3 --goal goal_012 --trial 1
+  python3 experiments/scripts/plot_fault_impact.py --campaign imu_scale --goal goal_012
+  python3 experiments/scripts/plot_fault_impact.py --campaign tl_unknown --goal goal_012 --trial 1
 """
 
 import argparse
@@ -81,14 +79,10 @@ from compute_turn_zones import (  # noqa: E402
 from fault_injector import (  # noqa: E402
     _DEFAULT_TL_ZONE_RADIUS_M, _DEFAULT_IMU_TURN_ZONE_RADIUS_M, _DEFAULT_IMU_LEADIN_ZONE_RADIUS_M,
 )
-# CAMPAIGN_ZONE_KIND/CAMPAIGN_FAULT_END/*_ZONES_FILE are campaign config, not
-# plotting utilities — still imported from plot_fault_plan.py, which owns
-# them. draw_zones_with_reachability/draw_fault_end_points/first_entry_point_on_route
-# used to come from here transitively too; now imported directly from
-# plotting.py/compute_turn_zones.py, where they're actually defined.
 from plot_fault_plan import (  # noqa: E402
-    CAMPAIGN_ZONE_KIND, CAMPAIGN_FAULT_END, DEFAULT_TURN_ZONES_FILE, DEFAULT_TL_ZONES_FILE,
+    campaign_plan, DEFAULT_TURN_ZONES_FILE, DEFAULT_TL_ZONES_FILE,
 )
+from trials import campaign_kind  # noqa: E402
 from autoware_perception_msgs.msg import TrafficLightElement  # noqa: E402
 
 DEFAULT_MAP_FILE = os.path.join(WORKSPACE_DIR, 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm')
@@ -269,13 +263,11 @@ def draw_planned_zones(ax, map_data, campaign, goal_id, goal_xy, zones, tl_zones
     stars/fault-end markers plot_fault_plan.py draws — reused directly, not
     reimplemented) onto an already-built map panel, so a trial's real
     trajectory can be checked directly against where the fault was SUPPOSED
-    to arm. Silently draws nothing for campaigns plot_fault_plan.py doesn't
-    know about (e.g. nominal) — this is a bonus overlay, never fatal to the
-    impact plot itself.
+    to arm. Draws nothing for a nominal trial.
     """
-    zone_kind, _fault_label = CAMPAIGN_ZONE_KIND.get(campaign, (None, None))
-    if zone_kind is None or zone_kind == 'none':
+    if campaign_kind(campaign) == 'nominal':
         return
+    zone_kind, _fault_label, _fault_end = campaign_plan(campaign.removesuffix('_armB'))
 
     bag_dir = find_first_bag(nominal_campaign, goal_id)
     if bag_dir is None:
@@ -456,10 +448,10 @@ def plot_trial(map_data, campaign, goal_id, goal_xy, trial_dir, nominal_stats,
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--campaign', required=True, help='e.g. imu_fault_scale, tl_fault_s3')
+    ap.add_argument('--campaign', required=True, help='e.g. imu_scale, tl_unknown')
     ap.add_argument('--goal', required=True, help='e.g. goal_012')
     ap.add_argument('--trial', type=int, default=None, help='specific trial number; default = all trials')
-    ap.add_argument('--nominal-campaign', default='nom_v11')
+    ap.add_argument('--nominal-campaign', default='nominal')
     ap.add_argument('--goals-file', default=DEFAULT_GOALS_FILE)
     ap.add_argument('--map-file', default=DEFAULT_MAP_FILE)
     ap.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR)

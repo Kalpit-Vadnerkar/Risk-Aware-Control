@@ -9,8 +9,7 @@ Usage (must source ROS/Autoware, then the repo venv):
   source .venv/bin/activate
   python3 experiments/scripts/plot_routes.py
   python3 experiments/scripts/plot_routes.py --goal goal_003,goal_005
-  python3 experiments/scripts/plot_routes.py --data-dir experiments/data/nom_v11 \
-      --goals-file captured_goals.json
+  python3 experiments/scripts/plot_routes.py --data-dir experiments/data/imu_bias_008
 """
 
 import argparse
@@ -24,7 +23,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from rclpy.serialization import deserialize_message
-from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
+from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions, StorageFilter
 from nav_msgs.msg import Odometry
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -39,11 +38,10 @@ from plotting import (  # noqa: E402
 
 DEFAULT_MAP_FILE = os.path.join(WORKSPACE_DIR, 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm')
 DEFAULT_GOALS_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'captured_goals.json')
-DEFAULT_DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data', 'nom_v11')
-DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'route_maps')
+DEFAULT_DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data', 'nominal')
+ROUTE_MAPS_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'route_maps')
 
 GT_TOPIC = '/awsim/ground_truth/localization/kinematic_state'
-FALLBACK_TOPIC = '/localization/kinematic_state'
 
 
 def read_trajectory(bag_dir):
@@ -55,14 +53,11 @@ def read_trajectory(bag_dir):
     reader = SequentialReader()
     reader.open(storage_options, converter_options)
 
-    topics = {info.name for info in reader.get_all_topics_and_types()}
-    topic = GT_TOPIC if GT_TOPIC in topics else FALLBACK_TOPIC
+    reader.set_filter(StorageFilter(topics=[GT_TOPIC]))
 
     pts = []
     while reader.has_next():
-        t, data, _ts = reader.read_next()
-        if t != topic:
-            continue
+        _, data, _ts = reader.read_next()
         msg = deserialize_message(data, Odometry)
         pts.append((msg.pose.pose.position.x, msg.pose.pose.position.y))
     return pts
@@ -152,7 +147,8 @@ def main():
     parser.add_argument('--data-dir', default=DEFAULT_DATA_DIR)
     parser.add_argument('--goals-file', default=DEFAULT_GOALS_FILE)
     parser.add_argument('--map-file', default=DEFAULT_MAP_FILE)
-    parser.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument('--output-dir', default=None,
+                        help='default: experiments/analysis/route_maps/<campaign>')
     parser.add_argument('--goal', default=None,
                          help='Comma-separated goal IDs (default: all goals in --goals-file)')
     parser.add_argument('--margin', type=float, default=40.0,
@@ -163,6 +159,8 @@ def main():
     if not os.path.isabs(goals_file):
         goals_file = os.path.join(REPO_DIR, 'experiments', 'configs', goals_file)
 
+    if args.output_dir is None:
+        args.output_dir = os.path.join(ROUTE_MAPS_DIR, os.path.basename(os.path.normpath(args.data_dir)))
     os.makedirs(args.output_dir, exist_ok=True)
 
     print(f'Loading lanelet2 map: {args.map_file}')

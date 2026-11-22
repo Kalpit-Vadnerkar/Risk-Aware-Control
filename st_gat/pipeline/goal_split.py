@@ -62,7 +62,7 @@ def goal_from_run_dir(run_dir: str) -> str:
     """
     Extract goal_id for a trial run directory.
 
-    run_dir is a trial dir (e.g. '.../nom_v11/goal_016/t1_20260722_141240') —
+    run_dir is a trial dir (e.g. '.../nominal/goal_016/t1_20261121_221739') —
     the goal_id is its PARENT directory's name, not derivable from the trial
     dirname itself (fixed 2026-08-01: this used to assume a flat
     'goal_XXX_<campaign>_tN_<timestamp>' dirname, which hasn't been the

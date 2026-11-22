@@ -2,7 +2,7 @@
 
 Rows: the 5 gaps (stack estimate minus vehicle report). Columns: one nominal
 calibration trial (around its sharpest turn), the harmless IMU fault
-(imu_fault_s1) and three IMU faults that end in a road departure. Grey: the
+(imu_bias_003) and three IMU faults that end in a road departure. Grey: the
 observed gap (the model input). Purple: the residual, observed minus the
 consistency head's predicted nominal gap (what Layer 1 scores and the 2b
 filter integrates). Band: the nominal 99% residual quantile (leave-one-trial-
@@ -26,10 +26,10 @@ CH = [('1  EKF yaw rate\n− vehicle yaw rate', 'deg/s', np.degrees),
       ('3  pose yaw rate\n− vehicle yaw rate', 'deg/s', np.degrees),
       ('4  pose along speed\n− wheel speed', 'm/s', lambda x: x),
       ('5  pose lateral speed\n− vehicle lateral', 'm/s', lambda x: x)]
-FAULTS = [('imu_fault_s1/goal_007', 'IMU bias 0.03 rad/s (s1)\nharmless'),
-          ('imu_fault_s3/goal_007', 'IMU bias 0.08 rad/s (s3)\nleaves the road'),
-          ('imu_fault_scale/goal_007', 'IMU scale ×1.8\nleaves the road'),
-          ('imu_fault_stuck/goal_007', 'IMU stuck\nleaves the road')]
+FAULTS = [('imu_bias_003/goal_007', 'IMU bias 0.03 rad/s\nharmless'),
+          ('imu_bias_008/goal_007', 'IMU bias 0.08 rad/s\nleaves the road'),
+          ('imu_scale/goal_007', 'IMU scale ×1.8\nleaves the road'),
+          ('imu_stuck/goal_007', 'IMU stuck\nleaves the road')]
 
 
 def nominal_window(n, span=60.0):

@@ -15,9 +15,6 @@ assignment an explicit, durable, auditable fact instead of a recomputed
 one. The actual split logic lives in `st_gat/pipeline/goal_split.py`
 (shared with run_pipeline.py's assemble_splits()) — this is the CLI over it.
 
-  seed                                  — one-time: record TODAY's actual
-                                           TRAIN_DIR/CAL_DIR contents as the
-                                           manifest's starting ground truth.
   generate --dataset X                  — assign any goal in X not yet in
                                            the manifest, via the same
                                            seeded-shuffle policy as before,
@@ -33,9 +30,8 @@ one. The actual split logic lives in `st_gat/pipeline/goal_split.py`
                                            the manifest says.
 
 Usage:
-  python3 experiments/scripts/manage_goal_split.py seed
-  python3 experiments/scripts/manage_goal_split.py generate --dataset nom_v11
-  python3 experiments/scripts/manage_goal_split.py set --dataset nom_v11 --goal goal_007 --split cal
+  python3 experiments/scripts/manage_goal_split.py generate --dataset nominal
+  python3 experiments/scripts/manage_goal_split.py set --dataset nominal --goal goal_007 --split cal
   python3 experiments/scripts/manage_goal_split.py verify
 """
 import argparse
@@ -48,34 +44,6 @@ sys.path.insert(0, REPO_DIR)
 
 from st_gat.pipeline import config as cfg  # noqa: E402
 from st_gat.pipeline import goal_split as gs  # noqa: E402
-
-
-def cmd_seed(args):
-    manifest = gs.load_manifest()
-    cal_names = gs.current_symlink_targets(cfg.CAL_DIR)
-    train_names = gs.current_symlink_targets(cfg.TRAIN_DIR)
-
-    for dataset in cfg.NOMINAL_DATASETS:
-        ds_manifest = manifest.setdefault(dataset, {})
-        for goal, run_names in sorted(gs.extracted_runs_by_goal(dataset).items()):
-            if goal in ds_manifest:
-                continue  # never clobber an existing explicit assignment
-            n_cal = sum(1 for r in run_names if r in cal_names)
-            n_train = sum(1 for r in run_names if r in train_names)
-            if n_cal and n_train:
-                print(f"  WARNING: {dataset}/{goal} has runs split across BOTH "
-                      f"train ({n_train}) and cal ({n_cal}) right now — this is "
-                      f"exactly the stale-symlink drift this tool exists to fix. "
-                      f"Seeding as the majority side; run `verify` after and "
-                      f"inspect by hand if that's wrong.")
-            if n_cal == 0 and n_train == 0:
-                print(f"  {dataset}/{goal}: not currently symlinked into either "
-                      f"TRAIN_DIR or CAL_DIR — leaving unassigned, run "
-                      f"`generate --dataset {dataset}` to assign it.")
-                continue
-            ds_manifest[goal] = 'cal' if n_cal >= n_train else 'train'
-
-    gs.save_manifest(manifest)
 
 
 def cmd_generate(args):
@@ -156,8 +124,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='command', required=True)
 
-    sub.add_parser('seed', help="Seed the manifest from CURRENT actual TRAIN_DIR/CAL_DIR symlink contents (one-time).")
-
     p_gen = sub.add_parser('generate', help="Assign any not-yet-recorded goal in a dataset via the existing split policy.")
     p_gen.add_argument('--dataset', required=True, choices=cfg.NOMINAL_DATASETS)
 
@@ -170,7 +136,7 @@ def main():
     p_ver.add_argument('--dataset', default=None, choices=cfg.NOMINAL_DATASETS)
 
     args = parser.parse_args()
-    {'seed': cmd_seed, 'generate': cmd_generate, 'set': cmd_set, 'verify': cmd_verify}[args.command](args)
+    {'generate': cmd_generate, 'set': cmd_set, 'verify': cmd_verify}[args.command](args)
 
 
 if __name__ == '__main__':

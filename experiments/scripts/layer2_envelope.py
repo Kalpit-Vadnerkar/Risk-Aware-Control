@@ -55,7 +55,6 @@ Usage (ROS + venv):
 """
 
 import argparse
-import glob
 import json
 import pickle
 import math
@@ -79,6 +78,7 @@ import layer2_consequence_estimation as L2  # noqa: E402  (shared, tested helper
 import residual_triangle_check as RTC  # noqa: E402
 from conformal_horizon_calibration import _trial_ids_for  # noqa: E402
 import pose_gaps as PG  # noqa: E402  (experiments/lib)
+from trials import fault_campaigns, find_nominal_run  # noqa: E402
 
 DT = 0.1
 R_POS = cfg.POSITION_DISPLACEMENT_RANGE_M
@@ -86,10 +86,10 @@ K_RECENT_CONS = 5        # consistency evidence: forecasts made in the last 0.5 
 VARIANTS = ['nominal', 'evidence', 'deadreckon']
 ALARMS = VARIANTS + ['evidence_dP']      # evidence_dP: P(evidence) - P(nominal), the risk attributable to the evidence
 OUT_DIR = os.path.join(cfg.ANALYSIS_ROOT, 'layer2_envelope')
-FEATURED = ['imu_fault_scale/goal_007', 'imu_fault_stuck/goal_007', 'imu_fault_s3/goal_007',
-            'imu_fault_stuck/goal_012', 'imu_fault_s1/goal_007', 'imu_fault_s3/goal_012',
-            'tl_fault_fixed_070/goal_007/t1']
-GIF_TRIAL = 'imu_fault_scale/goal_007'
+FEATURED = ['imu_scale/goal_007', 'imu_stuck/goal_007', 'imu_bias_008/goal_007',
+            'imu_stuck/goal_012', 'imu_bias_003/goal_007', 'imu_bias_008/goal_012',
+            'tl_conf_070/goal_007/t1']
+GIF_TRIAL = 'imu_scale/goal_007'
 
 
 # ── Layer 1 evidence ────────────────────────────────────────────────────────
@@ -666,11 +666,11 @@ def calibrate_step_gaps(cal, trial, t_all, v_all, lq_all, u, flag, e, args):
             if 'rh' in z:
                 G[m], RH[m] = z['g'], z['rh']
                 continue
-        runs = glob.glob(os.path.join(L2.DATA_DIR, 'nom*', 'goal_*', name))
-        assert len(runs) == 1, (name, runs)
-        ta = PG.nominal_window_times(runs[0])
+        run = find_nominal_run(name)
+        assert run is not None, name
+        ta = PG.nominal_window_times(run)
         assert len(ta) == len(m), (name, len(ta), len(m))
-        B = PG.read_bag(os.path.join(runs[0], 'rosbag'))
+        B = PG.read_bag(os.path.join(run, 'rosbag'))
         g, true = PG.step_gaps(B, ta)
         rh = PG.step_yaw_rate(B, ta)
         os.makedirs(os.path.dirname(cache), exist_ok=True)
@@ -753,9 +753,9 @@ def mode_nominal(pool, drivable, map_data, args):
 
 def process_trial(run_dir, model, device, pool, builder, args):
     from inspect_fault_predictions import process_trial as pt
-    from fault_log import campaign_fault_kind
+    from trials import campaign_kind
     camp = run_dir.split(os.sep)[-3]
-    tr = pt(run_dir, camp, builder, campaign_fault_kind(os.path.join(L2.DATA_DIR, camp)))
+    tr = pt(run_dir, camp, builder, campaign_kind(camp))
     if tr is None:
         return None
     seqs, t = tr['sequences'], tr['t_rel']
@@ -821,9 +821,8 @@ def mode_faults(model, device, pool, drivable, map_data, nominal, args):
     from st_gat.pipeline.sequence_builder import SequenceBuilder
     builder = SequenceBuilder(MapProcessor(cfg.MAP_FILE).map_data, route=[])
     thr = nominal['thresholds']
-    camps = sorted(c for c in os.listdir(L2.DATA_DIR) if not c.startswith('nom'))
     summaries, series = [], []
-    for run_dir in L2._fault_trials(camps):
+    for run_dir in L2._fault_trials(fault_campaigns()):
         rel = os.path.relpath(run_dir, L2.DATA_DIR)
         if args.trials and not any(rel.startswith(x) for x in args.trials):
             continue

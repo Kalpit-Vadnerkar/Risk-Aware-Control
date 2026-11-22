@@ -33,7 +33,7 @@ Usage (with Autoware workspace + repo venv sourced):
     source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
     cd /home/kvadner/Desktop/Dissertation/Risk-Aware-Control
     source .venv/bin/activate
-    python3 -m st_gat.residuals [--datasets imu_fault_stuck tl_fault_s4] [--out ...]
+    python3 -m st_gat.residuals [--datasets imu_stuck tl_blackout] [--out ...]
     python3 -m st_gat.residuals --rerun   # force re-process all (e.g. after schema changes)
 
 Outputs:
@@ -60,7 +60,7 @@ from torch.utils.data import DataLoader, Dataset
 from st_gat.pipeline import config as cfg
 from st_gat.model import STGAT
 from st_gat.model.dataset import TrajectoryDataset  # reuse _build_* helpers — do not reimplement
-from st_gat.pipeline.run_pipeline import _goal_from_run_dir
+from st_gat.pipeline import goal_split as gs
 
 _REPO = cfg.REPO_ROOT
 
@@ -652,25 +652,9 @@ def main():
     summary_rows = []
 
     for dataset in args.datasets:
-        dataset_dir = os.path.join(cfg.DATA_ROOT, dataset)
-        if not os.path.isdir(dataset_dir):
-            print(f"[residuals] WARNING: dataset dir not found: {dataset_dir}")
-            continue
-
         out_dir = os.path.join(args.out, dataset)
         os.makedirs(out_dir, exist_ok=True)
-
-        # Runs are nested by goal: experiments/data/<dataset>/<goal_id>/<trial>/
-        run_dirs = []
-        for goal_entry in sorted(os.listdir(dataset_dir)):
-            goal_dir = os.path.join(dataset_dir, goal_entry)
-            if not os.path.isdir(goal_dir) or not goal_entry.startswith('goal_'):
-                continue
-            for trial_entry in sorted(os.listdir(goal_dir)):
-                trial_dir = os.path.join(goal_dir, trial_entry)
-                if not (os.path.isdir(trial_dir) and os.path.isdir(os.path.join(trial_dir, 'rosbag'))):
-                    continue
-                run_dirs.append((goal_entry, trial_dir))
+        run_dirs = [(gs.goal_from_run_dir(d), d) for d in gs.find_run_dirs(dataset)]
 
         print(f"\n[residuals] Dataset: {dataset}  ({len(run_dirs)} runs)")
 

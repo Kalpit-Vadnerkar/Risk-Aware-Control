@@ -1,37 +1,15 @@
 #!/usr/bin/env python3
 """
-TL fault severity dose-response analysis (2026-08-25) -- checks whether
-data ALREADY ON DISK can produce a real severity sweep before scoping any
-new AWSIM collection, per Kalpit's request to scope the TL severity-sweep
-experiment.
+TL fault severity dose-response: model residuals binned by the confidence
+scale the TL fault applied (1.0 = no fault), across the fixed-severity
+tl_confidence campaigns (tl_conf_030/050/070) and matched nominal trials of
+the same goals. Each trial's scale is read from its own fault_log.jsonl
+(confidence_scale_for_trial; tl_confidence_ramp trials are reconstructed
+from the deterministic ramp).
 
-Key discovery this script exploits: `tl_fault_ramp` (already collected,
-3 trials, goal_007/012/026) uses `tl_confidence_ramp`
-(confidence_ramp_rate_per_s=0.1, min_confidence_scale=0.0, fault_duration
-cap 15s) -- confidence_scale decays CONTINUOUSLY from 1.0 to 0.0 within
-EVERY fault-active window (every real intersection the route passes), not
-just once per trial. Each trial has ~7-11 such cycles (see
-fault_prediction_inspection's earlier run), so 3 existing trials already
-contain ~26 independent continuous severity sweeps -- this is very
-possibly already most of the "TL severity sweep" experiment, not
-something that needs new data collection to exist at all.
-
-Method: for every window in a tl_fault_ramp trial, reconstruct the
-INSTANTANEOUS confidence_scale at that window's "now" time directly from
-the known ramp formula (rate, floor, and the fault-cycle's own start time
-from fault_log.jsonl) -- exact, not estimated, since the ramp is
-deterministic. Bin windows by reconstructed confidence_scale and compare
-residual/exceed-rate against matched NOMINAL windows from nom_v11 at the
-SAME goal (confidence_scale defined as 1.0 for nominal windows -- the
-true no-fault reference point on the same severity axis).
-
-IMPORTANT CAVEAT, checked and handled explicitly (do not silently ignore):
-nom_v11's goal_007/012 trials are in the TRAINING set (the model has seen
-them), NOT the held-out calibration set -- only goal_026's two nom_v11
-trials are properly held out. Comparisons against goal_007/012's nominal
-baseline will read artificially LOW residual (optimistic) and are NOT a
-fair severity-response comparison; only goal_026 gives a clean matched
-result with the current data. Both are reported, clearly labeled.
+Clean vs all: a nominal trial is clean if its goal is in the calibration
+split (goal_split_manifest.json), i.e. the model never trained on it; fault
+trials are always clean. Both are reported.
 
 Usage (ROS + repo venv sourced):
   source /opt/ros/humble/setup.bash
@@ -41,12 +19,9 @@ Usage (ROS + repo venv sourced):
 """
 
 import argparse
-import glob
 import json
 import os
-import re
 import sys
-from datetime import datetime
 
 import numpy as np
 import torch
@@ -68,42 +43,21 @@ from st_gat.model import STGAT, TrajectoryDataset  # noqa: E402
 from compare_fault_vs_nominal import load_fault_log  # noqa: E402
 from conformal_horizon_calibration import _SERIES  # noqa: E402
 from inspect_fault_predictions import process_trial  # noqa: E402
+from st_gat.pipeline import goal_split as gs  # noqa: E402
+from config import load_campaigns  # noqa: E402
+from trials import campaigns, trial_dirs  # noqa: E402
 
-DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'tl_severity_sweep')
 
-# "Clean" means "the currently-deployed model could not have trained on this
-# trial" -- NOT "is this trial in CAL_DIR today" (fixed 2026-10-04). Those
-# used to coincide (only goal_026 was in CAL_DIR when this script was
-# written), but goal_007/012 were promoted to CAL_DIR today
-# (manage_goal_split.py) while st_gat_rise.pth's last retrain predates that
-# by weeks -- it DID train on goal_007/012's original 2026-07-22 trials, and
-# moving them into CAL_DIR today doesn't retroactively un-train it on them.
-# A trial collected AFTER the model's own mtime is unconditionally clean
-# regardless of which directory it's in now (it didn't exist yet to train
-# on); goal_026 is clean unconditionally (never in TRAIN_DIR at any point).
-_MODEL_MTIME = os.path.getmtime(cfg.MODEL_CONFIG['model_path'])
-
-
-def _trial_is_clean(goal: str, run_name: str) -> bool:
-    if goal == 'goal_026':
-        return True
-    m = re.match(r't\d+_(\d{8})_(\d{6})', run_name)
-    if not m:
-        return False
-    trial_time = datetime.strptime(m.group(1) + m.group(2), '%Y%m%d%H%M%S').timestamp()
-    return trial_time > _MODEL_MTIME
+def _trial_is_clean(goal: str) -> bool:
+    """Nominal trial the model never trained on: its goal is in the cal split."""
+    return gs.load_manifest().get(NOMINAL_CAMPAIGN, {}).get(goal) == 'cal'
 _SERIES_KEYS = [s[0] for s in _SERIES]
 
 GOALS = ['goal_007', 'goal_012', 'goal_026']
-# All TL-fault campaigns worth folding into the dose-response curve. The
-# fixed-severity tiers (added 2026-08-26, see collect.sh) give the clean
-# result; tl_fault_ramp is kept as the original pilot for comparison/sanity-
-# checking, not because it's still needed to cover intermediate severities --
-# confidence_scale_for_trial() reads each trial's OWN fault_type and computes
-# severity correctly regardless of which of these produced it.
-TL_FAULT_CAMPAIGNS = ['tl_fault_fixed_030', 'tl_fault_fixed_050', 'tl_fault_fixed_070', 'tl_fault_ramp']
-NOMINAL_CAMPAIGN = 'nom_v11'
+# Every fixed-severity TL confidence campaign
+TL_FAULT_CAMPAIGNS = [c for c in campaigns('tl') if load_campaigns()[c].fault['tl_fault'] == 'tl_confidence']
+NOMINAL_CAMPAIGN = 'nominal'
 
 
 def _load_model(model_path):
@@ -196,14 +150,13 @@ def main():
     all_conf = []
     all_resid = {k: [] for k in _SERIES_KEYS}
     all_goal = []
-    all_source = []   # 'ramp' or 'nominal'
+    all_source = []   # campaign name or 'nominal'
     all_clean = []    # bool: is the nominal reference for this goal held-out (True) or train-contaminated (False)
 
     for goal in GOALS:
-        # --- TL-fault trials (fixed-severity tiers + the original ramp pilot) ---
+        # --- TL-fault trials ---
         for campaign in TL_FAULT_CAMPAIGNS:
-            campaign_dir = os.path.join(DATA_DIR, campaign, goal)
-            for run_dir in sorted(glob.glob(os.path.join(campaign_dir, 't*'))):
+            for run_dir in trial_dirs(campaign, goals=[goal]):
                 print(f"\n[{campaign}] {goal}/{os.path.basename(run_dir)}")
                 out = process_trial(run_dir, campaign, shared_builder, kind='tl')
                 if out is None:
@@ -222,10 +175,9 @@ def main():
                       f"[{conf.min():.2f}, {conf.max():.2f}], {(conf < 0.99).sum()} windows with fault active")
 
         # --- matched nominal trials ---
-        nom_dir = os.path.join(DATA_DIR, NOMINAL_CAMPAIGN, goal)
-        for run_dir in sorted(glob.glob(os.path.join(nom_dir, 't*'))):
+        for run_dir in trial_dirs(NOMINAL_CAMPAIGN, goals=[goal]):
             run_name = os.path.basename(run_dir)
-            is_clean = _trial_is_clean(goal, run_name)
+            is_clean = _trial_is_clean(goal)
             print(f"\n[nominal] {goal}/{run_name}  (held-out/clean: {is_clean})")
             out = process_trial(run_dir, NOMINAL_CAMPAIGN, shared_builder, kind='tl')
             if out is None:
@@ -284,7 +236,7 @@ def main():
         ax.set_ylabel(f'mean residual ({k})')
         ax.set_title(k, fontsize=10)
     axes[0].legend(fontsize=7)
-    fig.suptitle('TL fault severity dose-response (reconstructed from tl_confidence_ramp + matched nominal)', fontsize=12)
+    fig.suptitle('TL fault severity dose-response (tl_confidence campaigns + matched nominal)', fontsize=12)
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     out_path = os.path.join(args.output_dir, 'tl_severity_dose_response.png')
     fig.savefig(out_path, dpi=140)

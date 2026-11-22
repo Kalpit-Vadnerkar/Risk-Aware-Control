@@ -51,7 +51,7 @@ tl_zones.json only have entries for goal_007/012/026 — the three goals the
 fault campaigns actually ran on (per-goal zone files were only ever computed
 for goals that needed a fault gated on one, see CLAUDE.md's "before running a
 new TL or IMU fault campaign" section). So the true nominal calibration
-sample, per zone kind, is 3 goals x 2 nom_v11 trials = 6 trials, not all 26
+sample, per zone kind, is 3 goals x 2 nominal trials = 6 trials, not all 26
 nominal goals. Too few to also hold out a separate empirical-false-alarm-rate
 check without shrinking calibration further, so this first pass uses all 6
 for calibration and skips the holdout check — flagged, not hidden. Revisit if
@@ -89,6 +89,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, REPO_DIR)
 sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))
+from trials import fault_campaigns, zone_kind as campaign_zone_kind  # noqa: E402
 
 from st_gat.pipeline import config as cfg  # noqa: E402
 from st_gat.pipeline.bag_reader import read_bag  # noqa: E402
@@ -100,24 +101,13 @@ from fault_injector import (  # noqa: E402
 
 TRACES_DIR = os.path.join(REPO_DIR, 'st_gat', 'results', cfg.HORIZON_TAG, 'traces')
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'conformal_lead_time')
-NOMINAL_DATASET = 'nom_v11'  # the reference distribution — see fault_scenario_table.md
+NOMINAL_DATASET = 'nominal'  # the reference distribution
 
-# Which route-derived zone each campaign's fault actually arms against (see
-# docs/archive/fault_scenario_table.md's per-campaign table) — NOT an independent
-# choice, this mirrors fault_injector.py's own arming logic exactly, so the
-# zone-entry time computed here is the same moment that campaign's real fault
-# would have armed at, for both fault trials AND nominal trials of the same
-# goal/route.
-CAMPAIGN_ZONE_KIND = {
-    'imu_fault_s1':     'imu_leadin',
-    'imu_fault_s3':     'imu_leadin',
-    'imu_fault_scale':  'imu_turn',
-    'imu_fault_stuck':  'imu_turn',
-    'tl_fault_s2':      'tl',
-    'tl_fault_s3':      'tl',
-    'tl_fault_s4':      'tl',
-    'tl_fault_ramp':    'tl',
-}
+# Which route-derived zone each campaign's fault arms against (trials.zone_kind
+# mirrors fault_injector.py's arming), so the zone-entry time computed here is
+# the moment that campaign's fault would have armed, for fault AND nominal
+# trials of the same goal.
+CAMPAIGN_ZONE_KIND = {c: campaign_zone_kind(c) for c in fault_campaigns()}
 
 _ZONE_RADIUS = {
     'tl':         _DEFAULT_TL_ZONE_RADIUS_M,

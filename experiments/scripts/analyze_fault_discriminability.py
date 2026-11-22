@@ -49,7 +49,7 @@ sys.path.insert(0, SCRIPT_DIR)                                       # for compa
 sys.path.insert(0, os.path.join(REPO_DIR, 'experiments', 'lib'))     # its own dependencies
 
 from compare_fault_vs_nominal import load_fault_log, extract_fault_windows, in_any_window  # noqa: E402
-from fault_log import campaign_fault_kind  # noqa: E402
+from trials import campaign_kind  # noqa: E402
 from st_gat.pipeline import config as cfg  # noqa: E402
 
 TRACES_DIR = os.path.join(REPO_DIR, 'st_gat', 'results', cfg.HORIZON_TAG, 'traces')
@@ -74,7 +74,7 @@ def load_nominal_baselines() -> dict:
     nominal trace CSVs — the per-goal baseline every fault trial for that
     goal gets compared against, not a cross-goal pooled average."""
     per_goal_values: dict = {}
-    for f in sorted(glob.glob(os.path.join(TRACES_DIR, 'nom_v11', '*.csv'))):
+    for f in sorted(glob.glob(os.path.join(TRACES_DIR, 'nominal', '*.csv'))):
         run_name = os.path.splitext(os.path.basename(f))[0]
         goal_id = _goal_from_run_name(run_name)
         df = pd.read_csv(f)
@@ -107,7 +107,7 @@ def analyze_trial(campaign: str, goal_id: str, trial_dirname: str, trace_csv: st
 
     trial_dir = os.path.join(cfg.DATA_ROOT, campaign, goal_id, trial_dirname)
     events = load_fault_log(trial_dir)
-    kind = campaign_fault_kind(os.path.join(cfg.DATA_ROOT, campaign))
+    kind = campaign_kind(campaign)
     # bag_start_abs_sec / bag_duration derived from the trace's own t_sim/
     # t_bag_rel (t_bag_rel = t_sim - bag_start_abs_sec is a constant offset
     # for every row) — avoids re-reading the rosbag just for this.

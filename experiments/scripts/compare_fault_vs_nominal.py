@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compares a fault campaign's trial(s) against the matching nominal (nom_v11)
+Compares a fault campaign's trial(s) against the matching nominal
 baseline for the same goal — two purposes:
 
   1. VERIFY the fault actually took effect at the message level (not just that
@@ -16,8 +16,8 @@ Usage (must source ROS/Autoware, then the repo venv):
   source /opt/ros/humble/setup.bash
   source /home/kvadner/Desktop/Dissertation/autoware/install/setup.bash
   source .venv/bin/activate
-  python3 experiments/scripts/compare_fault_vs_nominal.py --campaign tl_fault_s1 --goal goal_007
-  python3 experiments/scripts/compare_fault_vs_nominal.py --campaign imu_fault_s2 --goal goal_012 --trial 1
+  python3 experiments/scripts/compare_fault_vs_nominal.py --campaign tl_oscillate --goal goal_007
+  python3 experiments/scripts/compare_fault_vs_nominal.py --campaign imu_scale --goal goal_012 --trial 1
 """
 
 import argparse
@@ -43,7 +43,7 @@ from autoware_perception_msgs.msg import TrafficLightGroupArray, TrafficLightEle
 
 from metrics import MetricsCollector  # noqa: E402 — needs sys.path insert above
 from fault_injector import _load_tl_group_zones_by_goal, _DEFAULT_TL_ZONE_RADIUS_M  # noqa: E402
-from fault_log import campaign_fault_kind  # noqa: E402
+from trials import campaign_kind  # noqa: E402
 
 DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data')
 OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'fault_comparison')
@@ -366,14 +366,14 @@ def find_nominal_dirs(goal, nominal_campaign):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--campaign', required=True, help='e.g. tl_fault_s1, imu_fault_s2')
+    ap.add_argument('--campaign', required=True, help='e.g. tl_oscillate, imu_scale')
     ap.add_argument('--goal', required=True, help='e.g. goal_007')
     ap.add_argument('--trial', type=int, default=None, help='specific trial number; default = all trials for this goal/campaign')
-    ap.add_argument('--nominal-campaign', default='nom_v11')
+    ap.add_argument('--nominal-campaign', default='nominal')
     ap.add_argument('--output-dir', default=OUTPUT_DIR)
     args = ap.parse_args()
 
-    kind = campaign_fault_kind(os.path.join(DATA_DIR, args.campaign))
+    kind = campaign_kind(args.campaign)
 
     fault_dirs = find_trial_dirs(args.campaign, args.goal, args.trial)
     if not fault_dirs:
@@ -503,8 +503,6 @@ def _verify_tl(campaign, meta, windows):
                 in_green_frac_num += int(col == TrafficLightElement.GREEN)
                 in_unknown_den += 1
                 in_unknown_num += int(col == TrafficLightElement.UNKNOWN)
-    if 'confidence' in campaign or 'tl_fault_s1' in campaign:
-        pass  # confidence checked via discriminability table (tl_confidence feature)
     detect_rate = in_detected_num / in_detected_den if in_detected_den else float('nan')
     green_rate = in_green_frac_num / in_green_frac_den if in_green_frac_den else float('nan')
     unknown_rate = in_unknown_num / in_unknown_den if in_unknown_den else float('nan')
