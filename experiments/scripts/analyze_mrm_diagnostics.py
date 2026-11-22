@@ -55,7 +55,7 @@ def whole_trial_summary(bag_path: str, top_n: int = 5) -> dict:
     plus a ground-truth-trajectory movement check (max single-step jump = teleport
     detector, total distance = did-it-move-at-all check).
     """
-    storage_options = StorageOptions(uri=bag_path, storage_id='sqlite3')
+    storage_options = StorageOptions(uri=bag_path, storage_id='')
     converter_options = ConverterOptions(
         input_serialization_format='cdr',
         output_serialization_format='cdr',
@@ -176,7 +176,7 @@ def analyze_rosbag(bag_path):
     print(f"Reading rosbag: {bag_path}")
 
     # Setup reader
-    storage_options = StorageOptions(uri=bag_path, storage_id='sqlite3')
+    storage_options = StorageOptions(uri=bag_path, storage_id='')
     converter_options = ConverterOptions(
         input_serialization_format='cdr',
         output_serialization_format='cdr'

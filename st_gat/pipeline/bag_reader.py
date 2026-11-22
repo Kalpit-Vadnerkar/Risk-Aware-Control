@@ -256,7 +256,7 @@ def read_bag(bag_dir: str, goal_id: Optional[str] = None,
     nominal dataset has no idle/parked segments to begin with, so the filter
     had no remaining upside once traffic_light_state stopped needing it).
     """
-    storage_options   = StorageOptions(uri=bag_dir, storage_id='sqlite3')
+    storage_options   = StorageOptions(uri=bag_dir, storage_id='')
     converter_options = ConverterOptions(
         input_serialization_format='cdr',
         output_serialization_format='cdr',

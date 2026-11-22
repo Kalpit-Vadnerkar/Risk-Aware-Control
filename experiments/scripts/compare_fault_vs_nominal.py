@@ -88,7 +88,7 @@ def read_gt_and_tl(bag_dir, goal_id=None):
     (caller doesn't know/care) or no zone is within range at that position
     (e.g. mid-route, nowhere near an intersection) — better than dropping
     the sample."""
-    storage_options = StorageOptions(uri=bag_dir, storage_id='sqlite3')
+    storage_options = StorageOptions(uri=bag_dir, storage_id='')
     converter_options = ConverterOptions(input_serialization_format='cdr',
                                           output_serialization_format='cdr')
     reader = SequentialReader()

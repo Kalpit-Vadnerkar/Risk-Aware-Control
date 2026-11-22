@@ -14,7 +14,7 @@ from bisect import bisect_left
 
 # ROS2 imports
 from rclpy.serialization import deserialize_message
-from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
+from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions, StorageFilter
 
 # Message types (requires sourcing Autoware)
 from autoware_adapi_v1_msgs.msg import MrmState, RouteState
@@ -398,9 +398,16 @@ class MetricsCollector:
         """Convert quaternion (z, w components) to yaw angle."""
         return 2.0 * math.atan2(qz, qw)
 
+    TOPICS = [
+        '/vehicle/status/velocity_status', '/vehicle/status/steering_status',
+        '/localization/kinematic_state', '/perception/object_recognition/objects_filtered',
+        '/perception/object_recognition/tracking/objects', '/planning/trajectory',
+        '/system/fail_safe/mrm_state', '/autoware/state', '/diagnostics',
+    ]
+
     def read_bag(self):
         """Read and parse rosbag data."""
-        storage_options = StorageOptions(uri=self.bag_path, storage_id='sqlite3')
+        storage_options = StorageOptions(uri=self.bag_path, storage_id='')
         converter_options = ConverterOptions(
             input_serialization_format='cdr',
             output_serialization_format='cdr'
@@ -410,6 +417,8 @@ class MetricsCollector:
         reader.open(storage_options, converter_options)
 
         topic_types = {info.name: info.type for info in reader.get_all_topics_and_types()}
+        # Only the topics handled below: skips the point clouds
+        reader.set_filter(StorageFilter(topics=[t for t in self.TOPICS if t in topic_types]))
 
         prev_velocity = None
         prev_velocity_time = None

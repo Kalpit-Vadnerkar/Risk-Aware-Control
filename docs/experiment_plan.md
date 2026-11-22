@@ -37,6 +37,6 @@ not enough to show anomaly ≠ consequence, or to draw a reliability diagram
 
 `analyse_experiments.py --campaign X` → `analyze_mrm_diagnostics.py --batch` →
 `plot_routes.py`; for fault campaigns also `compare_fault_vs_nominal.py` and
-`verify_{imu,tl}_zone_arming.py`. Delete broken trial directories before
-re-running (auto-resume counts any trial with a `result.json`). Regenerate
+`verify_{imu,tl}_zone_arming.py`. Delete leftover trial directories that
+`./collect.sh --status` lists (crashed mid-trial). Regenerate
 `turn_zones.json` / `tl_zones.json` when goals change.

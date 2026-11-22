@@ -4,6 +4,7 @@ ROS2 utility functions for experiment control.
 Uses rclpy for reliable ROS2 communication instead of subprocess calls.
 """
 
+import signal
 import subprocess
 import time
 import threading
@@ -872,15 +873,14 @@ def set_goal(x: float, y: float, z: float, qz: float, qw: float,
         return False
 
 
-def start_rosbag_recording(output_dir: str, topics: list) -> Optional[subprocess.Popen]:
-    """Start rosbag recording in background."""
-    cmd = ['ros2', 'bag', 'record', '-o', output_dir] + topics
+def start_rosbag_recording(output_dir: str, topics: list, log_file: str,
+                           storage: str = 'mcap') -> Optional[subprocess.Popen]:
+    """Start `ros2 bag record` in the background. Output goes to log_file:
+    an unread PIPE fills up and blocks the recorder on a long trial."""
+    cmd = ['ros2', 'bag', 'record', '-s', storage, '-o', output_dir] + topics
     try:
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        log = open(log_file, 'w')
+        process = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
         time.sleep(2)  # Wait for recording to start
         if process.poll() is None:  # Still running
             return process
@@ -889,13 +889,13 @@ def start_rosbag_recording(output_dir: str, topics: list) -> Optional[subprocess
     return None
 
 
-def stop_rosbag_recording(process: subprocess.Popen, timeout: float = 10.0):
-    """Stop rosbag recording gracefully."""
+def stop_rosbag_recording(process: subprocess.Popen, timeout: float = 20.0):
+    """Stop recording with SIGINT (what Ctrl+C sends), so the recorder
+    flushes and writes metadata.yaml; kill only if it hangs."""
     if process is None:
         return
-
     try:
-        process.terminate()
+        process.send_signal(signal.SIGINT)
         process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         process.kill()

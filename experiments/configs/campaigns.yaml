@@ -1,0 +1,116 @@
+# Every data-collection campaign, in one place. The runner
+# (experiments/scripts/run_experiments.py, via ./collect.sh) reads this file;
+# nothing else defines a campaign.
+#
+# Rules:
+# - The name is a mnemonic. The real parameters are copied into every trial's
+#   metadata.json (and the fault injector's fault_log.jsonl); analysis reads
+#   them from there, never from the name.
+# - goals: "all" = every goal in captured_goals.json.
+# - trials: target per goal. The runner counts trials already on disk and only
+#   runs the rest (a trial counts once it has a result.json).
+# - record: recording profiles from experiments/lib/config.py RECORDING_PROFILES.
+#   "base" always; "lidar_raw" adds the three per-sensor raw clouds (~4.5 GB
+#   per trial more) — for LiDAR-fault campaigns, injected on pointcloud_raw_ex.
+# - fault: arguments for experiments/lib/fault_injector.py. Omit for nominal.
+#   TL faults fire at every traffic-light zone after the start intersection
+#   (duration = cap per zone visit); IMU faults are gated on precomputed turn /
+#   bias-lead-in zones (experiments/configs/turn_zones.json).
+#
+# goal_026 is left out of the IMU campaigns: every IMU trial there got stuck
+# 11-13 s after onset whatever the fault (structural, likely an unresolved
+# traffic light; st_gat/pipeline/config.py). Its TL trials were fine.
+
+defaults:
+  trials: 3
+  record: [base]
+  stuck_timeout_s: 100
+
+campaigns:
+
+  nominal:
+    description: Nominal driving at the map speed limit, no fault.
+    goals: all
+
+  # ── IMU (gyro yaw rate, on /sensing/imu/imu_data_faulted -> gyro_odometer -> EKF)
+  imu_bias_003:
+    description: Constant gyro bias 0.03 rad/s, 20 s on / 10 s off. Control
+      condition, expected to be absorbed by the EKF yaw-bias state.
+    goals: [goal_007, goal_012]
+    fault:
+      imu_fault: imu_bias
+      imu_params: {accel_bias_ms2: 0.0, gyro_bias_rads: 0.03, on_seconds: 20, off_seconds: 10}
+      duration_s: 45
+
+  imu_bias_008:
+    description: Constant gyro bias 0.08 rad/s, 15 s on / 10 s off. Above the
+      absorption threshold.
+    goals: [goal_007, goal_012]
+    fault:
+      imu_fault: imu_bias
+      imu_params: {accel_bias_ms2: 0.0, gyro_bias_rads: 0.08, on_seconds: 15, off_seconds: 10}
+      duration_s: 45
+
+  imu_scale:
+    description: Gyro scale factor x1.8, on from turn-zone entry to exit, 10 s off.
+    goals: [goal_007, goal_012]
+    fault:
+      imu_fault: imu_scale_factor
+      imu_params: {gyro_scale_factor: 1.8, off_seconds: 10}
+      duration_s: 45
+
+  imu_stuck:
+    description: Gyro frozen at its value at activation, on from turn-zone entry
+      to exit, 10 s off.
+    goals: [goal_007, goal_012]
+    fault:
+      imu_fault: imu_stuck_at
+      imu_params: {off_seconds: 10}
+      duration_s: 45
+
+  # ── Traffic light (on traffic_signals_faulted, what behavior planning reads)
+  tl_oscillate:
+    description: Reported light alternates GREEN / original, 5 s period.
+    goals: [goal_007, goal_012, goal_026]
+    fault:
+      tl_fault: tl_oscillate
+      tl_params: {period_s: 5.0}
+      duration_s: 15
+
+  tl_unknown:
+    description: Classification forced to UNKNOWN.
+    goals: [goal_007, goal_012, goal_026]
+    fault:
+      tl_fault: tl_unknown
+      duration_s: 15
+
+  tl_blackout:
+    description: No signal reported at all.
+    goals: [goal_007, goal_012, goal_026]
+    fault:
+      tl_fault: tl_blackout
+      duration_s: 15
+
+  tl_conf_030:
+    description: Confidence fixed at 0.7 x original (severity 0.3).
+    goals: [goal_007, goal_012, goal_026]
+    fault:
+      tl_fault: tl_confidence
+      tl_params: {confidence_scale: 0.7}
+      duration_s: 15
+
+  tl_conf_050:
+    description: Confidence fixed at 0.5 x original (severity 0.5).
+    goals: [goal_007, goal_012, goal_026]
+    fault:
+      tl_fault: tl_confidence
+      tl_params: {confidence_scale: 0.5}
+      duration_s: 15
+
+  tl_conf_070:
+    description: Confidence fixed at 0.3 x original (severity 0.7).
+    goals: [goal_007, goal_012, goal_026]
+    fault:
+      tl_fault: tl_confidence
+      tl_params: {confidence_scale: 0.3}
+      duration_s: 15

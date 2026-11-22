@@ -102,8 +102,8 @@ Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-0
   diagnostics/` (each arm's variant kept alongside as `.armA.yaml`/
   `.armB.yaml`); it only copies files, it does **not** restart Autoware —
   these are load-time params, restart yourself for a switch to take
-  effect. `collect.sh`/`run_fault_campaigns.sh` take `--arm A|B` (default
-  A) and refuse to run if that doesn't match the switch script's
+  effect. `collect.sh` takes `--arm A|B` (default
+  A) and refuses to run if that doesn't match the switch script's
   `.active_arm` marker. Arm B is untested against this repo's actual
   fault-injection workflow — it's exactly the config that caused the
   original MRM deadlocks Arm A was built to route around, watch for that
@@ -199,14 +199,12 @@ Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-0
   moving." Fix is restarting AWSIM (`./Run_AWSIM.sh`) too, not just
   `Run_Autoware_Headless.sh` — they're separate processes and a Terminal-2
   restart never touches Terminal-1.
-- **`count_existing_trials()` (auto-resume, `run_experiments.py`) counts
-  ANY trial directory with a `result.json`, regardless of outcome** — this
-  is deliberate (a legitimate `mrm_succeeded` fault outcome shouldn't be
-  endlessly re-run), but it means a leftover `stuck`/`timeout`/
-  `engage_failed` trial silently blocks that slot from ever being retried.
-  Delete broken trial directories before re-running a campaign, don't just
-  leave them — auto-resume can't tell the difference between "this trial
-  legitimately finished" and "this trial crashed."
+- **Auto-resume counts only valid trials** (`run_experiments.py`,
+  2026-11-21): a trial with no complete bag, a vehicle that never drove,
+  or a fault that never armed is moved to `<campaign>/_invalid/` and its
+  slot is re-run; a fault trial ending in MRM or stuck is a valid outcome.
+  `./collect.sh --status` lists leftover directories without a result
+  (crashed mid-trial): delete those by hand.
 - **Every live-session failure across the 2026-10-03/04 TL severity sweep
   was at `goal_026` specifically** (6 total: `engage_failed`, `timeout`
   ×3, `stuck` ×2) — goal_007/012 never failed once. Not yet root-caused.

@@ -188,38 +188,24 @@ ROUTE_AHEAD_SPACING_M = 3.0
 
 # ── Data split ─────────────────────────────────────────────────────────────
 
-# Datasets to use for training + calibration (nominal behavior only).
-# nom_v5/nom_v7 dropped 2026-07-21: all experiments now run at max velocity only,
-# so there's a single operating condition instead of per-speed calibration sets.
-NOMINAL_DATASETS = ['baseline_all', 'nom_v11']
+# Datasets = campaigns (experiments/configs/campaigns.yaml, the one source of
+# campaign names). Training + calibration use nominal driving only; every
+# campaign with a fault is a fault dataset.
+def _campaign_names():
+    import yaml
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..',
+                        'experiments', 'configs', 'campaigns.yaml')
+    with open(path) as f:
+        spec = yaml.safe_load(f)['campaigns']
+    return ([n for n, c in spec.items() if not c.get('fault')],
+            [n for n, c in spec.items() if c.get('fault')])
 
-# Fault campaigns actually collected on this repo's current research direction
-# (replaces the stale TEST_DATASETS = ['obs_recovery', 'obs_noescape',
-# 'obs_stuck'] — those obs_* scenario campaigns are deprioritized per TODO.md's
-# 2026-07-24 reframe and aren't present under experiments/data/ on this
-# machine). Used by st_gat/residuals.py for trace/residual computation.
-FAULT_DATASETS = [
-    'imu_fault_s1', 'imu_fault_s3', 'imu_fault_scale', 'imu_fault_stuck',
-    'tl_fault_s2', 'tl_fault_s3', 'tl_fault_s4', 'tl_fault_ramp',
-]
 
-# Confirmed-bad trials are DELETED outright (2026-08-04 policy change, per
-# Kalpit — a maintained exclusion list was worse than just removing the bad
-# data): goal_026's IMU-campaign trials (imu_fault_s1/s3/scale/stuck) were
-# deleted after confirming all four get stuck 11-13s after fault onset
-# regardless of fault type/severity — a structural goal_026 IMU-turn/lead-in-
-# zone confound (likely an unresolved traffic light), not a fault effect.
-# goal_026's TL-fault trials were unaffected and were kept. Re-collect
-# goal_026 for these four campaigns before trusting them again.
+NOMINAL_DATASETS, FAULT_DATASETS = _campaign_names()
 
 # Train/calibration split (per dataset, stratified by goal)
 CAL_FRACTION = 0.20
 
-# Speed labels (currently unused — kept for the single remaining operating condition)
-SPEED_LABELS = {
-    'baseline_all': 'default',
-    'nom_v11': '11ms',
-}
 
 # ── Bag reading ─────────────────────────────────────────────────────────────
 

@@ -85,7 +85,7 @@ def extract_route_from_bag(bag_dir: str) -> List[int]:
     except ImportError:
         return []
 
-    storage_options   = StorageOptions(uri=bag_dir, storage_id='sqlite3')
+    storage_options   = StorageOptions(uri=bag_dir, storage_id='')
     converter_options = ConverterOptions(
         input_serialization_format='cdr',
         output_serialization_format='cdr',

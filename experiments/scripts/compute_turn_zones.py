@@ -171,7 +171,7 @@ def read_route_ids(bag_dir, goal_xy, tol=ROUTE_GOAL_MATCH_TOL_M):
     in the same bag. Returns the LAST match (most recent plan), None if no
     route message matches."""
     reader = SequentialReader()
-    reader.open(StorageOptions(uri=bag_dir, storage_id='sqlite3'), ConverterOptions('', ''))
+    reader.open(StorageOptions(uri=bag_dir, storage_id=''), ConverterOptions('', ''))
     best = None
     while reader.has_next():
         topic, data, _t = reader.read_next()

@@ -38,7 +38,7 @@ from plotting import (  # noqa: E402
 )
 
 DEFAULT_MAP_FILE = os.path.join(WORKSPACE_DIR, 'Map', 'nishishinjuku_autoware_map', 'lanelet2_map.osm')
-DEFAULT_GOALS_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'captured_goals_original.json')
+DEFAULT_GOALS_FILE = os.path.join(REPO_DIR, 'experiments', 'configs', 'captured_goals.json')
 DEFAULT_DATA_DIR = os.path.join(REPO_DIR, 'experiments', 'data', 'nom_v11')
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_DIR, 'experiments', 'analysis', 'route_maps')
 
@@ -47,7 +47,7 @@ FALLBACK_TOPIC = '/localization/kinematic_state'
 
 
 def read_trajectory(bag_dir):
-    storage_options = StorageOptions(uri=bag_dir, storage_id='sqlite3')
+    storage_options = StorageOptions(uri=bag_dir, storage_id='')
     converter_options = ConverterOptions(
         input_serialization_format='cdr',
         output_serialization_format='cdr',

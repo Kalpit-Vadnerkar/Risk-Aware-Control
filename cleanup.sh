@@ -20,7 +20,7 @@ pkill -9 -f "autoware" 2>/dev/null || true
 pkill -9 -f "topic_tools/relay" 2>/dev/null || true
 pkill -9 -f "lib/topic_tools/relay" 2>/dev/null || true
 pkill -9 -f "experiment_state_monitor" 2>/dev/null || true
-pkill -9 -f "perception_interceptor" 2>/dev/null || true
+pkill -9 -f "object_relay.py\|fault_injector.py" 2>/dev/null || true
 pkill -9 -f "run_experiments.py" 2>/dev/null || true
 pkill -9 -f "rosbag2_recorder\|ros2.*bag.*record" 2>/dev/null || true
 

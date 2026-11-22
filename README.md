@@ -57,10 +57,10 @@ This repo assumes Autoware and AWSIM are installed in the **parent directory**
     ├── cleanup.sh
     ├── TODO.md                            ← task list (start here)
     ├── experiments/
-    │   ├── configs/                       ← goal positions, scenario YAMLs
-    │   ├── lib/                           ← PerceptionInterceptor, config, scenarios
-    │   ├── scripts/                       ← run_experiments.py, sweep runner, etc.
-    │   └── data/                          ← collected rosbags (gitignored)
+    │   ├── configs/                       ← campaigns.yaml, goals, zone files
+    │   ├── lib/                           ← config (what to record), fault injector, object relay
+    │   ├── scripts/                       ← run_experiments.py (runner) and analysis tools
+    │   └── data/                          ← collected trials (gitignored)
     ├── st_gat/                            ← ST-GAT model and inference pipeline
     │   ├── model/                         ← architecture, loss, dataset
     │   ├── pipeline/                      ← bag reader, sequence builder
@@ -78,21 +78,19 @@ This repo assumes Autoware and AWSIM are installed in the **parent directory**
 ## Quick Start
 
 ```bash
-# Terminal 1: Launch AWSIM
-cd /home/kvadner/Desktop/Kalpit/Risk-Aware-Control
+# Terminal 1: AWSIM
 ./Run_AWSIM.sh
-
-# Terminal 2: Launch Autoware (headless for experiments)
+# Terminal 2: Autoware (headless)
 ./Run_Autoware_Headless.sh
-
-# Terminal 3: Collect data
-./collect.sh nom_v11
-./collect.sh obs_recovery
-./collect.sh obs_noescape
+# Terminal 3: collect
+./collect.sh --status             # progress, no ROS needed
+./collect.sh nominal              # next <=12 missing nominal trials
 ```
 
-See `TODO.md` for current task status and `docs/archive/research_notes/advisor_meeting_jun2026.md`
-for the current research direction.
+Each run does at most 12 trials, then asks for an Autoware restart; re-run the
+same command and it continues with what is missing. Campaigns:
+`experiments/configs/campaigns.yaml`. What is recorded and why:
+`docs/data_inventory.md`.
 
 ---
 
@@ -108,13 +106,13 @@ The Autoware install at `/home/kvadner/Desktop/Dissertation/autoware/` has been 
 |------|--------|
 | `config/planning/scenario_planning/common/common.param.yaml` | `max_vel: 11.11` (was 4.17 m/s) |
 
-### 2. PerceptionInterceptor wiring
+### 2. Object relay wiring
 
 | File | Change |
 |------|--------|
 | `launch/components/tier4_planning_component.launch.xml` line 13 | `planning_input_objects_topic_name` → `objects_filtered` |
 
-**Why:** Planning must read from `/perception/object_recognition/objects_filtered` (the PerceptionInterceptor output), not the raw perception topic.
+**Why:** Planning reads `/perception/object_recognition/objects_filtered`, which `experiments/lib/object_relay.py` copies from the perception output (started by the runner). It is the hook for injecting a perception fault.
 
 ### 3. MRM deadlock fixes — diagnostic gate for autonomous mode
 
@@ -188,7 +186,7 @@ After a stuck trial (vehicle stopped for 200s timeout), the behavior_path_planne
 
 ### 5. Autoware restart cadence
 
-After approximately 18–36 experiments (one or two full campaigns), the behavior_path_planner accumulates internal state that prevents trajectory generation on subsequent route sets. **Restart Autoware between campaigns** to avoid this. `experiments/scripts/run_nominal_batches.sh` handles this automatically (batches goals 3 at a time with an Autoware restart between each).
+After approximately 18–36 experiments (one or two full campaigns), the behavior_path_planner accumulates internal state that prevents trajectory generation on subsequent route sets. **Restart Autoware between runs**: `collect.sh` stops after `--max-trials` (default 12) and tells you to restart.
 
 ### 6. Trajectory topic renamed upstream (found 2026-07-21, RTX A6000 machine)
 
@@ -285,50 +283,31 @@ picked up the new values after restart.
 
 ## Data Collection Campaigns
 
-**`obs_*` campaigns below are deprioritized as of 2026-07-24** — they support the
-scenario-based avoidance / control-track future work, not the current
-belief-divergence detection / calibration / lead-time claim. `nom_v11` and the
-fault campaigns (`tl_fault_*`, `imu_fault_*`) are the active priority — see
-`TODO.md`.
+Defined in `experiments/configs/campaigns.yaml` (name, goals, trials per
+goal, fault parameters, recording profile); `./collect.sh --status` shows
+progress. All runs at the map speed limit (11.11 m/s), Arm A unless stated.
 
-Goals: **007, 011, 021** — verified feasible on this machine (live route test 2026-06-27).
+| Campaign | Goals | Fault |
+|---|---|---|
+| `nominal` | all 26 | none |
+| `imu_bias_003`, `imu_bias_008` | 007, 012 | constant gyro bias 0.03 / 0.08 rad/s, periodic |
+| `imu_scale`, `imu_stuck` | 007, 012 | gyro x1.8 / frozen, during turns |
+| `tl_oscillate`, `tl_unknown`, `tl_blackout` | 007, 012, 026 | reported light alternates / UNKNOWN / none |
+| `tl_conf_030`, `_050`, `_070` | 007, 012, 026 | confidence x0.7 / x0.5 / x0.3 |
 
-**Direction change (2026-07-21):** all experiments now run at max possible velocity
-(map limit, 11.11 m/s) — no more per-speed calibration set. `nom_v5`/`nom_v7`/`nom_v10`
-are kept as working `collect.sh` commands (harmless to run) but are no longer part of
-the data collection plan; `NOMINAL_DATASETS` in `st_gat/pipeline/config.py` only
-includes `baseline_all` + `nom_v11`.
-
-| Campaign | Command | What it tests |
-|----------|---------|---------------|
-| `nom_v11` | `./collect.sh nom_v11` | Nominal driving at max velocity (11.11 m/s) — the only calibration set needed |
-| `obs_stuck` | `./collect.sh obs_stuck` | Obstacle — Autoware stops (avoidance=manual) |
-| `obs_recovery` | `./collect.sh obs_recovery` | Obstacle — Autoware swerves (avoidance=auto) |
-| `obs_noescape` | `./collect.sh obs_noescape` | 30m obstacle in single-lane (LL 241) — unsolvable baseline |
-| `obs_singlelane` | `./collect.sh obs_singlelane` | 30m obstacle, no adjacent lane — Signal 1 validation |
-| `obs_tooclosetoreact` | `./collect.sh obs_tooclosetoreact` | 5–8m obstacle, multi-lane — Signal 2 (TTC) validation |
-
-Default: 6 trials × 3 goals. Override with `--trials N --goals GOALS`.
+Trial layout: `experiments/data/<campaign>/<goal>/t<N>_<timestamp>/`
+(`metadata.json` with the full campaign parameters and git commit,
+`result.json`, `metrics.json`, `fault_log.jsonl`, `recorder.log`, `rosbag/`
+in MCAP). Invalid trials are moved to `<campaign>/_invalid/`.
 
 ---
 
 ## Recorded Topics
 
-| Topic | Purpose |
-|-------|---------|
-| `/localization/kinematic_state` | Vehicle state estimation |
-| `/awsim/ground_truth/localization/kinematic_state` | Ground truth |
-| `/tf` | Vehicle pose in map frame |
-| `/perception/object_recognition/objects` | Detected objects (raw) |
-| `/perception/object_recognition/objects_filtered` | Objects after interceptor |
-| `/perception/traffic_light_recognition/traffic_signals` | Traffic light states |
-| `/planning/trajectory` | Planned trajectory |
-| `/planning/mission_planning/route` | Route geometry |
-| `/planning/scenario_planning/lane_driving/behavior_planning/path` | Behavior path |
-| `/control/command/control_cmd` | Control commands |
-| `/autoware/state` | System state machine |
-| `/system/fail_safe/mrm_state` | MRM (safety) state |
-| `/diagnostics` | System health |
+`experiments/lib/config.py` `RECORDING_PROFILES`; reasons per topic in
+`docs/data_inventory.md`. `base` (~1.5 GB per trial, mostly the merged LiDAR
+cloud) on every campaign; `lidar_raw` adds the three per-sensor raw clouds
+for LiDAR-fault campaigns.
 
 ---
 
