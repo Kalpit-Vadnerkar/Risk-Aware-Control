@@ -210,6 +210,8 @@ Layer 2 on top of it (`docs/archive/research_notes/layer1_paper_structure_2026-0
   (goal_011-022 t2; goal_021/022/025 t3; goal_023/024/026 t2, renumbered
   after their failed t1 was deleted) come from two flapping launches:
   their driving is normal, but don't use their MRM counts.
+  Cause: the 1 Hz MRM-request delegate diag unit going stale (1.0 s
+  default); Arm A sets `timeout: 3.0` on it since the IMU campaigns.
   `./collect.sh --status` lists leftover directories without a result
   (crashed mid-trial): delete those by hand.
 - **Every live-session failure across the 2026-10-03/04 TL severity sweep
