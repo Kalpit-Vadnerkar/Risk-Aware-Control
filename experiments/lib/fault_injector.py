@@ -2056,7 +2056,7 @@ def main():
     finally:
         node.shutdown_log()
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()   # SIGINT may already have shut the context down
 
 
 if __name__ == '__main__':

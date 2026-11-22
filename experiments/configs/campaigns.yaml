@@ -31,6 +31,10 @@ campaigns:
   nominal:
     description: Nominal driving at the map speed limit, no fault.
     goals: all
+    # Raw per-sensor clouds on nominal only: the nominal reference a future
+    # LiDAR-fault campaign (and offline LiDAR fault injection by replay)
+    # needs. IMU / TL campaigns stay valid without them.
+    record: [base, lidar_raw]
 
   # ── IMU (gyro yaw rate, on /sensing/imu/imu_data_faulted -> gyro_odometer -> EKF)
   imu_bias_003:

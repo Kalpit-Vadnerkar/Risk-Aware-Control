@@ -100,8 +100,17 @@ Measured on 20 s recordings (MCAP, zstd_fast; point clouds barely compress):
 ## Decisions (2026-11-21)
 
 - Recording profiles in `experiments/lib/config.py`: `base` on every
-  campaign (~1.5 GB per trial), `lidar_raw` added for LiDAR-fault
-  campaigns. Storage MCAP.
+  campaign (~1.7 GB per trial, measured), plus `lidar_raw` (~4.3 GB) on
+  `nominal` and on future LiDAR-fault campaigns. Raw on nominal because a
+  LiDAR-fault study needs a nominal reference with the same streams
+  (per-sensor consistency bands, offline fault injection by replaying the
+  raw clouds through Autoware); IMU / TL campaigns stay valid without it.
+  Storage MCAP.
+- `/sensing/lidar/concatenated/pointcloud_info` in `base`: which point range
+  of the merged cloud came from which sensor, so per-sensor (preprocessed)
+  clouds exist on every campaign at no cost.
+- Budget: 78 nominal x ~6 GB + 78 fault trials x ~1.7 GB ~ 600 GB of 714 GB
+  free. The second NVMe is a BitLocker Windows disk, not usable.
 - No camera, no GNSS, no raw IMU (above).
 - Detector topics recorded (cheap), so detector disagreement stays
   available.

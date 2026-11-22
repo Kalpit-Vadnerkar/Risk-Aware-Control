@@ -45,6 +45,9 @@ _INPUTS = [
     # wheel speed, outlier filter), base_link frame. Independent of the pose
     # estimate: the pipeline's own scan-to-map check uses it.
     '/sensing/lidar/concatenated/pointcloud',
+    # Which point range of the merged cloud came from which sensor (and
+    # whether each arrived): per-sensor clouds without recording them raw
+    '/sensing/lidar/concatenated/pointcloud_info',
     # IMU as the stack receives it, and what gyro_odometer -> EKF actually
     # reads (the fault injector's output)
     '/sensing/imu/imu_data',
