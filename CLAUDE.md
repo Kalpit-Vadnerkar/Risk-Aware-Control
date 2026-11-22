@@ -246,12 +246,10 @@ to actually run `Run_AWSIM.sh` / `Run_Autoware_Headless.sh` themselves.
 - `experiments/data/<campaign>/<goal_id>/t<N>_<timestamp>/` — one dir per
   trial (`result.json`, `metadata.json`, `metrics.json`, `fault_log.jsonl`,
   `rosbag/`); campaign-level batch summaries live in `<campaign>/_meta/`.
-  **Campaign naming convention + a glossary of existing (legacy) names**:
-  `docs/data_naming_convention.md` (added 2026-10-03) — read before naming
-  a new campaign; nothing existing has been renamed.
+  Campaigns are defined in `experiments/configs/campaigns.yaml`; naming
+  convention + old → new name map: `docs/data_naming_convention.md`.
 - `experiments/configs/captured_goals.json` — the **operative** goal set
-  (26 goals, edited in place; `captured_goals_original.json` is a frozen
-  historical snapshot, never edited). `capture_goals_session.py` always
+  (26 goals, edited in place). `capture_goals_session.py` always
   **overwrites** `captured_goals.json` with only that session's captures —
   back the file up first, then hand-merge new entries by ID.
 - **`STGAT_GRAPH_FRAME` env var** (`bbox_v1` default = canonical model;

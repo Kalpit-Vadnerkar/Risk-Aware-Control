@@ -40,10 +40,13 @@ done
 source /opt/ros/humble/setup.bash
 source "$AUTOWARE_DIR/install/setup.bash"
 
-if ! ros2 topic list 2>/dev/null | grep -q "/sensing/lidar/top/pointcloud_raw"; then
+# Capture the list once: with pipefail, `ros2 topic list | grep -q` fails
+# when grep exits early on a match and ros2 gets SIGPIPE.
+TOPICS="$(ros2 topic list 2>/dev/null || true)"
+if ! grep -q "/sensing/lidar/top/pointcloud_raw" <<< "$TOPICS"; then
     echo -e "${RED}AWSIM is not running. Start it first: ./Run_AWSIM.sh${NC}"; exit 1
 fi
-if ! ros2 topic list 2>/dev/null | grep -q "^/autoware/state$"; then
+if ! grep -qx "/autoware/state" <<< "$TOPICS"; then
     echo -e "${RED}Autoware is not running. Start it first: ./Run_Autoware_Headless.sh${NC}"; exit 1
 fi
 
